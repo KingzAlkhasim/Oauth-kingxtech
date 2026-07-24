@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /signup
+Disallow: /dashboard/*
+Disallow: /account/*
+Disallow: /sessions/*
+Disallow: /api/*
+Disallow: /settings/*
+Disallow: /admin/*
+Disallow: /welcome
+Disallow: /accounts
+Disallow: /oauth/*
+Disallow: /2fa
+Disallow: /verify-email
+Disallow: /reset-password
+
+Sitemap: https://auth.kingxtech.name.ng/sitemap.xml
