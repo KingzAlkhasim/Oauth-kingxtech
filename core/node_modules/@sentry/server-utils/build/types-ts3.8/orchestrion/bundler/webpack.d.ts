@@ -1,0 +1,24 @@
+import { InstrumentationConfig } from '..';
+import codeTransformerWebpack from '@apm-js-collab/code-transformer-bundler-plugins/webpack';
+import { PluginOptions } from './options';
+export { serializeInstrumentations } from '@apm-js-collab/code-transformer-bundler-plugins/core';
+export { SerializableInstrumentationConfig } from '@apm-js-collab/code-transformer-bundler-plugins/core';
+/** Absolute path to the code-transform loader (a webpack loader; also usable as a Turbopack loader). */
+export declare function getOrchestrionLoaderPath(): string;
+/**
+ * Absolute path to the `@apm-js-collab/tracing-hooks` package directory, resolved from this
+ * package's own dependency graph. SDKs inject it at build time so the runtime module hook can
+ * load the package even where the bare specifier doesn't resolve (bundled SDK code under
+ * isolated installs, e.g. pnpm).
+ */
+export declare function getTracingHooksDirectory(): string;
+/** The central instrumentation config, to pass as the loader's `instrumentations` option. */
+export declare function getSentryInstrumentations(): InstrumentationConfig[];
+/**
+ * The code-transform webpack plugin, pre-fed the instrumentation config.
+ *
+ * Instrumented packages marked as `externals` never pass through the code
+ * transform, so a compilation warning is emitted for them.
+ */
+export declare function sentryOrchestrionWebpackPlugin(options?: PluginOptions): ReturnType<typeof codeTransformerWebpack>;
+//# sourceMappingURL=webpack.d.ts.map
