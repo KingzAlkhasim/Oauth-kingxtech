@@ -16,13 +16,17 @@ import * as Sentry from '@sentry/node';
  */
 export function initSentry(): void {
   const dsn = process.env.SENTRY_DSN;
-  if (!dsn) return;
+  if (!dsn) {
+    console.log('[sentry] disabled — SENTRY_DSN not set');
+    return;
+  }
 
   Sentry.init({
     dsn,
     tracesSampleRate: 1.0,
     sendDefaultPii: false,
   });
+  console.log('[sentry] initialized');
 }
 
 export { Sentry };
