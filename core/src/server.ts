@@ -47,13 +47,35 @@ app.use(helmet());
 app.use(cors({ origin: env.ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
-function handleFsError(res: express.Response, error: unknown) {
+async function handleFsError(res: express.Response, error: unknown) {
   if (error instanceof ProjectAccessError) {
+    // Expected access-control rejection, not a bug — no Sentry report.
     res.status(403).json({ success: false, error: error.message });
     return;
   }
   console.error('Project FS error:', error);
+  Sentry.captureException(error, { tags: { route: res.req?.path } });
+  // Cloud Run can freeze/scale an instance down right after the response is
+  // sent, and Sentry delivers events asynchronously in the background —
+  // without this flush, errors on a scaled-down instance can silently never
+  // reach Sentry at all. 2s cap so a slow network never hangs the response.
+  await Sentry.flush(2000).catch(() => {});
   res.status(500).json({ success: false, error: 'Internal error.' });
+}
+
+// Same reporting + flush pattern as handleFsError, for routes that build
+// their own status code / message instead of the generic "Internal error."
+async function reportError(
+  res: express.Response,
+  status: number,
+  message: string,
+  error: unknown,
+  logLabel: string
+) {
+  console.error(logLabel, error);
+  Sentry.captureException(error, { tags: { route: res.req?.path } });
+  await Sentry.flush(2000).catch(() => {});
+  res.status(status).json({ success: false, error: message });
 }
 
 // --- POST /api/ai/generate ---------------------------------------------
@@ -103,8 +125,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
         return;
       }
     } catch (error) {
-      console.error('Request cap check error:', error);
-      res.status(500).json({ success: false, error: 'Failed to check model usage limit' });
+      await reportError(res, 500, 'Failed to check model usage limit', error, 'Request cap check error:');
       return;
     }
   }
@@ -115,8 +136,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   try {
     credit = await consumeCredits(userId, model.creditCost);
   } catch (error) {
-    console.error('Credit check error:', error);
-    res.status(500).json({ success: false, error: 'Failed to check credits' });
+    await reportError(res, 500, 'Failed to check credits', error, 'Credit check error:');
     return;
   }
   if (!credit.ok) {
@@ -235,8 +255,7 @@ app.post('/api/billing/paystack/initialize', requireAuth, async (req: AuthedRequ
     const { authorization_url } = await initializePaystackTransaction(req.user!.id, email);
     res.json({ success: true, authorization_url });
   } catch (error: any) {
-    console.error('Paystack initialize error:', error);
-    res.status(502).json({ success: false, error: error.message || 'Failed to start checkout' });
+    await reportError(res, 502, error.message || 'Failed to start checkout', error, 'Paystack initialize error:');
   }
 });
 
@@ -245,8 +264,7 @@ app.get('/api/ai/credits', requireAuth, async (req: AuthedRequest, res) => {
     const credits = await getCreditsRemaining(req.user!.id);
     res.json({ success: true, ...credits });
   } catch (error) {
-    console.error('Credits fetch error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch credits' });
+    await reportError(res, 500, 'Failed to fetch credits', error, 'Credits fetch error:');
   }
 });
 
@@ -257,8 +275,7 @@ app.get('/api/ai/usage', requireAuth, async (req: AuthedRequest, res) => {
     const log = await getUsageLog(req.user!.id, limit);
     res.json({ success: true, log });
   } catch (error) {
-    console.error('Usage fetch error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch usage' });
+    await reportError(res, 500, 'Failed to fetch usage', error, 'Usage fetch error:');
   }
 });
 
@@ -269,7 +286,7 @@ app.post('/api/projects/:projectId/turns/:turnId/reject', requireAuth, async (re
     await revertTurn(req.user!.id, req.params.projectId, req.params.turnId);
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -283,7 +300,7 @@ app.post('/api/projects/:projectId/file/revert', requireAuth, async (req: Authed
     await revertFileToPreviousVersion(req.user!.id, req.params.projectId, filePath);
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -297,7 +314,7 @@ app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequ
       : `/site/${slug}/`;
     res.json({ success: true, slug, url });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -309,8 +326,7 @@ app.get('/api/ai/sessions', requireAuth, async (req: AuthedRequest, res) => {
     const sessions = await listSessions(req.user!.id, projectId);
     res.json({ success: true, sessions });
   } catch (error) {
-    console.error('Sessions fetch error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch sessions' });
+    await reportError(res, 500, 'Failed to fetch sessions', error, 'Sessions fetch error:');
   }
 });
 
@@ -320,8 +336,7 @@ app.delete('/api/ai/sessions/:id', requireAuth, async (req: AuthedRequest, res) 
     await deleteSessionHistory(req.user!.id, req.params.id);
     res.json({ success: true });
   } catch (error) {
-    console.error('Session delete error:', error);
-    res.status(500).json({ success: false, error: 'Failed to delete session' });
+    await reportError(res, 500, 'Failed to delete session', error, 'Session delete error:');
   }
 });
 
@@ -340,8 +355,7 @@ app.get('/api/ai/history', requireAuth, async (req: AuthedRequest, res) => {
     }));
     res.json({ success: true, messages });
   } catch (error) {
-    console.error('History fetch error:', error, 'user:', userId);
-    res.status(500).json({ success: false, error: 'Failed to fetch history' });
+    await reportError(res, 500, 'Failed to fetch history', error, `History fetch error (user: ${userId}):`);
   }
 });
 
@@ -356,8 +370,7 @@ app.delete('/api/ai/history', requireAuth, async (req: AuthedRequest, res) => {
     await deleteSessionHistory(userId, sessionId);
     res.json({ success: true });
   } catch (error) {
-    console.error('History delete error:', error, 'user:', userId);
-    res.status(500).json({ success: false, error: 'Failed to clear history' });
+    await reportError(res, 500, 'Failed to clear history', error, `History delete error (user: ${userId}):`);
   }
 });
 
@@ -368,7 +381,7 @@ app.get('/api/projects/:projectId/files', requireAuth, async (req: AuthedRequest
     const files = await listProjectFiles(req.user!.id, req.params.projectId);
     res.json({ success: true, files });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -382,7 +395,7 @@ app.get('/api/projects/:projectId/file', requireAuth, async (req: AuthedRequest,
     const file = await readProjectFile(req.user!.id, req.params.projectId, filePath);
     res.json({ success: true, file });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -401,7 +414,7 @@ app.put('/api/projects/:projectId/file', requireAuth, async (req: AuthedRequest,
     await writeProjectFile(req.user!.id, req.params.projectId, filePath, content);
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -415,7 +428,7 @@ app.post('/api/projects/:projectId/folder', requireAuth, async (req: AuthedReque
     await createProjectFolder(req.user!.id, req.params.projectId, folderPath);
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -429,7 +442,7 @@ app.delete('/api/projects/:projectId/file', requireAuth, async (req: AuthedReque
     await deleteProjectFile(req.user!.id, req.params.projectId, filePath);
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -451,7 +464,7 @@ app.post('/api/projects/:projectId/terminal', requireAuth, rateLimit, async (req
     const result = await executeTerminalCommand(command, Array.isArray(args) ? args : []);
     res.json({ success: true, ...result });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -467,8 +480,7 @@ app.post('/api/github/token', requireAuth, async (req: AuthedRequest, res) => {
     await saveGithubToken(req.user!.id, token);
     res.json({ success: true });
   } catch (error) {
-    console.error('GitHub token save error:', error);
-    res.status(500).json({ success: false, error: 'Failed to save token' });
+    await reportError(res, 500, 'Failed to save token', error, 'GitHub token save error:');
   }
 });
 
@@ -477,8 +489,7 @@ app.delete('/api/github/token', requireAuth, async (req: AuthedRequest, res) => 
     await deleteGithubToken(req.user!.id);
     res.json({ success: true });
   } catch (error) {
-    console.error('GitHub token delete error:', error);
-    res.status(500).json({ success: false, error: 'Failed to remove token' });
+    await reportError(res, 500, 'Failed to remove token', error, 'GitHub token delete error:');
   }
 });
 
@@ -487,8 +498,7 @@ app.get('/api/github/status', requireAuth, async (req: AuthedRequest, res) => {
     const connected = await hasGithubToken(req.user!.id);
     res.json({ success: true, connected });
   } catch (error) {
-    console.error('GitHub status error:', error);
-    res.status(500).json({ success: false, error: 'Failed to check GitHub status' });
+    await reportError(res, 500, 'Failed to check GitHub status', error, 'GitHub status error:');
   }
 });
 
@@ -497,7 +507,7 @@ app.get('/api/github/repos', requireAuth, async (req: AuthedRequest, res) => {
     const repos = await listGithubRepos(req.user!.id);
     res.json({ success: true, repos });
   } catch (error: any) {
-    res.status(502).json({ success: false, error: error.message || 'Failed to list GitHub repos' });
+    await reportError(res, 502, error.message || 'Failed to list GitHub repos', error, 'GitHub repos list error:');
   }
 });
 
@@ -511,7 +521,7 @@ app.post('/api/projects/:projectId/github/link', requireAuth, async (req: Authed
     await linkProjectToRepo(req.user!.id, req.params.projectId, repoFullName, branch || 'main');
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -520,8 +530,7 @@ app.get('/api/projects/:projectId/github/link', requireAuth, async (req: AuthedR
     const link = await getProjectGithubLink(req.user!.id, req.params.projectId);
     res.json({ success: true, link });
   } catch (error) {
-    console.error('GitHub link fetch error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch GitHub link' });
+    await reportError(res, 500, 'Failed to fetch GitHub link', error, 'GitHub link fetch error:');
   }
 });
 
@@ -535,7 +544,7 @@ app.post('/api/projects/:projectId/github/push', requireAuth, async (req: Authed
     );
     res.json({ success: true, ...result });
   } catch (error: any) {
-    res.status(502).json({ success: false, error: error.message || 'Push to GitHub failed' });
+    await reportError(res, 502, error.message || 'Push to GitHub failed', error, 'GitHub push error:');
   }
 });
 
@@ -549,7 +558,7 @@ app.post('/api/projects/:projectId/github/import', requireAuth, async (req: Auth
     const result = await importRepoIntoProject(req.user!.id, req.params.projectId, repoFullName, branch || 'main');
     res.json({ success: true, ...result });
   } catch (error: any) {
-    res.status(502).json({ success: false, error: error.message || 'Import from GitHub failed' });
+    await reportError(res, 502, error.message || 'Import from GitHub failed', error, 'GitHub import error:');
   }
 });
 
@@ -560,7 +569,7 @@ app.get('/api/projects/:projectId/env', requireAuth, async (req: AuthedRequest, 
     const vars = await listProjectEnvVars(req.user!.id, req.params.projectId);
     res.json({ success: true, vars });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -578,7 +587,7 @@ app.put('/api/projects/:projectId/env', requireAuth, async (req: AuthedRequest, 
     await upsertProjectEnvVar(req.user!.id, req.params.projectId, key, value, !!isPublic);
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -587,7 +596,7 @@ app.delete('/api/projects/:projectId/env/:id', requireAuth, async (req: AuthedRe
     await deleteProjectEnvVar(req.user!.id, req.params.projectId, req.params.id);
     res.json({ success: true });
   } catch (error) {
-    handleFsError(res, error);
+    await handleFsError(res, error);
   }
 });
 
@@ -647,6 +656,8 @@ app.use(async (req, res, next) => {
     await servePreview(res, projectId, req.path.replace(/^\//, ''));
   } catch (error) {
     console.error('Subdomain site error:', error);
+    Sentry.captureException(error, { tags: { route: 'subdomain-site' } });
+    await Sentry.flush(2000).catch(() => {});
     res.status(500).type('text/plain').send('Site failed to load.');
   }
 });
@@ -686,6 +697,8 @@ app.get(/^\/preview\/([^/]+)\/?(.*)$/, async (req, res) => {
     await servePreview(res, req.params[0], req.params[1]);
   } catch (error) {
     console.error('Preview error:', error);
+    Sentry.captureException(error, { tags: { route: 'preview' } });
+    await Sentry.flush(2000).catch(() => {});
     res.status(500).type('text/plain').send('Preview failed to load.');
   }
 });
@@ -700,6 +713,8 @@ app.get(/^\/site\/([^/]+)\/?(.*)$/, async (req, res) => {
     await servePreview(res, projectId, req.params[1]);
   } catch (error) {
     console.error('Site error:', error);
+    Sentry.captureException(error, { tags: { route: 'site' } });
+    await Sentry.flush(2000).catch(() => {});
     res.status(500).type('text/plain').send('Site failed to load.');
   }
 });
