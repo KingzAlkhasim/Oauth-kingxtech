@@ -90,13 +90,31 @@ async function toUsd(amount: number, currency: string): Promise<number> {
   return amount * rate;
 }
 
-async function alreadyProcessed(eventId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin.from('billing_events').select('id').eq('id', eventId).maybeSingle();
-  return !!data;
-}
+type RecordOutcome = { status: 'recorded' } | { status: 'duplicate' } | { status: 'error'; error: unknown };
 
-async function recordEvent(eventId: string, gateway: string, userId: string | null, amountUsd: number, rawType: string) {
-  await supabaseAdmin.from('billing_events').insert({ id: eventId, gateway, user_id: userId, amount_usd: amountUsd, raw_type: rawType });
+/**
+ * Records a billing event and doubles as the idempotency check — the insert
+ * IS the "already processed?" check, atomically, via billing_events' own
+ * primary key. This replaces a separate SELECT-then-later-INSERT pattern
+ * that had two real bugs: (1) the insert's result was never checked, so a
+ * failed insert silently left credit_balance updated with zero transaction
+ * history and zero visibility into why, and (2) two retries arriving close
+ * together could both pass the earlier SELECT check before either INSERT
+ * completed, crediting the same payment twice.
+ */
+async function tryRecordEvent(
+  eventId: string,
+  gateway: string,
+  userId: string,
+  amountUsd: number,
+  rawType: string
+): Promise<RecordOutcome> {
+  const { error } = await supabaseAdmin
+    .from('billing_events')
+    .insert({ id: eventId, gateway, user_id: userId, amount_usd: amountUsd, raw_type: rawType });
+  if (!error) return { status: 'recorded' };
+  if ((error as { code?: string }).code === '23505') return { status: 'duplicate' }; // unique_violation on id
+  return { status: 'error', error };
 }
 
 async function findUserIdByEmail(email: string): Promise<string | null> {
@@ -135,10 +153,6 @@ Deno.serve(async (req) => {
 
     const payload = JSON.parse(rawBody);
     const eventId = String(payload.data?.id ?? crypto.randomUUID());
-    if (await alreadyProcessed(eventId)) {
-      console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-      return new Response('OK (duplicate)', { status: 200 });
-    }
 
     const eventName = payload.meta?.event_name;
     console.log('[billing-webhook] LemonSqueezy event:', eventName);
@@ -147,9 +161,16 @@ Deno.serve(async (req) => {
         ?? (payload.data?.attributes?.user_email ? await findUserIdByEmail(payload.data.attributes.user_email) : null);
       console.log('[billing-webhook] Resolved userId:', userId);
       if (userId) {
-        await creditWallet(userId, PRO_PLAN_USD, 'lemonsqueezy', String(payload.data?.attributes?.customer_id ?? ''), true);
-        await recordEvent(eventId, 'lemonsqueezy', userId, PRO_PLAN_USD, eventName);
-        console.log('[billing-webhook] Credited wallet for user:', userId);
+        const record = await tryRecordEvent(eventId, 'lemonsqueezy', userId, PRO_PLAN_USD, eventName);
+        if (record.status === 'duplicate') {
+          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
+        } else if (record.status === 'error') {
+          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+          return new Response('Internal error', { status: 500 }); // triggers a gateway retry
+        } else {
+          await creditWallet(userId, PRO_PLAN_USD, 'lemonsqueezy', String(payload.data?.attributes?.customer_id ?? ''), true);
+          console.log('[billing-webhook] Credited wallet for user:', userId);
+        }
       } else {
         console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
       }
@@ -166,19 +187,22 @@ Deno.serve(async (req) => {
 
     const payload = JSON.parse(rawBody);
     const eventId = String(payload.event_id ?? crypto.randomUUID());
-    if (await alreadyProcessed(eventId)) {
-      console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-      return new Response('OK (duplicate)', { status: 200 });
-    }
 
     console.log('[billing-webhook] Paddle event:', payload.event_type);
     if (payload.event_type === 'transaction.completed') {
       const userId = payload.data?.custom_data?.user_id ?? null;
       console.log('[billing-webhook] Resolved userId:', userId);
       if (userId) {
-        await creditWallet(userId, PRO_PLAN_USD, 'paddle', String(payload.data?.customer_id ?? ''), true);
-        await recordEvent(eventId, 'paddle', userId, PRO_PLAN_USD, payload.event_type);
-        console.log('[billing-webhook] Credited wallet for user:', userId);
+        const record = await tryRecordEvent(eventId, 'paddle', userId, PRO_PLAN_USD, payload.event_type);
+        if (record.status === 'duplicate') {
+          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
+        } else if (record.status === 'error') {
+          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+          return new Response('Internal error', { status: 500 });
+        } else {
+          await creditWallet(userId, PRO_PLAN_USD, 'paddle', String(payload.data?.customer_id ?? ''), true);
+          console.log('[billing-webhook] Credited wallet for user:', userId);
+        }
       } else {
         console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
       }
@@ -198,10 +222,6 @@ Deno.serve(async (req) => {
 
     const payload = JSON.parse(rawBody);
     const eventId = String(payload.data?.id ?? crypto.randomUUID());
-    if (await alreadyProcessed(eventId)) {
-      console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-      return new Response('OK (duplicate)', { status: 200 });
-    }
 
     console.log('[billing-webhook] Paystack event:', payload.event);
     if (payload.event === 'charge.success') {
@@ -214,9 +234,16 @@ Deno.serve(async (req) => {
       if (userId) {
         const usd = await toUsd(amountLocal, currency);
         const treatAsPro = usd >= PRO_PLAN_USD - PRO_PLAN_USD_TOLERANCE;
-        await creditWallet(userId, usd, 'paystack', String(payload.data?.customer?.customer_code ?? ''), treatAsPro);
-        await recordEvent(eventId, 'paystack', userId, usd, payload.event);
-        console.log('[billing-webhook] Credited', usd, 'USD to user:', userId, '| is_pro_member:', treatAsPro);
+        const record = await tryRecordEvent(eventId, 'paystack', userId, usd, payload.event);
+        if (record.status === 'duplicate') {
+          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
+        } else if (record.status === 'error') {
+          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+          return new Response('Internal error', { status: 500 });
+        } else {
+          await creditWallet(userId, usd, 'paystack', String(payload.data?.customer?.customer_code ?? ''), treatAsPro);
+          console.log('[billing-webhook] Credited', usd, 'USD to user:', userId, '| is_pro_member:', treatAsPro);
+        }
       } else {
         console.error('[billing-webhook] Could not resolve a userId from metadata.user_id or customer email — nothing credited. Full metadata:', JSON.stringify(payload.data?.metadata));
       }
@@ -233,10 +260,6 @@ Deno.serve(async (req) => {
 
     const payload = JSON.parse(rawBody);
     const eventId = String(payload.data?.id ?? crypto.randomUUID());
-    if (await alreadyProcessed(eventId)) {
-      console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-      return new Response('OK (duplicate)', { status: 200 });
-    }
 
     console.log('[billing-webhook] Flutterwave event:', payload.event, '| status:', payload.data?.status);
     if (payload.event === 'charge.completed' && payload.data?.status === 'successful') {
@@ -249,9 +272,16 @@ Deno.serve(async (req) => {
       if (userId) {
         const usd = await toUsd(amountLocal, currency);
         const treatAsPro = usd >= PRO_PLAN_USD - PRO_PLAN_USD_TOLERANCE;
-        await creditWallet(userId, usd, 'flutterwave', String(payload.data?.customer?.id ?? ''), treatAsPro);
-        await recordEvent(eventId, 'flutterwave', userId, usd, payload.event);
-        console.log('[billing-webhook] Credited', usd, 'USD to user:', userId);
+        const record = await tryRecordEvent(eventId, 'flutterwave', userId, usd, payload.event);
+        if (record.status === 'duplicate') {
+          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
+        } else if (record.status === 'error') {
+          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+          return new Response('Internal error', { status: 500 });
+        } else {
+          await creditWallet(userId, usd, 'flutterwave', String(payload.data?.customer?.id ?? ''), treatAsPro);
+          console.log('[billing-webhook] Credited', usd, 'USD to user:', userId);
+        }
       } else {
         console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
       }
