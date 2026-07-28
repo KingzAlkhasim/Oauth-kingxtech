@@ -14,6 +14,7 @@ import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelR
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
 import { executeTerminalCommand } from './services/commandExecutor';
 import { initializePaystackTransaction } from './services/paystackCheckout';
+import { runSecurityCheck, SECURITY_CHECK_CREDIT_COST } from './services/securityCheck';
 import { buildPublicEnvScript } from './services/publicEnv';
 import { listProjectEnvVars, upsertProjectEnvVar, deleteProjectEnvVar } from './services/projectEnvVars';
 import {
@@ -595,6 +596,42 @@ app.delete('/api/projects/:projectId/env/:id', requireAuth, async (req: AuthedRe
   try {
     await deleteProjectEnvVar(req.user!.id, req.params.projectId, req.params.id);
     res.json({ success: true });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
+// SecureCheck: dual-model (Claude + Gemini) security review of a project's
+// files. Visible to every user in the UI, but gated to Pro members here —
+// and even Pro members are charged from the same shared credit pool used by
+// /api/ai/generate, since running two premium models isn't free for us either.
+app.post('/api/projects/:projectId/security-check', requireAuth, async (req: AuthedRequest, res) => {
+  const userId = req.user!.id;
+  try {
+    const plan = await getUserPlan(userId);
+    if (plan !== 'paid') {
+      res.status(403).json({ success: false, error: 'SecureCheck is a Pro feature.', requiresPro: true });
+      return;
+    }
+
+    const { remaining } = await getCreditsRemaining(userId);
+    if (remaining < SECURITY_CHECK_CREDIT_COST) {
+      res.status(402).json({
+        success: false,
+        error: `SecureCheck costs ${SECURITY_CHECK_CREDIT_COST} credits — you have ${remaining} left this month.`,
+        requiresCredits: true,
+      });
+      return;
+    }
+
+    const credit = await consumeCredits(userId, SECURITY_CHECK_CREDIT_COST);
+    if (!credit.ok) {
+      res.status(402).json({ success: false, error: 'Not enough credits remaining.', requiresCredits: true });
+      return;
+    }
+
+    const result = await runSecurityCheck(userId, req.params.projectId);
+    res.json({ success: true, ...result, creditsRemaining: credit.remaining });
   } catch (error) {
     await handleFsError(res, error);
   }

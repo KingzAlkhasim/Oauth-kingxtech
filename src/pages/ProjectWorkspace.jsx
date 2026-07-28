@@ -10,6 +10,8 @@ import {
 } from '../lib/projectFiles';
 import { getProjectRepoLink, pushProjectToGithub, importRepoFromGithub } from '../lib/github';
 import { listProjectEnvVars, setProjectEnvVar, deleteProjectEnvVar } from '../lib/projectEnvVars';
+import { runSecurityCheck } from '../lib/securityCheck';
+import { getBillingProfile } from '../lib/billing';
 import CodeMirror from '@uiw/react-codemirror';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
@@ -41,6 +43,8 @@ import {
   ChevronDown,
   PanelLeft,
   PanelLeftClose,
+  Shield,
+  Lock,
 } from 'lucide-react';
 
 function Github({ size = 14 }) {
@@ -253,6 +257,31 @@ function SiteSettingsTab({ projectId }) {
   const [saving, setSaving] = useState(false);
   const [revealed, setRevealed] = useState({});
 
+  // SecureCheck: visible to everyone, usable only by Pro members (who also
+  // spend credits per run) — isPro is null while we don't know yet, so we
+  // don't flash a "Pro required" state before the real answer comes back.
+  const [isPro, setIsPro] = useState(null);
+  const [scRunning, setScRunning] = useState(false);
+  const [scError, setScError] = useState('');
+  const [scResult, setScResult] = useState(null);
+
+  useEffect(() => {
+    getBillingProfile().then(({ data }) => setIsPro(!!data?.is_pro_member));
+  }, []);
+
+  const runSecureCheck = async () => {
+    setScRunning(true);
+    setScError('');
+    try {
+      const result = await runSecurityCheck(projectId);
+      setScResult(result);
+    } catch (err) {
+      setScError(err.message);
+    } finally {
+      setScRunning(false);
+    }
+  };
+
   const refresh = useCallback(() => {
     listProjectEnvVars(projectId).then(setVars).catch((e) => setError(e.message));
   }, [projectId]);
@@ -322,6 +351,51 @@ function SiteSettingsTab({ projectId }) {
           Public
         </label>
         <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
+      </div>
+
+      <div className="mt-8 pt-6 border-t border-white/10">
+        <div className="flex items-center gap-2 mb-1">
+          <Shield size={15} className="text-kxblue" />
+          <h3 className="text-[14px] font-semibold">SecureCheck</h3>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-kxblue/15 text-kxblue font-sans">Pro</span>
+        </div>
+        <p className="text-[12.5px] text-kxmist mb-3">
+          A dual-model security review of this project's code — Claude and Gemini each review your files independently for secrets, missing auth checks, injection risks, and similar real issues. Costs 14 credits per run.
+        </p>
+
+        {isPro === false && (
+          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3.5 py-3 text-[12.5px] text-kxmist">
+            <Lock size={13} className="shrink-0" />
+            SecureCheck is available on the Pro plan.{' '}
+            <a href="/billing" className="text-kxblue hover:underline">Upgrade to run it</a>.
+          </div>
+        )}
+
+        {isPro === true && (
+          <>
+            <Button variant="glow" onClick={runSecureCheck} loading={scRunning}>
+              <Shield size={14} /> Run SecureCheck
+            </Button>
+
+            {scError && <p className="text-[12.5px] text-red-400 mt-3">{scError}</p>}
+
+            {scResult && (
+              <div className="mt-4 flex flex-col gap-4">
+                <p className="text-[11.5px] text-kxmist">
+                  Reviewed {scResult.filesReviewed} file(s) · {scResult.creditsRemaining} credits remaining
+                </p>
+                <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3.5">
+                  <p className="text-[12px] font-semibold text-kxblue mb-2">Claude's review</p>
+                  <pre className="text-[12px] whitespace-pre-wrap font-sans">{scResult.claude}</pre>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3.5">
+                  <p className="text-[12px] font-semibold text-kxblue mb-2">Gemini's review</p>
+                  <pre className="text-[12px] whitespace-pre-wrap font-sans">{scResult.gemini}</pre>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
