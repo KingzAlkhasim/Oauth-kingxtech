@@ -30,6 +30,28 @@ export async function initializePaystackCheckout() {
 }
 
 /**
+ * Same flow as initializePaystackCheckout, but for an arbitrary credit
+ * top-up amount instead of the fixed Pro Plan price — used by the Store
+ * page. The webhook tags this 'credit_topup' (not 'pro_plan'), so it credits
+ * the wallet without flipping is_pro_member.
+ */
+export async function initializePaystackTopup(amountUsd) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error('You must be signed in.');
+
+  const res = await fetch(`${API_BASE}/api/billing/paystack/topup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ amountUsd }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Failed to start checkout');
+  return data.authorization_url;
+}
+
+/**
  * The real credit-gate call — atomically deducts `cost` if there's enough
  * balance. Use this before any "premium" action. Mirrors an HTTP 402 gate
  * since this project has no Express server to put that middleware on.

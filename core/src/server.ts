@@ -260,6 +260,28 @@ app.post('/api/billing/paystack/initialize', requireAuth, async (req: AuthedRequ
   }
 });
 
+app.post('/api/billing/paystack/topup', requireAuth, async (req: AuthedRequest, res) => {
+  const email = req.user!.email;
+  const amountUsd = Number(req.body?.amountUsd);
+  if (!email) {
+    res.status(400).json({ success: false, error: 'Your account has no email on file.' });
+    return;
+  }
+  if (!Number.isFinite(amountUsd) || amountUsd < 5 || amountUsd > 500) {
+    res.status(400).json({ success: false, error: 'Choose a top-up amount between $5 and $500.' });
+    return;
+  }
+  try {
+    const { authorization_url } = await initializePaystackTransaction(req.user!.id, email, {
+      purpose: 'credit_topup',
+      amountUsd,
+    });
+    res.json({ success: true, authorization_url });
+  } catch (error: any) {
+    await reportError(res, 502, error.message || 'Failed to start checkout', error, 'Paystack top-up error:');
+  }
+});
+
 app.get('/api/ai/credits', requireAuth, async (req: AuthedRequest, res) => {
   try {
     const credits = await getCreditsRemaining(req.user!.id);

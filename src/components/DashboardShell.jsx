@@ -4,7 +4,7 @@ import Logo from './Logo';
 import CommandPalette from './CommandPalette';
 import { supabase } from '../lib/supabase';
 import useCurrentUser, { initials } from '../lib/useCurrentUser';
-import { LayoutDashboard, FolderKanban, Settings, Monitor, LogOut, Menu, X, Search, TerminalSquare, Activity as ActivityIcon, Wallet, Globe } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Settings, Monitor, LogOut, Menu, X, Search, TerminalSquare, Activity as ActivityIcon, Wallet, Globe, ShoppingBag } from 'lucide-react';
 import KXpertDrawer from './KXpertDrawer';
 
 const NAV = [
@@ -13,6 +13,7 @@ const NAV = [
   { to: '/console', label: 'Console', icon: TerminalSquare },
   { to: '/domains', label: 'Domains', icon: Globe },
   { to: '/billing', label: 'Billing', icon: Wallet },
+  { to: '/store', label: 'Store', icon: ShoppingBag },
   { to: '/activity', label: 'Activity', icon: ActivityIcon },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/sessions', label: 'Sessions', icon: Monitor },

@@ -61,8 +61,10 @@ async function reviewWithGemini(fileContext: string): Promise<string> {
 }
 
 export interface SecurityCheckResult {
-  claude: string;
-  gemini: string;
+  claude: string | null;
+  gemini: string | null;
+  claudeError: string | null;
+  geminiError: string | null;
   filesReviewed: number;
   generatedAt: string;
 }
@@ -71,15 +73,32 @@ export async function runSecurityCheck(userId: string, projectId: string): Promi
   const files = await listProjectFilesWithContent(userId, projectId);
   const fileContext = buildFileContext(files);
 
-  // Run both reviews concurrently — independent calls, no shared state.
-  const [claude, gemini] = await Promise.all([
+  // Each model's review is independent — if one fails (rate limit, no
+  // credit on that provider's account, transient outage, etc.) we still
+  // want to return whatever the other one produced, rather than failing
+  // the whole SecureCheck run and charging the user for nothing.
+  const [claudeSettled, geminiSettled] = await Promise.allSettled([
     reviewWithClaude(fileContext),
     reviewWithGemini(fileContext),
   ]);
 
+  const claude = claudeSettled.status === 'fulfilled' ? claudeSettled.value : null;
+  const gemini = geminiSettled.status === 'fulfilled' ? geminiSettled.value : null;
+  const claudeError = claudeSettled.status === 'rejected' ? String(claudeSettled.reason?.message ?? claudeSettled.reason) : null;
+  const geminiError = geminiSettled.status === 'rejected' ? String(geminiSettled.reason?.message ?? geminiSettled.reason) : null;
+
+  if (!claude && !gemini) {
+    // Both failed — this genuinely is a total failure, worth surfacing to
+    // Sentry via the route's normal error handling rather than returning a
+    // "successful" response with nothing in it.
+    throw new Error(`SecureCheck: both reviewers failed. Claude: ${claudeError}. Gemini: ${geminiError}`);
+  }
+
   return {
     claude,
     gemini,
+    claudeError,
+    geminiError,
     filesReviewed: files.filter((f) => f.content).length,
     generatedAt: new Date().toISOString(),
   };
