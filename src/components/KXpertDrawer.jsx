@@ -450,7 +450,9 @@ export default function KXpertDrawer() {
 
               {isLoading && (
                 <div className="self-start max-w-[90%] rounded-xl px-3.5 py-2.5 text-[13px] border border-white/10 bg-white/[0.02] text-kxmist">
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-kxpurple mb-1.5">{currentPhase}</p>
+                  <p className="text-[11px] font-mono uppercase tracking-wider mb-1.5 bg-gradient-to-r from-kxpurple via-white to-kxpurple bg-[length:200%_100%] bg-clip-text text-transparent animate-shimmer">
+                    {currentPhase}
+                  </p>
                   {liveSteps.length > 0 && (
                     <div className="space-y-1">
                       {liveSteps.map((s, i) => <StepLine key={i} step={s} />)}

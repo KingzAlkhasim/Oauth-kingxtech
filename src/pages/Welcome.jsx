@@ -15,13 +15,24 @@ export default function Welcome() {
   const [projects, setProjects] = useState(null);
   const [mfaEnabled, setMfaEnabled] = useState(null); // null = still checking
   const [dismissed, setDismissed] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     listProjects().then(({ data, error }) => setProjects(error ? [] : data.slice(0, 3)));
     supabase.auth.mfa.listFactors().then(({ data }) => {
       setMfaEnabled(!!data?.totp?.find((f) => f.status === 'verified'));
     });
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
+
+  const displayName = user?.user_metadata?.full_name || user?.user_metadata?.user_name || user?.email?.split('@')[0];
+  // last_sign_in_at sits within a couple seconds of created_at on the very
+  // first sign-in that follows account creation — a meaningful gap between
+  // them means this is a genuinely later, separate login.
+  const isReturning =
+    user?.last_sign_in_at &&
+    user?.created_at &&
+    new Date(user.last_sign_in_at).getTime() - new Date(user.created_at).getTime() > 2 * 60 * 1000;
 
   return (
     <DashboardShell>
@@ -37,9 +48,17 @@ export default function Welcome() {
         </div>
       )}
       <div className="animate-fade-up">
-        <span className="font-mono text-[11px] uppercase tracking-widest text-kxmist">Account created</span>
-        <h1 className="font-display text-3xl font-semibold mt-2 mb-2">Welcome to KingxTech.</h1>
-        <p className="text-kxmist max-w-lg">Your account is ready. Jump into a product, or finish setting up your developer profile.</p>
+        <span className="font-mono text-[11px] uppercase tracking-widest text-kxmist">
+          {isReturning ? 'Welcome back' : 'Account created'}
+        </span>
+        <h1 className="font-display text-3xl font-semibold mt-2 mb-2">
+          {isReturning ? `Welcome back${displayName ? `, ${displayName}` : ''}.` : 'Welcome to KingxTech.'}
+        </h1>
+        <p className="text-kxmist max-w-lg">
+          {isReturning
+            ? 'Good to see you again — jump back into a product, or check your projects below.'
+            : 'Your account is ready. Jump into a product, or finish setting up your developer profile.'}
+        </p>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-5 mt-10">

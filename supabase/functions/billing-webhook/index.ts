@@ -233,7 +233,12 @@ Deno.serve(async (req) => {
 
       if (userId) {
         const usd = await toUsd(amountLocal, currency);
-        const treatAsPro = usd >= PRO_PLAN_USD - PRO_PLAN_USD_TOLERANCE;
+        // 'purpose' is set explicitly by initializePaystackTransaction as of
+        // the Store's credit top-up feature. Older/pre-Store transactions
+        // never set it, so default to 'pro_plan' for backward compatibility
+        // with the fixed-amount flow that predates arbitrary top-ups.
+        const purpose = payload.data?.metadata?.purpose ?? 'pro_plan';
+        const treatAsPro = purpose === 'pro_plan';
         const record = await tryRecordEvent(eventId, 'paystack', userId, usd, payload.event);
         if (record.status === 'duplicate') {
           console.log('[billing-webhook] Duplicate event, skipping:', eventId);

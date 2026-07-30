@@ -58,6 +58,7 @@ const envSchema = z.object({
   QWEN_MODEL_ID: z.string().min(1).default('qwen/qwen3-coder:free'),
   LLAMA_MODEL_ID: z.string().min(1).default('meta-llama/llama-3.3-70b-instruct:free'),
   NEMOTRON_MODEL_ID: z.string().min(1).default('nvidia/nemotron-3-nano-30b-a3b:free'),
+  DEEPSEEK_MODEL_ID: z.string().min(1).default('deepseek/deepseek-chat-v3-0324:free'),
 
   // Gemma is served directly through Google's own Gemini API (confirmed via
   // Google's official changelog) — NOT through OpenRouter — using a
@@ -111,6 +112,7 @@ export function getSafeEnvSummary(): Record<string, unknown> {
     OPENWEIGHTS_PROVIDER: env.OPENWEIGHTS_PROVIDER,
     OPENWEIGHTS_BASE_URL: env.OPENWEIGHTS_BASE_URL,
     QWEN_MODEL_ID: env.QWEN_MODEL_ID,
+    DEEPSEEK_MODEL_ID: env.DEEPSEEK_MODEL_ID,
     GEMMA_MODEL_ID: env.GEMMA_MODEL_ID,
     ACME_ENABLED: env.ACME_ENABLED,
     ACME_CHALLENGE_TYPE: env.ACME_CHALLENGE_TYPE,
