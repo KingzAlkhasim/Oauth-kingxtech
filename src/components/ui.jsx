@@ -1,5 +1,71 @@
 import { useState } from 'react';
-import { Eye, EyeOff, Check } from 'lucide-react';
+import { Eye, EyeOff, Check, X } from 'lucide-react';
+
+/**
+ * Renders the first `preview` items via `renderItem`, then a "See more"
+ * button that opens a modal with the full list rendered the same way,
+ * grouped under a date heading per day. Used anywhere a real, potentially
+ * long history list (transactions, usage log, etc.) would otherwise dump
+ * every row straight into the page as one long unbroken column.
+ */
+export function ExpandableList({ items, renderItem, preview = 3, emptyLabel = 'Nothing here yet.', title = 'Full history' }) {
+  const [open, setOpen] = useState(false);
+
+  if (!items || items.length === 0) {
+    return <p className="text-[13px] text-kxmist">{emptyLabel}</p>;
+  }
+
+  const grouped = groupByDay(items);
+
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        {items.slice(0, preview).map((item, i) => renderItem(item, i))}
+      </div>
+
+      {items.length > preview && (
+        <button
+          onClick={() => setOpen(true)}
+          className="mt-3 text-[12.5px] text-kxblue hover:underline"
+        >
+          See more ({items.length - preview} more)
+        </button>
+      )}
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
+          <div className="relative w-full sm:max-w-lg max-h-[85vh] bg-kxsurface border border-white/10 rounded-t-2xl sm:rounded-2xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/8 shrink-0">
+              <h3 className="font-display text-[15px] font-medium">{title}</h3>
+              <button onClick={() => setOpen(false)} className="text-kxmist hover:text-white"><X size={16} /></button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4">
+              {Object.entries(grouped).map(([day, dayItems]) => (
+                <div key={day} className="mb-4 last:mb-0">
+                  <p className="text-[11px] font-mono uppercase tracking-wider text-kxmist mb-2">{day}</p>
+                  <div className="flex flex-col gap-2">
+                    {dayItems.map((item, i) => renderItem(item, i))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function groupByDay(items) {
+  const groups = {};
+  for (const item of items) {
+    const date = item.created_at || item.processed_at;
+    const day = date ? new Date(date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : 'Undated';
+    (groups[day] ??= []).push(item);
+  }
+  return groups;
+}
 
 export function Button({ children, variant = 'primary', className = '', loading = false, ...props }) {
   const base = 'inline-flex items-center justify-center gap-2 rounded-full font-semibold text-sm px-5 py-2.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed';

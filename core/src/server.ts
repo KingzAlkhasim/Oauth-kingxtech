@@ -10,7 +10,7 @@ import { generateContent } from './services/aiRouter';
 import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './services/chatHistory';
 import { touchSession, listSessions, deleteSession } from './services/sessions';
 import { parseModelTag, listModelsForClient, tagForModel } from './services/modelRegistry';
-import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan } from './services/credits';
+import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
 import { executeTerminalCommand } from './services/commandExecutor';
 import { initializePaystackTransaction } from './services/paystackCheckout';
@@ -133,9 +133,26 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
 
   // Credit gate happens BEFORE we switch to streaming mode, so failures here
   // are still plain JSON responses with normal status codes.
+  //
+  // Direct API key usage (req.authMethod === 'api_key') is billed differently
+  // from the in-app K-XpertAI chat: it charges the wallet directly in real
+  // dollars via chargeUserByApiKey, logged in usage_log (Console → AI Lab →
+  // "API key usage") — completely separate from the free monthly credit pool
+  // a logged-in session draws from. USD_PER_CREDIT keeps the two systems
+  // priced consistently: a model costing N credits costs N * $0.01 via API key.
+  const USD_PER_CREDIT = 0.01;
   let credit;
   try {
-    credit = await consumeCredits(userId, model.creditCost);
+    if (req.authMethod === 'api_key') {
+      const charge = await chargeUserByApiKey(userId, model.creditCost * USD_PER_CREDIT);
+      if (!charge.allowed) {
+        res.status(402).json({ success: false, error: `Insufficient wallet balance — need $${(model.creditCost * USD_PER_CREDIT).toFixed(2)}, have $${charge.balance.toFixed(2)}.` });
+        return;
+      }
+      credit = { ok: true, remaining: 0 }; // not meaningful for API-key billing; kept for shared code below
+    } else {
+      credit = await consumeCredits(userId, model.creditCost);
+    }
   } catch (error) {
     await reportError(res, 500, 'Failed to check credits', error, 'Credit check error:');
     return;
@@ -194,7 +211,9 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     await touchSession(userId, sessionId, projectId || undefined, cleanPrompt);
     await saveMessageToDb(userId, sessionId, { role: 'user', text: cleanPrompt });
     await saveMessageToDb(userId, sessionId, { role: 'model', text: aiResponse.text });
-    await logUsage(userId, model.provider, model.code, model.creditCost, projectId || undefined);
+    if (req.authMethod !== 'api_key') {
+      await logUsage(userId, model.provider, model.code, model.creditCost, projectId || undefined);
+    }
 
     const changes = projectId ? await getTurnChanges(userId, projectId, turnId) : [];
 
@@ -279,6 +298,24 @@ app.post('/api/billing/paystack/topup', requireAuth, async (req: AuthedRequest, 
     res.json({ success: true, authorization_url });
   } catch (error: any) {
     await reportError(res, 502, error.message || 'Failed to start checkout', error, 'Paystack top-up error:');
+  }
+});
+
+app.post('/api/billing/convert-to-credits', requireAuth, async (req: AuthedRequest, res) => {
+  const usdAmount = Number(req.body?.usdAmount);
+  if (!Number.isFinite(usdAmount) || usdAmount <= 0) {
+    res.status(400).json({ success: false, error: 'usdAmount must be a positive number.' });
+    return;
+  }
+  try {
+    const result = await convertWalletToCredits(req.user!.id, usdAmount);
+    if (!result.ok) {
+      res.status(402).json({ success: false, error: `Insufficient wallet balance — need $${usdAmount.toFixed(2)}.` });
+      return;
+    }
+    res.json({ success: true, walletBalance: result.walletBalance, purchasedCredits: result.purchasedCredits });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to convert wallet balance to credits', error, 'Convert-to-credits error:');
   }
 });
 

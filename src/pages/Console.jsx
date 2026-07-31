@@ -4,7 +4,7 @@ import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import useCurrentUser from '../lib/useCurrentUser';
 import { supabase } from '../lib/supabase';
-import { Card, Button, Input, Badge } from '../components/ui';
+import { Card, Button, Input, Badge, ExpandableList } from '../components/ui';
 import { listApiKeys, createApiKey, revokeApiKey, deleteApiKey } from '../lib/apiKeys';
 import { listWebhooks, createWebhook, toggleWebhook, deleteWebhook, WEBHOOK_EVENTS } from '../lib/webhooks';
 import { listTickets, createTicket, TICKET_CATEGORIES } from '../lib/tickets';
@@ -251,7 +251,7 @@ function KxpertCreditsTab() {
 
   useEffect(() => {
     getCredits().then(setCredits).catch((e) => setError(e.message));
-    getUsageLog(20).then(setLog).catch(() => {});
+    getUsageLog(100).then(setLog).catch(() => {});
   }, []);
 
   const used = credits ? credits.allowance - credits.remaining : 0;
@@ -278,17 +278,19 @@ function KxpertCreditsTab() {
         </>
       )}
 
-      {log !== null && log.length === 0 && <p className="text-[13px] text-kxmist">No K-XpertAI usage recorded yet.</p>}
-      {log !== null && log.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {log.map((entry) => (
+      {log !== null && (
+        <ExpandableList
+          items={log}
+          emptyLabel="No K-XpertAI usage recorded yet."
+          title="K-XpertAI usage — full history"
+          renderItem={(entry) => (
             <div key={entry.id} className="flex items-center justify-between text-[13px] text-kxmist border-b border-white/6 py-2 last:border-0">
               <span>{new Date(entry.created_at).toLocaleString()}</span>
               <span className="capitalize">{entry.provider} · {entry.model_code}</span>
               <span className="font-mono">{entry.credit_cost} credit{entry.credit_cost !== 1 ? 's' : ''}</span>
             </div>
-          ))}
-        </div>
+          )}
+        />
       )}
     </Section>
   );
@@ -304,12 +306,12 @@ function UsageTab() {
       if (e) { setError(/relation .*usage_log.* does not exist/i.test(e.message) ? 'SETUP' : e.message); return; }
       setTotal({ total, count });
     });
-    listUsage(10).then(({ data, error: e }) => { if (!e) setEntries(data); });
+    listUsage(100).then(({ data, error: e }) => { if (!e) setEntries(data); });
   }, []);
 
   if (error === 'SETUP') {
     return (
-      <Section title="Usage" unavailable>
+      <Section title="API key usage" unavailable>
         <p className="text-[13px] text-kxmist">
           Run <code className="text-white font-mono">supabase/migrations/012_usage_log.sql</code> in your Supabase SQL Editor to enable this.
         </p>
@@ -318,7 +320,7 @@ function UsageTab() {
   }
 
   return (
-    <Section title="Usage" desc="Real spend from actual charge_user() calls. A fresh account shows zero — there's nothing to fabricate until something real happens.">
+    <Section title="API key usage" desc="Real dollar spend from your own API keys calling KingxTech directly — separate from K-XpertAI's in-app credit allowance above. Deducted straight from your wallet balance, per call.">
       <Notice error={error && error !== 'SETUP' ? error : ''} />
       <div className="flex items-center gap-8 mb-5">
         <div>
@@ -330,16 +332,18 @@ function UsageTab() {
           <p className="font-display text-xl font-semibold">{total?.count ?? 0}</p>
         </div>
       </div>
-      {entries !== null && entries.length === 0 && <p className="text-[13px] text-kxmist">No usage recorded yet.</p>}
-      {entries !== null && entries.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {entries.map((e) => (
+      {entries !== null && (
+        <ExpandableList
+          items={entries}
+          emptyLabel="No usage recorded yet."
+          title="API usage — full history"
+          renderItem={(e) => (
             <div key={e.id} className="flex items-center justify-between text-[13px] text-kxmist border-b border-white/6 py-2 last:border-0">
               <span>{new Date(e.created_at).toLocaleString()}</span>
               <span className="font-mono">${Number(e.cost).toFixed(2)}</span>
             </div>
-          ))}
-        </div>
+          )}
+        />
       )}
     </Section>
   );

@@ -15,7 +15,7 @@ export async function getCredits() {
   const res = await fetch(`${API_BASE}/api/ai/credits`, { headers });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to fetch credits');
-  return { remaining: data.remaining, allowance: data.allowance };
+  return { remaining: data.remaining, allowance: data.allowance, purchased: data.purchased };
 }
 
 export async function getUsageLog(limit = 30) {
