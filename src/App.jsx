@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
 import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
@@ -15,7 +15,6 @@ import Console from './pages/Console';
 import Activity from './pages/Activity';
 import Confirmed from './pages/Confirmed';
 import Billing from './pages/Billing';
-import Store from './pages/Store';
 import Domains from './pages/Domains';
 
 export default function App() {
@@ -38,7 +37,7 @@ export default function App() {
         <Route path="/activity" element={<Activity />} />
         <Route path="/confirmed" element={<Confirmed />} />
         <Route path="/billing" element={<Billing />} />
-        <Route path="/store" element={<Store />} />
+        <Route path="/store" element={<Navigate to="/billing" replace />} />
         <Route path="/domains" element={<Domains />} />
       </Routes>
     </BrowserRouter>

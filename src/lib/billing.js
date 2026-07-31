@@ -52,6 +52,28 @@ export async function initializePaystackTopup(amountUsd) {
 }
 
 /**
+ * Converts wallet USD balance directly into AI credits (no external
+ * checkout — this just moves a balance within the account). Returns the
+ * updated wallet balance and purchased-credit total so the caller can
+ * refresh its display without a second round-trip.
+ */
+export async function convertToCredits(usdAmount) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new Error('You must be signed in.');
+
+  const res = await fetch(`${API_BASE}/api/billing/convert-to-credits`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ usdAmount }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Failed to convert to credits');
+  return data;
+}
+
+/**
  * The real credit-gate call — atomically deducts `cost` if there's enough
  * balance. Use this before any "premium" action. Mirrors an HTTP 402 gate
  * since this project has no Express server to put that middleware on.
