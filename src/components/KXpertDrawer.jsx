@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getBillingProfile } from '../lib/billing';
 import { supabase } from '../lib/supabase';
 import {
@@ -57,6 +59,83 @@ function StepLine({ step }) {
     <div className={`flex items-center gap-1.5 text-[11.5px] ${step.status === 'error' ? 'text-red-400' : 'text-kxmist'}`}>
       <Icon size={11} className="shrink-0" />
       <span className="truncate">{step.summary}</span>
+    </div>
+  );
+}
+
+// Renders assistant text as markdown (bold, headers, lists, links, fenced
+// code blocks, tables, etc). Kept intentionally lightweight — no syntax
+// highlighter dependency — but styled to fit the drawer's dark theme.
+function MarkdownMessage({ text }) {
+  return (
+    <div className="kxpert-md text-[13px] leading-relaxed">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="mb-2 last:mb-0 whitespace-pre-wrap">{children}</p>,
+          strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-kxpurple underline underline-offset-2 hover:text-kxpurple/80"
+            >
+              {children}
+            </a>
+          ),
+          h1: ({ children }) => <h1 className="text-[14.5px] font-semibold text-white mt-3 mb-1.5 first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-[14px] font-semibold text-white mt-3 mb-1.5 first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-[13.5px] font-semibold text-white mt-2.5 mb-1 first:mt-0">{children}</h3>,
+          ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5 last:mb-0">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5 last:mb-0">{children}</ol>,
+          li: ({ children }) => <li className="marker:text-kxmist/60">{children}</li>,
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-kxpurple/40 pl-2.5 my-2 text-kxmist/90 italic">
+              {children}
+            </blockquote>
+          ),
+          hr: () => <hr className="my-3 border-white/10" />,
+          table: ({ children }) => (
+            <div className="overflow-x-auto my-2">
+              <table className="min-w-full text-[12px] border-collapse">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="border border-white/10 bg-white/[0.04] px-2 py-1 text-left font-semibold text-white">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => <td className="border border-white/10 px-2 py-1 align-top">{children}</td>,
+          code: ({ inline, className, children, ...props }) => {
+            const match = /language-(\w+)/.exec(className || '');
+            if (inline) {
+              return (
+                <code className="rounded bg-black/40 border border-white/10 px-1 py-[1px] font-mono text-[12px] text-green-300" {...props}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <div className="my-2 rounded-lg border border-kxpurple/30 bg-black overflow-hidden">
+                {match && (
+                  <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-kxmist/60 border-b border-white/10">
+                    {match[1]}
+                  </div>
+                )}
+                <pre className="px-3 py-2 overflow-x-auto">
+                  <code className="font-mono text-[12px] text-green-400 leading-relaxed" {...props}>
+                    {children}
+                  </code>
+                </pre>
+              </div>
+            );
+          },
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
 }
@@ -414,7 +493,11 @@ export default function KXpertDrawer() {
                     </div>
                   )}
 
-                  {m.text}
+                  {m.role === 'user' || m.type === 'tool' ? (
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+                  ) : (
+                    <MarkdownMessage text={m.text} />
+                  )}
 
                   {m.model && <div className="mt-1.5 text-[10px] opacity-40">{m.model.label}</div>}
 
