@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "express",
+  "functions": {
+    "src/server.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    }
+  }
+}
