@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-
-const API_BASE = 'https://kx-neurocore-1066169621814.us-central1.run.app';
+import { apiUrl } from './apiBase';
 
 async function authHeaders(json = true) {
   const {
@@ -14,27 +13,27 @@ async function authHeaders(json = true) {
 
 export async function listFiles(projectId) {
   const headers = await authHeaders(false);
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/files`, { headers });
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/files`), { headers });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to list files');
-  return data.files; // [{ path, is_folder, updated_at }]
+  return data.files;
 }
 
 export async function readFile(projectId, path) {
   const headers = await authHeaders(false);
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`,
+    apiUrl(`/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`),
     { headers }
   );
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to read file');
-  return data.file; // { path, is_folder, content, updated_at }
+  return data.file;
 }
 
 export async function writeFile(projectId, path, content) {
   const headers = await authHeaders(true);
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`,
+    apiUrl(`/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`),
     { method: 'PUT', headers, body: JSON.stringify({ content }) }
   );
   const data = await res.json();
@@ -43,7 +42,7 @@ export async function writeFile(projectId, path, content) {
 
 export async function createFolder(projectId, path) {
   const headers = await authHeaders(true);
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/folder`, {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/folder`), {
     method: 'POST',
     headers,
     body: JSON.stringify({ path }),
@@ -55,7 +54,7 @@ export async function createFolder(projectId, path) {
 export async function deleteFile(projectId, path) {
   const headers = await authHeaders(false);
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`,
+    apiUrl(`/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`),
     { method: 'DELETE', headers }
   );
   const data = await res.json();
@@ -65,7 +64,7 @@ export async function deleteFile(projectId, path) {
 export async function revertFile(projectId, path) {
   const headers = await authHeaders(false);
   const res = await fetch(
-    `${API_BASE}/api/projects/${projectId}/file/revert?path=${encodeURIComponent(path)}`,
+    apiUrl(`/api/projects/${projectId}/file/revert?path=${encodeURIComponent(path)}`),
     { method: 'POST', headers }
   );
   const data = await res.json();
@@ -73,24 +72,24 @@ export async function revertFile(projectId, path) {
 }
 
 export function previewUrl(projectId) {
-  return `${API_BASE}/preview/${projectId}/`;
+  return apiUrl(`/preview/${projectId}/`);
 }
 
 export async function publishProject(projectId) {
   const headers = await authHeaders(true);
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/publish`, {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/publish`), {
     method: 'POST',
     headers,
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to publish project');
-  const url = data.url.startsWith('http') ? data.url : `${API_BASE}${data.url}`;
+  const url = data.url.startsWith('http') ? data.url : apiUrl(data.url);
   return { slug: data.slug, url };
 }
 
 export async function runTerminalCommand(projectId, command, args = []) {
   const headers = await authHeaders(true);
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/terminal`, {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/terminal`), {
     method: 'POST',
     headers,
     body: JSON.stringify({ command, args }),
