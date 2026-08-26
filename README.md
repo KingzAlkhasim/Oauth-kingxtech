@@ -1,16 +1,50 @@
-# React + Vite
+# KingxTech / K-XpertAI
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+KingxTech is an AI-powered development workspace built around K-XpertAI / KX-NeuroCore. The repository contains the React/Vite application and the Node/Express AI backend used by the workspace.
 
-Currently, two official plugins are available:
+## Agent-native WebMCP support
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+KingxTech now includes a progressive WebMCP integration. When a WebMCP-capable browser exposes `document.modelContext`, the app registers structured tools for the current project workspace:
 
-## React Compiler
+- `open_project_workspace`
+- `get_workspace_context`
+- `list_project_files`
+- `read_project_file`
+- `write_project_file`
+- `preview_project`
+- `publish_project`
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Read-only tools are annotated as such. File writes and publishing keep the human in the loop and require confirmation when the WebMCP client exposes `requestUserInteraction()`.
 
-## Expanding the Oxlint configuration
+WebMCP is experimental. For local Chrome testing, enable `chrome://flags/#enable-webmcp-testing`. See the official WebMCP documentation for current availability and origin-trial requirements.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Vercel backend failover
+
+The frontend no longer needs to hard-code the Cloud Run API origin. Set `VITE_API_BASE_URL` to the URL of the Vercel-hosted KX-NeuroCore backend.
+
+The backend remains the same Express application in `core/`, and can be deployed as a separate Vercel project with **Root Directory = `core`**. Its provider credentials and server-side secrets must be configured as Vercel environment variables; never put API keys in the frontend or Git repository.
+
+Required backend secrets include the existing KX-NeuroCore environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENWEIGHTS_API_KEY` when used, Supabase credentials, and payment credentials.
+
+For production, configure `ALLOWED_ORIGINS` on the backend to include the KingxTech frontend origin(s).
+
+## Development
+
+Frontend:
+
+```bash
+npm install
+npm run dev
+```
+
+Backend:
+
+```bash
+cd core
+npm install
+npm run dev
+```
+
+## License
+
+MIT. See `LICENSE`.
