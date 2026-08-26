@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-
-const API_BASE = 'https://kx-neurocore-1066169621814.us-central1.run.app';
+import { apiUrl } from './apiBase';
 
 export async function getBillingProfile() {
   const { data: userData } = await supabase.auth.getUser();
@@ -8,19 +7,13 @@ export async function getBillingProfile() {
   return supabase.from('billing_profile').select('*').eq('user_id', userData.user.id).single();
 }
 
-/**
- * Starts a real Paystack transaction (server-side, with your account's
- * user_id attached as metadata) and returns the URL to redirect the browser
- * to. Crediting happens separately, via the billing-webhook Edge Function,
- * once Paystack confirms the payment.
- */
 export async function initializePaystackCheckout() {
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) throw new Error('You must be signed in.');
 
-  const res = await fetch(`${API_BASE}/api/billing/paystack/initialize`, {
+  const res = await fetch(apiUrl('/api/billing/paystack/initialize'), {
     method: 'POST',
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
@@ -29,19 +22,13 @@ export async function initializePaystackCheckout() {
   return data.authorization_url;
 }
 
-/**
- * Same flow as initializePaystackCheckout, but for an arbitrary credit
- * top-up amount instead of the fixed Pro Plan price — used by the Store
- * page. The webhook tags this 'credit_topup' (not 'pro_plan'), so it credits
- * the wallet without flipping is_pro_member.
- */
 export async function initializePaystackTopup(amountUsd) {
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) throw new Error('You must be signed in.');
 
-  const res = await fetch(`${API_BASE}/api/billing/paystack/topup`, {
+  const res = await fetch(apiUrl('/api/billing/paystack/topup'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
     body: JSON.stringify({ amountUsd }),
@@ -51,19 +38,13 @@ export async function initializePaystackTopup(amountUsd) {
   return data.authorization_url;
 }
 
-/**
- * Converts wallet USD balance directly into AI credits (no external
- * checkout — this just moves a balance within the account). Returns the
- * updated wallet balance and purchased-credit total so the caller can
- * refresh its display without a second round-trip.
- */
 export async function convertToCredits(usdAmount) {
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) throw new Error('You must be signed in.');
 
-  const res = await fetch(`${API_BASE}/api/billing/convert-to-credits`, {
+  const res = await fetch(apiUrl('/api/billing/convert-to-credits'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
     body: JSON.stringify({ usdAmount }),
@@ -73,21 +54,10 @@ export async function convertToCredits(usdAmount) {
   return data;
 }
 
-/**
- * The real credit-gate call — atomically deducts `cost` if there's enough
- * balance. Use this before any "premium" action. Mirrors an HTTP 402 gate
- * since this project has no Express server to put that middleware on.
- */
 export async function chargeUser(cost) {
   return supabase.rpc('charge_user', { cost });
 }
 
-/**
- * Hosted checkout links. These are genuinely functional IF you configure
- * real product URLs from your payment gateway dashboards — set them as
- * Vite env vars. Left blank, the Billing page shows "not configured"
- * instead of a dead or fake button.
- */
 export const CHECKOUT_LINKS = {
   lemonsqueezy: import.meta.env.VITE_LEMONSQUEEZY_CHECKOUT_URL || null,
   paystack: import.meta.env.VITE_PAYSTACK_CHECKOUT_URL || null,
