@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-
-const API_BASE = 'https://kx-neurocore-1066169621814.us-central1.run.app';
+import { apiUrl } from './apiBase';
 
 async function authHeaders() {
   const {
@@ -12,7 +11,7 @@ async function authHeaders() {
 
 export async function getCredits() {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/api/ai/credits`, { headers });
+  const res = await fetch(apiUrl('/api/ai/credits'), { headers });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to fetch credits');
   return { remaining: data.remaining, allowance: data.allowance, purchased: data.purchased };
@@ -20,8 +19,8 @@ export async function getCredits() {
 
 export async function getUsageLog(limit = 30) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/api/ai/usage?limit=${limit}`, { headers });
+  const res = await fetch(apiUrl(`/api/ai/usage?limit=${limit}`), { headers });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to fetch usage log');
-  return data.log; // [{ id, provider, model_code, credit_cost, project_id, created_at }]
+  return data.log;
 }
