@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-
-const API_BASE = 'https://kx-neurocore-1066169621814.us-central1.run.app';
+import { apiUrl } from './apiBase';
 
 async function authHeaders() {
   const {
@@ -10,12 +9,9 @@ async function authHeaders() {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
 }
 
-// Throws with `.requiresPro` or `.requiresCredits` set on the error object so
-// the UI can distinguish "you're not Pro" from "you're out of credits" from
-// any other real failure, and show the right message/CTA for each.
 export async function runSecurityCheck(projectId) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/security-check`, {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/security-check`), {
     method: 'POST',
     headers,
   });
@@ -26,5 +22,5 @@ export async function runSecurityCheck(projectId) {
     err.requiresCredits = !!data.requiresCredits;
     throw err;
   }
-  return data; // { claude, gemini, filesReviewed, generatedAt, creditsRemaining }
+  return data;
 }
