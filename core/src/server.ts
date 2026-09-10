@@ -815,7 +815,17 @@ app.get(/^\/site\/([^/]+)\/?(.*)$/, async (req, res) => {
   }
 });
 
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
+const healthResponse = (_req: express.Request, res: express.Response) =>
+  res.json({ ok: true, service: 'kx-neurocore' });
+
+app.get('/', (_req, res) =>
+  res.json({
+    ok: true,
+    service: 'kx-neurocore',
+    message: 'KX-NeuroCore API is running',
+  }),
+);
+app.get(['/health', '/healthz'], healthResponse);
 
 const PORT = env.PORT;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
