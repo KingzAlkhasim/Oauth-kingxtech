@@ -48,3 +48,6 @@ npm run dev
 ## License
 
 MIT. See `LICENSE`.
+
+
+Deployment health check: /health
