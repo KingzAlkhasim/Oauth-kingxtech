@@ -822,9 +822,8 @@ app.get(/^\/site\/([^/]+)\/?(.*)$/, async (req, res) => {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-export default app;
+export = app;
 
-// Vercel runs the exported Express app as a serverless function.
 // Keep app.listen only for local/Cloud Run execution.
 if (!process.env.VERCEL) {
   const PORT = env.PORT;
