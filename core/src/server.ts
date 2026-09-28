@@ -49,6 +49,10 @@ app.use(cors({ origin: env.ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
 // Lightweight deployment/uptime check.
+app.get('/', (_req, res) => {
+  res.status(200).json({ ok: true, service: 'KX-Neurocore', status: 'online' });
+});
+
 app.get('/health', (_req, res) => {
   res.status(200).json({ ok: true, service: 'KX-Neurocore' });
 });
