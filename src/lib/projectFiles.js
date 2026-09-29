@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { apiUrl } from './apiBase';
+import { apiUrl, siteUrl } from './apiBase';
 
 async function authHeaders(json = true) {
   const {
@@ -72,7 +72,7 @@ export async function revertFile(projectId, path) {
 }
 
 export function previewUrl(projectId) {
-  return apiUrl(`/preview/${projectId}/`);
+  return siteUrl(`/preview/${projectId}/`);
 }
 
 export async function publishProject(projectId) {
