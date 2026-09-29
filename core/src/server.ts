@@ -808,6 +808,28 @@ app.get(/^\/preview\/([^/]+)\/?(.*)$/, async (req, res) => {
   }
 });
 
+// Clean published-site URLs on the custom site host:
+// https://site.kingxtech.name.ng/<slug>/
+// The hostname is checked explicitly so normal API routes on NeuroCore
+// are never interpreted as site slugs.
+app.get(/^\/([^/]+)\/?(.*)$/, async (req, res, next) => {
+  if (req.hostname !== 'site.kingxtech.name.ng') return next();
+  try {
+    const slug = req.params[0];
+    const projectId = await getProjectIdBySlug(slug);
+    if (!projectId) {
+      res.status(404).type('text/plain').send('No published site found at this address.');
+      return;
+    }
+    await servePreview(res, projectId, req.params[1]);
+  } catch (error) {
+    console.error('Custom site route error:', error);
+    Sentry.captureException(error, { tags: { route: 'custom-site' } });
+    await Sentry.flush(2000).catch(() => {});
+    res.status(500).type('text/plain').send('Site failed to load.');
+  }
+});
+
 app.get(/^\/site\/([^/]+)\/?(.*)$/, async (req, res) => {
   try {
     const projectId = await getProjectIdBySlug(req.params[0]);
