@@ -31,10 +31,20 @@ export const generateContent = async (
     // limit, invalid ID, transient provider error) — before giving up, so
     // one bad or busy model never takes down the whole free tier.
     const freeModels = REGISTRY.filter((m) => m.provider === 'openweights');
+    // OpenRouter's individual :free model slugs are frequently retired or
+    // renamed. The stable free router automatically selects a currently
+    // available free model and filters for tool-calling support.
+    const FREE_ROUTER_MODEL_ID = 'openrouter/free';
     const ordered = [
       freeModels.find((m) => m.modelId === modelId),
       ...freeModels.filter((m) => m.modelId !== modelId),
-    ].filter((m): m is (typeof freeModels)[number] => !!m);
+    ]
+      .filter((m): m is (typeof freeModels)[number] => !!m)
+      .map((m) => ({
+        ...m,
+        modelId: m.modelId.endsWith(':free') ? FREE_ROUTER_MODEL_ID : m.modelId,
+      }))
+      .filter((m, i, arr) => arr.findIndex((x) => x.modelId === m.modelId) === i);
 
     let lastErr: any;
     let succeeded = false;
