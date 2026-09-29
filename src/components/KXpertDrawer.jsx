@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getBillingProfile } from '../lib/billing';
+import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
@@ -44,7 +45,6 @@ const PHASE_LABELS = {
   deleteProjectFile: 'Cleaning up',
 };
 
-const API_BASE = 'https://kx-neurocore-1066169621814.us-central1.run.app';
 const SESSION_KEY = 'kxpert_session_id';
 
 function newSessionId() {
