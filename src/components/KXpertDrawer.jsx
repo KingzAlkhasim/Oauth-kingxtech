@@ -265,7 +265,7 @@ export default function KXpertDrawer() {
         body: JSON.stringify({
           prompt: promptToSend,
           sessionId,
-          projectId: mode === 'plan' ? undefined : activeProjectId,
+          projectId: activeProjectId,
         }),
       });
 
