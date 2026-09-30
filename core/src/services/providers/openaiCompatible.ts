@@ -30,7 +30,12 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
     let iterations = 0;
 
     while (iterations < 8) {
-      const completion = await client.chat.completions.create({ model: modelId, messages, tools: openaiTools });
+      const completion = await client.chat.completions.create({
+        model: modelId,
+        messages,
+        tools: openaiTools,
+        ...(modelId === 'gpt-6-sol' || modelId === 'gpt-6-luna' ? { reasoning_effort: 'none' } : {}),
+      });
       const msg = completion.choices[0].message;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
