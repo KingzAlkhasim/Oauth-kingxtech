@@ -9,7 +9,7 @@ import { env } from './config/env';
 import { generateContent } from './services/aiRouter';
 import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './services/chatHistory';
 import { touchSession, listSessions, deleteSession } from './services/sessions';
-import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi, FREE_MODEL } from './services/modelRegistry';
+import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi } from './services/modelRegistry';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
 import { executeTerminalCommand } from './services/commandExecutor';
@@ -96,7 +96,7 @@ app.get('/api/v1/models', requireAuth, (_req, res) => {
 });
 
 app.post('/api/v1/chat/completions', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
-  const { model: modelName, messages, stream = false, temperature } = req.body ?? {};
+  const { model: modelName, messages, stream = false } = req.body ?? {};
   const userId = req.user!.id;
 
   if (!modelName || typeof modelName !== 'string') {
