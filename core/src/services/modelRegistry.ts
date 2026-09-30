@@ -36,15 +36,25 @@ export const REGISTRY: ModelOption[] = [
 
   // Everything below requires a paid plan — either it costs KingxTech real
   // money per call (Gemini), or it's a premium third-party model.
-  { code: 'flash', provider: 'gemini', modelId: 'gemini-3.5-flash', tier: 'limited', creditCost: 5, requestCap: 5, requiresPaidPlan: true, label: 'Gemini 3.5 Flash' },
+  { code: 'flash', provider: 'gemini', modelId: 'gemini-3.8-flash', tier: 'limited', creditCost: 5, requestCap: 5, requiresPaidPlan: true, label: 'Gemini 3.8 Flash' },
+  { code: 'flash37', provider: 'gemini', modelId: 'gemini-3.7-flash', tier: 'limited', creditCost: 5, requestCap: 5, requiresPaidPlan: true, label: 'Gemini 3.7 Flash' },
+  { code: 'flashlite', provider: 'gemini', modelId: 'gemini-3.5-flash-lite', tier: 'limited', creditCost: 3, requestCap: 10, requiresPaidPlan: true, label: 'Gemini 3.5 Flash-Lite' },
   { code: 'pro', provider: 'gemini', modelId: 'gemini-3.1-pro-preview', tier: 'premium', creditCost: 13, requiresPaidPlan: true, label: 'Gemini 3.1 Pro' },
-  { code: 'sonnet', provider: 'anthropic', modelId: 'claude-sonnet-5', tier: 'premium', creditCost: 17, requiresPaidPlan: true, label: 'Claude Sonnet 5' },
-  { code: 'opus', provider: 'anthropic', modelId: 'claude-opus-4-8', tier: 'premium', creditCost: 20, requiresPaidPlan: true, label: 'Claude Opus 5' },
+  { code: 'sonnet', provider: 'anthropic', modelId: 'claude-sonnet-5-5', tier: 'premium', creditCost: 17, requiresPaidPlan: true, label: 'Claude Sonnet 5.5' },
+  { code: 'opus', provider: 'anthropic', modelId: 'claude-opus-5-5', tier: 'premium', creditCost: 25, requiresPaidPlan: true, label: 'Claude Opus 5.5' },
   { code: 'haiku', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', tier: 'premium', creditCost: 3, requiresPaidPlan: true, label: 'Claude Haiku 4.5' },
-  { code: 'fable', provider: 'anthropic', modelId: 'claude-fable-5', tier: 'premium', creditCost: 40, requiresPaidPlan: true, label: 'Claude Fable 5' },
+  { code: 'fable', provider: 'anthropic', modelId: 'claude-fable-5-1', tier: 'premium', creditCost: 40, requiresPaidPlan: true, label: 'Claude Fable 5.1' },
+  { code: 'sonnet5', provider: 'anthropic', modelId: 'claude-sonnet-5', tier: 'premium', creditCost: 17, requiresPaidPlan: true, label: 'Claude Sonnet 5' },
+  { code: 'opus5', provider: 'anthropic', modelId: 'claude-opus-5', tier: 'premium', creditCost: 22, requiresPaidPlan: true, label: 'Claude Opus 5' },
   { code: 'sol', provider: 'openai', modelId: 'gpt-5.6-sol', tier: 'premium', creditCost: 25, requiresPaidPlan: true, label: 'GPT-5.6 Sol' },
   { code: 'terra', provider: 'openai', modelId: 'gpt-5.6-terra', tier: 'premium', creditCost: 15, requiresPaidPlan: true, label: 'GPT-5.6 Terra' },
   { code: 'luna', provider: 'openai', modelId: 'gpt-5.6-luna', tier: 'premium', creditCost: 12, requiresPaidPlan: true, label: 'GPT-5.6 Luna' },
+  { code: 'gpt6sol', provider: 'openai', modelId: 'gpt-6-sol', tier: 'premium', creditCost: 30, requiresPaidPlan: true, label: 'GPT-6 Sol' },
+  { code: 'gpt6luna', provider: 'openai', modelId: 'gpt-6-luna', tier: 'premium', creditCost: 8, requiresPaidPlan: true, label: 'GPT-6 Luna' },
+  { code: 'gpt55', provider: 'openai', modelId: 'gpt-5.5', tier: 'premium', creditCost: 28, requiresPaidPlan: true, label: 'GPT-5.5' },
+  { code: 'gpt54', provider: 'openai', modelId: 'gpt-5.4', tier: 'premium', creditCost: 20, requiresPaidPlan: true, label: 'GPT-5.4' },
+  { code: 'gpt54mini', provider: 'openai', modelId: 'gpt-5.4-mini', tier: 'premium', creditCost: 10, requiresPaidPlan: true, label: 'GPT-5.4 Mini' },
+  { code: 'gpt53codex', provider: 'openai', modelId: 'gpt-5.3-codex', tier: 'premium', creditCost: 24, requiresPaidPlan: true, label: 'GPT-5.3 Codex' },
 ];
 
 const PREFIXES: Record<string, Provider> = { g: 'gemini', c: 'anthropic', o: 'openai', q: 'openweights', d: 'gemma-google' };
