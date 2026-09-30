@@ -98,6 +98,22 @@ export function tagForModel(m: ModelOption): string {
   return `:${PREFIX_BY_PROVIDER[m.provider]}-${m.code}/`;
 }
 
+export function findModelForApi(modelName: string): ModelOption | undefined {
+  const normalized = normalize(modelName);
+  return REGISTRY.find((m) => normalize(m.modelId) === normalized || normalize(m.code) === normalized || normalize(m.label) === normalized);
+}
+
+export function listModelsForApi() {
+  return REGISTRY.map((m) => ({
+    id: m.modelId,
+    object: 'model',
+    owned_by: 'kingxtech',
+    label: m.label,
+    tier: m.tier,
+    api_tag: tagForModel(m),
+  }));
+}
+
 export function listModelsForClient() {
   return REGISTRY.map((m) => ({
     tag: tagForModel(m),
