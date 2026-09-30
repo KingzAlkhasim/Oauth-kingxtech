@@ -215,7 +215,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
           model.provider,
           model.modelId,
           history,
-          { userId, projectId: projectId || undefined, turnId },
+          { userId, projectId: projectId || undefined, turnId, readOnly: isPlanningMode },
           (step) => sendEvent({ type: 'step', step })
         )
     );
