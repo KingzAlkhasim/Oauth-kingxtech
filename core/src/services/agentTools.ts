@@ -34,6 +34,8 @@ export interface ProjectContext {
   projectId?: string;
   /** Groups every file mutation made in one agent turn, so it can be reviewed/reverted as a unit. */
   turnId?: string;
+  /** Planning mode is strictly read-only: mutation tools are hidden and blocked. */
+  readOnly?: boolean;
 }
 
 export interface AgentTurn {
@@ -140,7 +142,9 @@ export const TOOL_DEFS: ToolDef[] = [
 ];
 
 export function toolsForContext(ctx: ProjectContext): ToolDef[] {
-  return ctx.projectId ? TOOL_DEFS : TOOL_DEFS.filter((t) => t.name === 'executeTerminalCommand');
+  if (!ctx.projectId) return TOOL_DEFS.filter((t) => t.name === 'executeTerminalCommand');
+  if (ctx.readOnly) return TOOL_DEFS.filter((t) => !MUTATING_TOOLS.includes(t.name));
+  return TOOL_DEFS;
 }
 
 export const SYSTEM_INSTRUCTION = `
@@ -227,6 +231,11 @@ async function runToolInner(
   if (FILE_TOOLS.includes(name) && !ctx.projectId) {
     const result = { ok: false, error: 'No project is open — file tools are unavailable outside a project workspace.' };
     return { result, step: { tool: name, args, status: 'error', summary: 'No project open.' } };
+  }
+
+  if (ctx.readOnly && MUTATING_TOOLS.includes(name)) {
+    const result = { ok: false, error: 'Planning mode is read-only — this tool cannot modify project files.' };
+    return { result, step: { tool: name, args, status: 'error', summary: 'Blocked mutation in planning mode.' } };
   }
 
   try {
