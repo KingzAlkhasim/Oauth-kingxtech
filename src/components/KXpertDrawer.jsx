@@ -151,6 +151,8 @@ export default function KXpertDrawer() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [showModelHint, setShowModelHint] = useState(false);
   const [models, setModels] = useState([]);
+  const [mode, setMode] = useState('build');
+  const [selectedTag, setSelectedTag] = useState('');
   const [sessionId, setSessionId] = useState(
     () => sessionStorage.getItem(SESSION_KEY) || newSessionId()
   );
@@ -238,16 +240,20 @@ export default function KXpertDrawer() {
     e.preventDefault();
     if (!message.trim() || isLoading) return;
     const userText = message;
+    const explicitTag = userText.match(/^:([A-Za-z]+)-([^/]+)\/\s*/);
+    const tagToUse = explicitTag ? '' : (selectedTag || activeTag || '');
+    const modePrefix = mode === 'plan'
+      ? 'PLANNING MODE: Analyze the request and inspect only what is available read-only. Do NOT create, edit, delete, or modify any project file. Return a concrete implementation plan with goals, evidence, files to change, ordered steps, risks, and validation. End with "Ready to build when approved."\\n\\n'
+      : '';
+    const promptToSend = `${tagToUse} ${modePrefix}${userText}`.trim();
     setHistory((h) => [...h, { role: 'user', text: userText }]);
     setMessage('');
     setIsLoading(true);
     setLiveSteps([]);
 
-    // If the user typed their own tag (e.g. ":C-opus/ ..."), that becomes the
-    // new sticky model going forward. Otherwise, silently re-attach whatever
-    // tag is currently sticky, so the user doesn't have to retype it.
-    const explicitTag = userText.match(/^:([A-Za-z]+)-([^/]+)\/\s*/);
-    const promptToSend = explicitTag || !activeTag ? userText : `${activeTag} ${userText}`;
+    // The model selector is the normal UI path now; legacy tags still work.
+    // Planning/Build is encoded in the request prompt, while Build keeps the
+    // current project context and Planning intentionally omits it.
 
     try {
       const headers = await getAuthHeaders();
@@ -256,7 +262,11 @@ export default function KXpertDrawer() {
       const response = await fetch(`${API_BASE}/api/ai/generate`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ prompt: promptToSend, sessionId, projectId: activeProjectId }),
+        body: JSON.stringify({
+          prompt: promptToSend,
+          sessionId,
+          projectId: mode === 'plan' ? undefined : activeProjectId,
+        }),
       });
 
       if (response.status === 401) throw new Error('Your session expired — please sign in again.');
@@ -293,7 +303,9 @@ export default function KXpertDrawer() {
           } catch {
             continue;
           }
-          if (payload.type === 'step') {
+          if (payload.type === 'status') {
+            setLiveSteps((s) => [...s, { tool: 'status', status: 'ok', summary: payload.label }]);
+          } else if (payload.type === 'step') {
             setLiveSteps((s) => [...s, payload.step]);
           } else if (payload.type === 'done') {
             finalPayload = payload;
@@ -384,8 +396,10 @@ export default function KXpertDrawer() {
   };
 
   const currentPhase = liveSteps.length === 0
-    ? 'Thinking…'
-    : PHASE_LABELS[liveSteps[liveSteps.length - 1].tool] || 'Working…';
+    ? 'Starting…'
+    : liveSteps[liveSteps.length - 1]?.tool === 'status'
+      ? liveSteps[liveSteps.length - 1].summary
+      : PHASE_LABELS[liveSteps[liveSteps.length - 1]?.tool] || 'Working…';
 
   return (
     <>
@@ -423,6 +437,10 @@ export default function KXpertDrawer() {
             </div>
 
             <div className="flex items-center justify-between px-5 py-3 border-b border-white/8 text-[12.5px]">
+              <div className="flex items-center gap-1 rounded-lg bg-white/[0.03] border border-white/10 p-1">
+                <button type="button" onClick={() => setMode('plan')} className={`px-2.5 py-1 rounded-md text-[11px] ${mode === 'plan' ? 'bg-kxpurple/20 text-kxpurple' : 'text-kxmist hover:text-white'}`}>🧠 Plan</button>
+                <button type="button" onClick={() => setMode('build')} className={`px-2.5 py-1 rounded-md text-[11px] ${mode === 'build' ? 'bg-green-500/15 text-green-400' : 'text-kxmist hover:text-white'}`}>🔨 Build</button>
+              </div>
               <span className="text-kxmist">Viewing: <span className="text-white">{viewLabel}</span></span>
               <div className="flex items-center gap-3">
                 {credits && (
@@ -435,6 +453,18 @@ export default function KXpertDrawer() {
                   {balance === null ? '—' : `$${balance.toFixed(2)}`}
                 </span>
               </div>
+            </div>
+
+            <div className="px-5 pt-3">
+              <label className="block text-[10px] font-mono uppercase tracking-wider text-kxmist mb-1.5">Model</label>
+              <select
+                value={selectedTag}
+                onChange={(e) => setSelectedTag(e.target.value)}
+                className="w-full bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-kxblue"
+              >
+                <option value="">Auto / Free</option>
+                {models.map((m) => <option key={m.tag} value={m.tag}>{m.label}{m.tier === 'free' ? ' · free' : ` · ${m.creditCost} credits`}</option>)}
+              </select>
             </div>
 
             {showModelHint && (
@@ -455,9 +485,9 @@ export default function KXpertDrawer() {
             )}
 
             {activeProjectId && (
-              <div className="mx-5 mt-4 rounded-lg border border-green-500/25 bg-green-500/8 px-3.5 py-2.5">
-                <p className="text-[11px] font-mono uppercase tracking-wider text-green-400">
-                  Project workspace active — I can read, create, edit, and delete files here.
+              <div className={`mx-5 mt-4 rounded-lg border px-3.5 py-2.5 ${mode === 'plan' ? 'border-kxpurple/25 bg-kxpurple/8' : 'border-green-500/25 bg-green-500/8'}`}>
+                <p className={`text-[11px] font-mono uppercase tracking-wider ${mode === 'plan' ? 'text-kxpurple' : 'text-green-400'}`}>
+                  {mode === 'plan' ? 'Planning mode — no project files will be changed.' : 'Project workspace active — I can read, create, edit, and delete files here.'}
                 </p>
               </div>
             )}
@@ -566,7 +596,7 @@ export default function KXpertDrawer() {
               <input
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder={isLoading ? 'Generating...' : 'Ask K-XpertAI… (or :G-pro/, :C-fable/…)'}
+                placeholder={isLoading ? 'Working...' : mode === 'plan' ? 'Describe what you want to plan…' : 'Ask K-XpertAI to build…'}
                 disabled={isLoading}
                 className="flex-1 bg-white/[0.02] border border-white/12 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-kxblue"
               />
