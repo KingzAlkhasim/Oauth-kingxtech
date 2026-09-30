@@ -188,6 +188,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
 
   const turnId = crypto.randomUUID();
   try {
+    sendEvent({ type: 'status', label: 'Loading conversation context…' });
     const history = await getHistoryFromDb(userId, sessionId);
 
     // Sentry span around the actual agent turn — records exactly the
@@ -195,6 +196,8 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     // history growth bug: if this climbs unbounded across a long session,
     // it shows up here as a real, visible trend instead of a mystery.
     const historyChars = history.reduce((sum, t) => sum + t.text.length, 0);
+    const isPlanningMode = cleanPrompt.startsWith('PLANNING MODE:');
+    sendEvent({ type: 'status', label: isPlanningMode ? 'Preparing your implementation plan…' : 'Planning the next action…' });
     const aiResponse = await Sentry.startSpan(
       {
         name: 'agent.generate',
@@ -217,6 +220,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
         )
     );
 
+    sendEvent({ type: 'status', label: isPlanningMode ? 'Writing the final plan…' : 'Finalizing changes…' });
     await touchSession(userId, sessionId, projectId || undefined, cleanPrompt);
     await saveMessageToDb(userId, sessionId, { role: 'user', text: cleanPrompt });
     await saveMessageToDb(userId, sessionId, { role: 'model', text: aiResponse.text });
