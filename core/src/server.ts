@@ -9,7 +9,7 @@ import { env } from './config/env';
 import { generateContent } from './services/aiRouter';
 import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './services/chatHistory';
 import { touchSession, listSessions, deleteSession } from './services/sessions';
-import { parseModelTag, listModelsForClient, tagForModel } from './services/modelRegistry';
+import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi, FREE_MODEL } from './services/modelRegistry';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
 import { executeTerminalCommand } from './services/commandExecutor';
@@ -87,6 +87,150 @@ async function reportError(
   await Sentry.flush(2000).catch(() => {});
   res.status(status).json({ success: false, error: message });
 }
+
+// --- Public OpenAI-compatible API ---------------------------------------
+// These routes are deliberately separate from the internal K-XpertAI workspace
+// endpoint above. API-key callers cannot access project files or terminal tools.
+app.get('/api/v1/models', requireAuth, (_req, res) => {
+  res.json({ object: 'list', data: listModelsForApi() });
+});
+
+app.post('/api/v1/chat/completions', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
+  const { model: modelName, messages, stream = false, temperature } = req.body ?? {};
+  const userId = req.user!.id;
+
+  if (!modelName || typeof modelName !== 'string') {
+    res.status(400).json({ error: { message: 'model is required', type: 'invalid_request_error', param: 'model' } });
+    return;
+  }
+  if (!Array.isArray(messages) || messages.length === 0) {
+    res.status(400).json({ error: { message: 'messages must be a non-empty array', type: 'invalid_request_error', param: 'messages' } });
+    return;
+  }
+
+  const selected = findModelForApi(modelName);
+  if (!selected) {
+    res.status(400).json({
+      error: {
+        message: `Unknown model "${modelName}". Use GET /api/v1/models to list supported models.`,
+        type: 'invalid_request_error',
+        param: 'model',
+      },
+    });
+    return;
+  }
+
+  const normalized = messages.slice(-40).map((message: any) => {
+    const role = message?.role;
+    const text = typeof message?.content === 'string' ? message.content : '';
+    return { role, text };
+  }).filter((message: any) => (message.role === 'user' || message.role === 'assistant' || message.role === 'system') && message.text);
+
+  const latestUser = [...normalized].reverse().find((message: any) => message.role === 'user');
+  if (!latestUser) {
+    res.status(400).json({ error: { message: 'messages must contain at least one user message', type: 'invalid_request_error', param: 'messages' } });
+    return;
+  }
+
+  const systemPrompt = normalized.filter((message: any) => message.role === 'system').map((message: any) => message.text).join('\n\n');
+  const history = normalized
+    .filter((message: any) => message.role === 'user' || message.role === 'assistant')
+    .slice(0, -1)
+    .map((message: any) => ({ role: message.role === 'assistant' ? 'model' : 'user', text: message.text }));
+  const prompt = systemPrompt ? `${systemPrompt}\n\n${latestUser.text}` : latestUser.text;
+
+  if (selected.requiresPaidPlan) {
+    const plan = await getUserPlan(userId);
+    if (plan !== 'paid') {
+      res.status(402).json({ error: { message: `${selected.label} requires a paid KingxTech plan.`, type: 'billing_error' } });
+      return;
+    }
+  }
+
+  if (selected.requestCap) {
+    try {
+      const capCheck = await checkModelRequestCap(userId, selected.code, selected.requestCap);
+      if (!capCheck.ok) {
+        res.status(402).json({
+          error: {
+            message: `${selected.label} is limited to ${selected.requestCap} API requests/month; this key has used ${capCheck.used}.`,
+            type: 'rate_limit_error',
+          },
+        });
+        return;
+      }
+    } catch (error) {
+      await reportError(res, 500, 'Failed to check model usage limit', error, 'Public API request cap error:');
+      return;
+    }
+  }
+
+  const USD_PER_CREDIT = 0.01;
+  try {
+    const charge = await chargeUserByApiKey(userId, selected.creditCost * USD_PER_CREDIT);
+    if (!charge.allowed) {
+      res.status(402).json({
+        error: {
+          message: `Insufficient wallet balance — need ${(selected.creditCost * USD_PER_CREDIT).toFixed(2)}, have ${charge.balance.toFixed(2)}.`,
+          type: 'billing_error',
+        },
+      });
+      return;
+    }
+
+    const result = await generateContent(
+      prompt,
+      selected.provider,
+      selected.modelId,
+      history,
+      { userId, publicApi: true },
+    );
+
+    await logUsage(userId, selected.provider, selected.code, selected.creditCost);
+
+    const responseBody = {
+      id: `kx-${crypto.randomUUID()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: selected.modelId,
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: result.text },
+        finish_reason: 'stop',
+      }],
+    };
+
+    if (stream) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      res.write(`data: ${JSON.stringify({
+        id: responseBody.id,
+        object: 'chat.completion.chunk',
+        created: responseBody.created,
+        model: responseBody.model,
+        choices: [{ index: 0, delta: { role: 'assistant', content: result.text }, finish_reason: null }],
+      })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        id: responseBody.id,
+        object: 'chat.completion.chunk',
+        created: responseBody.created,
+        model: responseBody.model,
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
+    res.json(responseBody);
+  } catch (error) {
+    await reportError(res, 502, 'AI provider request failed', error, 'Public API generation error:');
+  }
+});
 
 // --- POST /api/ai/generate ---------------------------------------------
 // Streams progress as Server-Sent Events: one "step" event per tool call
