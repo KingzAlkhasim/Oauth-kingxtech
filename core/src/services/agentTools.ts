@@ -36,6 +36,8 @@ export interface ProjectContext {
   turnId?: string;
   /** Planning mode is strictly read-only: mutation tools are hidden and blocked. */
   readOnly?: boolean;
+  /** Public API calls must never expose workspace/terminal tools. */
+  publicApi?: boolean;
 }
 
 export interface AgentTurn {
