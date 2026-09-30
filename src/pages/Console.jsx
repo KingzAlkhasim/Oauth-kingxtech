@@ -393,7 +393,7 @@ function ApiKeyVault() {
   return (
     <Section
       title="API Key Vault"
-      desc="Generate, reveal once, and revoke scoped API keys. Note: no live KingxTech API validates these yet — this is the vault, ready for when it does."
+      desc="Generate, reveal once, and revoke KingxTech API keys. Use the key as a Bearer token when calling the public AI API from your own app."
     >
       <Notice error={error && error !== 'SETUP' ? error : ''} />
 
