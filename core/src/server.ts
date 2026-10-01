@@ -45,7 +45,11 @@ import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
 app.use(helmet());
-// API-key callers may be hosted on any origin. Authentication is explicit via\n// Authorization: Bearer kx_live_/kx_test_ — no browser session cookie is used.\n// Keep credentials disabled so reflecting arbitrary origins cannot authorize\n// ambient browser credentials.\napp.use(cors({ origin: true, credentials: false }));
+// API-key callers may be hosted on any origin. Authentication is explicit via
+// Authorization: Bearer kx_live_/kx_test_ — no browser session cookie is used.
+// Keep credentials disabled so reflecting arbitrary origins cannot authorize
+// ambient browser credentials.
+app.use(cors({ origin: true, credentials: false }));
 app.use(express.json({ limit: '2mb' }));
 
 // Lightweight deployment/uptime check.
