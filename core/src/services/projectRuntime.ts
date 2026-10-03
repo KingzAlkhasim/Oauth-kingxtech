@@ -191,7 +191,7 @@ export async function runProjectCommand(
     cmd: command,
     args,
     cwd: PROJECT_ROOT,
-    timeout: 30_000,
+    timeoutMs: 30_000,
   });
 
   const stdout = (await result.stdout()).trim();
