@@ -162,7 +162,7 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
     throw new Error(`Dependency install failed: ${stderr || `exit code ${install.exitCode}`}`);
   }
 
-  const runner = commandForPackageManager(packageManager);
+  let runner = commandForPackageManager(packageManager);
   const previewUrl = sandbox.domain(runtime.port);
   const previewHost = new URL(previewUrl).hostname;
 
@@ -200,8 +200,8 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
       "  const base = loaded?.config || {};",
       "  return {",
       "    ...base,",
-      `    server: { ...(base.server || {}), allowedHosts: [${JSON.stringify(previewHost)}, '.vercel.run'] },`,
-      `    preview: { ...(base.preview || {}), allowedHosts: [${JSON.stringify(previewHost)}, '.vercel.run'] },`,
+      `    server: { ...(base.server || {}), allowedHosts: true },`,
+      `    preview: { ...(base.preview || {}), allowedHosts: true },`,
       "  };",
       "});",
       "",
@@ -210,7 +210,13 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
       path: wrapperPath,
       content: Buffer.from(wrapper, 'utf8'),
     }]);
-    commandArgs = [...runtime.args, '--config', wrapperPath];
+    // Launch Vite directly instead of going through npm's script argument
+    // forwarding. This guarantees the sandbox config is the config Vite loads.
+    commandArgs = ['--host', '0.0.0.0', '--port', String(runtime.port), '--config', wrapperPath];
+  }
+
+  if (runtime.framework === 'Vite') {
+    runner = './node_modules/.bin/vite';
   }
 
   // Detached commands return immediately by design; the process continues
