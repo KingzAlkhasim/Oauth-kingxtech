@@ -98,12 +98,12 @@ interface ProjectFileContentForSandbox {
   content: string;
 }
 
-function installCommand(packageManager: string): string[] {
+function installCommand(packageManager: string): { cmd: string; args: string[] } {
   switch (packageManager) {
-    case 'pnpm': return ['pnpm', ['install', '--no-frozen-lockfile']];
-    case 'yarn': return ['yarn', ['install']];
-    case 'bun': return ['bun', ['install']];
-    default: return ['npm', ['install', '--no-audit', '--no-fund']];
+    case 'pnpm': return { cmd: 'pnpm', args: ['install', '--no-frozen-lockfile'] };
+    case 'yarn': return { cmd: 'yarn', args: ['install'] };
+    case 'bun': return { cmd: 'bun', args: ['install'] };
+    default: return { cmd: 'npm', args: ['install', '--no-audit', '--no-fund'] };
   }
 }
 
@@ -133,7 +133,7 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
 
   const packageManager = detectPackageManager(files.map((file) => file.path));
   const runtime = detectRuntime(packageJson);
-  const [installCmd, installArgs] = installCommand(packageManager);
+  const { cmd: installCmd, args: installArgs } = installCommand(packageManager);
 
   const install = await sandbox.runCommand({
     cmd: installCmd,
