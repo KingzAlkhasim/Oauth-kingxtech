@@ -671,7 +671,7 @@ app.delete('/api/projects/:projectId/file', requireAuth, async (req: AuthedReque
 // The production NeuroCore filesystem is never used as the user's terminal.
 app.post('/api/projects/:projectId/runtime/start', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
   try {
-    const { startProjectRuntime } = await import('./services/projectRuntime');
+    const { startProjectRuntime } = require('./services/projectRuntime') as typeof import('./services/projectRuntime');
     const runtime = await startProjectRuntime(req.user!.id, req.params.projectId);
     res.json({ success: true, runtime });
   } catch (error: any) {
@@ -681,7 +681,7 @@ app.post('/api/projects/:projectId/runtime/start', requireAuth, rateLimit, async
 
 app.post('/api/projects/:projectId/runtime/sync', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
   try {
-    const { syncProjectRuntime } = await import('./services/projectRuntime');
+    const { syncProjectRuntime } = require('./services/projectRuntime') as typeof import('./services/projectRuntime');
     const result = await syncProjectRuntime(req.user!.id, req.params.projectId);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -696,7 +696,7 @@ app.post('/api/projects/:projectId/terminal', requireAuth, rateLimit, async (req
     return;
   }
   try {
-    const { runProjectCommand } = await import('./services/projectRuntime');
+    const { runProjectCommand } = require('./services/projectRuntime') as typeof import('./services/projectRuntime');
     const result = await runProjectCommand(req.user!.id, req.params.projectId, command, Array.isArray(args) ? args : []);
     res.json({ success: true, ...result });
   } catch (error) {
