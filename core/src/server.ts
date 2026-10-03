@@ -38,7 +38,10 @@ import {
   getProjectOwnerId,
   assertProjectOwnership,
   ProjectAccessError,
+  hasPublishedBuild,
+  readPublishedBuildFile,
 } from './services/projectFs';
+import { buildProjectForPublish } from './services/projectRuntime';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
 
@@ -529,6 +532,7 @@ app.post('/api/projects/:projectId/file/revert', requireAuth, async (req: Authed
 app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequest, res) => {
   try {
     const slug = await publishProject(req.user!.id, req.params.projectId);
+    await buildProjectForPublish(req.user!.id, req.params.projectId);
     const url = env.PUBLIC_SITE_BASE_DOMAIN
       ? `https://${slug}.${env.PUBLIC_SITE_BASE_DOMAIN}/`
       : `/site/${slug}/`;
@@ -718,6 +722,15 @@ const MIME_TYPES: Record<string, string> = {
   js: 'application/javascript; charset=utf-8',
   json: 'application/json; charset=utf-8',
   svg: 'image/svg+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
   txt: 'text/plain; charset=utf-8',
 };
 
@@ -770,9 +783,30 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   let filePath = requestedPath || 'index.html';
   if (filePath === '') filePath = 'index.html';
 
-  // Synthesized, not a real project_file: gives the built site's client-side
-  // code access to whichever KX Cloud env vars the owner explicitly marked
-  // public (see publicEnv.ts) via `<script src="/kx-env.js"></script>`.
+  // Modern Vite projects are published from compiled artifacts. This keeps
+  // browsers from receiving raw TS/TSX and makes nested /site/:slug/ paths work.
+  if (await hasPublishedBuild(projectId)) {
+    let file = await readPublishedBuildFile(projectId, filePath);
+    if (!file && !filePath.includes('.')) {
+      file = await readPublishedBuildFile(projectId, 'index.html');
+    }
+    if (!file || file.is_folder) {
+      res.status(404).type('text/plain').send('Not found.');
+      return;
+    }
+    const content = file.content ?? '';
+    if (content.startsWith('__KX_BINARY_BASE64__:')) {
+      const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
+      const ext = filePath.split('.').pop() || '';
+      res.type(MIME_TYPES[ext] || 'application/octet-stream').send(binary);
+      return;
+    }
+    const ext = filePath.split('.').pop() || '';
+    res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(content);
+    return;
+  }
+
+  // Legacy/static projects continue to be served directly from source files.
   if (filePath === 'kx-env.js') {
     const ownerId = await getProjectOwnerId(projectId);
     if (!ownerId) {
