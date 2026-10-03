@@ -163,20 +163,28 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
   }
 
   const runner = commandForPackageManager(packageManager);
-  // Detached commands return immediately by design, so there is no
-  // exitCode to inspect here. The browser URL is returned and the runtime
-  // process continues inside the persistent sandbox session.
+  const previewUrl = sandbox.domain(runtime.port);
+  const previewHost = new URL(previewUrl).hostname;
+
+  // Vite deliberately rejects unknown Host headers. Sandbox preview URLs
+  // are generated dynamically, so allow only this exact sandbox hostname.
+  // This uses Vite's documented __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+  // environment variable rather than weakening allowedHosts globally.
   await sandbox.runCommand({
     cmd: runner,
     args: runtime.args,
     cwd: PROJECT_ROOT,
-    env: { HOST: '0.0.0.0', PORT: String(runtime.port) },
+    env: {
+      HOST: '0.0.0.0',
+      PORT: String(runtime.port),
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: previewHost,
+    },
     detached: true,
   });
 
   return {
     sandboxName: sandbox.name,
-    url: sandbox.domain(runtime.port),
+    url: previewUrl,
     port: runtime.port,
     framework: runtime.framework,
     packageManager,
