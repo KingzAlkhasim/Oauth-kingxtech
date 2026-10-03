@@ -1,5 +1,5 @@
 import type { Sandbox } from '@vercel/sandbox';
-import { listProjectFilesWithContent, assertProjectOwnership } from './projectFs';
+import { listProjectFilesWithContent, assertProjectOwnership, replacePublishedBuild, type PublishedBuildFile } from './projectFs';
 
 const PROJECT_ROOT = '/vercel/sandbox/project';
 const SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
@@ -131,6 +131,73 @@ function commandForPackageManager(packageManager: string): string {
       : packageManager === 'bun'
         ? 'bun'
         : 'npm';
+}
+
+export async function buildProjectForPublish(userId: string, projectId: string): Promise<{ framework: string; fileCount: number }> {
+  const sandbox = await getSandbox(projectId);
+  const files = await syncFiles(userId, projectId, sandbox);
+  const packageFile = files.find((file) => file.path === 'package.json');
+  const packageJson = packageFile ? JSON.parse(packageFile.content) : null;
+
+  if (!packageJson) throw new Error('This project has no package.json yet.');
+
+  const packageManager = detectPackageManager(files.map((file) => file.path));
+  const runtime = detectRuntime(packageJson);
+  if (runtime.framework !== 'Vite') {
+    throw new Error('Permanent publishing currently supports Vite projects. Use Preview for other runtime-based projects.');
+  }
+
+  const { cmd: installCmd, args: installArgs } = installCommand(packageManager);
+  const install = await sandbox.runCommand({ cmd: installCmd, args: installArgs, cwd: PROJECT_ROOT, timeoutMs: 180_000 });
+  if (install.exitCode !== 0) {
+    const stderr = (await install.stderr()).trim();
+    throw new Error(`Dependency install failed: ${stderr || `exit code ${install.exitCode}`}`);
+  }
+
+  // Build into a private directory so the published renderer can serve the
+  // compiled browser assets without exposing source TS/TSX files. Vite's
+  // relative base is intentional: /site/:slug/ is a nested public path.
+  await sandbox.runCommand({
+    cmd: 'rm',
+    args: ['-rf', `.kingxtech-dist`],
+    cwd: PROJECT_ROOT,
+  });
+
+  const build = await sandbox.runCommand({
+    cmd: './node_modules/.bin/vite',
+    args: ['build', '--base', './', '--outDir', '.kingxtech-dist'],
+    cwd: PROJECT_ROOT,
+    timeoutMs: 180_000,
+  });
+  if (build.exitCode !== 0) {
+    const stderr = (await build.stderr()).trim();
+    const stdout = (await build.stdout()).trim();
+    throw new Error(`Vite production build failed: ${stderr || stdout || `exit code ${build.exitCode}`}`);
+  }
+
+  const listing = await sandbox.runCommand({
+    cmd: 'find',
+    args: ['.kingxtech-dist', '-type', 'f', '-print'],
+    cwd: PROJECT_ROOT,
+  });
+  if (listing.exitCode !== 0) throw new Error('Could not inspect the generated publish build.');
+
+  const paths = (await listing.stdout()).split('\\n').map((line) => line.trim()).filter(Boolean);
+  const builtFiles: PublishedBuildFile[] = [];
+  for (const relative of paths) {
+    const path = relative.replace(/^\\.kingxtech-dist\\//, '');
+    const buffer = await sandbox.readFileToBuffer({ path: `${PROJECT_ROOT}/${relative}` });
+    if (!buffer) continue;
+    const isBinary = /\\.(png|jpe?g|gif|webp|ico|avif|woff2?|ttf|otf|mp3|mp4|webm|wasm)$/i.test(path);
+    builtFiles.push({
+      path,
+      content: isBinary ? buffer.toString('base64') : buffer.toString('utf8'),
+      isBinary,
+    });
+  }
+
+  await replacePublishedBuild(userId, projectId, builtFiles);
+  return { framework: runtime.framework, fileCount: builtFiles.length };
 }
 
 export async function startProjectRuntime(userId: string, projectId: string): Promise<RuntimeResult> {
