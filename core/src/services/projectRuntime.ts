@@ -182,13 +182,13 @@ export async function buildProjectForPublish(userId: string, projectId: string):
   });
   if (listing.exitCode !== 0) throw new Error('Could not inspect the generated publish build.');
 
-  const paths = (await listing.stdout()).split('\\n').map((line) => line.trim()).filter(Boolean);
+  const paths = (await listing.stdout()).split('\n').map((line) => line.trim()).filter(Boolean);
   const builtFiles: PublishedBuildFile[] = [];
   for (const relative of paths) {
-    const path = relative.replace(/^\\.kingxtech-dist\\//, '');
+    const path = relative.replace(/^\.kingxtech-dist\//, '');
     const buffer = await sandbox.readFileToBuffer({ path: `${PROJECT_ROOT}/${relative}` });
     if (!buffer) continue;
-    const isBinary = /\\.(png|jpe?g|gif|webp|ico|avif|woff2?|ttf|otf|mp3|mp4|webm|wasm)$/i.test(path);
+    const isBinary = /\.(png|jpe?g|gif|webp|ico|avif|woff2?|ttf|otf|mp3|mp4|webm|wasm)$/i.test(path);
     builtFiles.push({
       path,
       content: isBinary ? buffer.toString('base64') : buffer.toString('utf8'),
