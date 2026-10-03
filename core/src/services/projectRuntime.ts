@@ -185,7 +185,8 @@ export async function buildProjectForPublish(userId: string, projectId: string):
   const paths = (await listing.stdout()).split('\n').map((line) => line.trim()).filter(Boolean);
   const builtFiles: PublishedBuildFile[] = [];
   for (const relative of paths) {
-    const path = relative.replace(/^\.kingxtech-dist\//, '');
+    const distPrefix = '.kingxtech-dist/';
+    const path = relative.startsWith(distPrefix) ? relative.slice(distPrefix.length) : relative;
     const buffer = await sandbox.readFileToBuffer({ path: `${PROJECT_ROOT}/${relative}` });
     if (!buffer) continue;
     const isBinary = /\.(png|jpe?g|gif|webp|ico|avif|woff2?|ttf|otf|mp3|mp4|webm|wasm)$/i.test(path);
