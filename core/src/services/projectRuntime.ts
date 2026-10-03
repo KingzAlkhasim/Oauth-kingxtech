@@ -166,19 +166,56 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
   const previewUrl = sandbox.domain(runtime.port);
   const previewHost = new URL(previewUrl).hostname;
 
-  // Vite deliberately rejects unknown Host headers. Sandbox preview URLs
-  // are generated dynamically, so allow only this exact sandbox hostname.
-  // This uses Vite's documented __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
-  // environment variable rather than weakening allowedHosts globally.
+  let commandArgs = runtime.args;
+  const runtimeEnv: Record<string, string> = {
+    HOST: '0.0.0.0',
+    PORT: String(runtime.port),
+    __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: previewHost,
+  };
+
+  if (runtime.framework === 'Vite') {
+    // Vite 6.1+ supports __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS. Older
+    // Vite releases can still appear in user projects, so use a sandbox-only
+    // wrapper config as a compatibility fallback. It loads the user's real
+    // config and merges the exact sandbox hostname into both server and
+    // preview allowedHosts without modifying their project files.
+    const viteConfigCandidates = [
+      'vite.config.ts',
+      'vite.config.js',
+      'vite.config.mjs',
+      'vite.config.cjs',
+    ];
+    const existingConfig = viteConfigCandidates.find((path) =>
+      files.some((file) => file.path === path),
+    );
+    const wrapperPath = `${PROJECT_ROOT}/.kingxtech-vite-runtime.mjs`;
+    const userConfigPath = existingConfig
+      ? `${PROJECT_ROOT}/${existingConfig}`
+      : '';
+    const wrapper = [
+      "import { defineConfig, loadConfigFromFile, mergeConfig } from 'vite';",
+      `const userConfigPath = ${JSON.stringify(userConfigPath)};`,
+      "export default defineConfig(async (env) => {",
+      "  const loaded = userConfigPath ? await loadConfigFromFile(env, userConfigPath, process.cwd()) : null;",
+      "  const base = loaded?.config || {};",
+      `  return mergeConfig(base, { server: { allowedHosts: [${JSON.stringify(previewHost)}] }, preview: { allowedHosts: [${JSON.stringify(previewHost)}] } });`,
+      "});",
+      "",
+    ].join("\n");
+    await sandbox.writeFiles([{
+      path: wrapperPath,
+      content: Buffer.from(wrapper, 'utf8'),
+    }]);
+    commandArgs = [...runtime.args, '--config', wrapperPath];
+  }
+
+  // Detached commands return immediately by design; the process continues
+  // inside the persistent sandbox session.
   await sandbox.runCommand({
     cmd: runner,
-    args: runtime.args,
+    args: commandArgs,
     cwd: PROJECT_ROOT,
-    env: {
-      HOST: '0.0.0.0',
-      PORT: String(runtime.port),
-      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: previewHost,
-    },
+    env: runtimeEnv,
     detached: true,
   });
 
