@@ -147,18 +147,16 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
   }
 
   const runner = commandForPackageManager(packageManager);
-  const dev = await sandbox.runCommand({
+  // Detached commands return immediately by design, so there is no
+  // exitCode to inspect here. The browser URL is returned and the runtime
+  // process continues inside the persistent sandbox session.
+  await sandbox.runCommand({
     cmd: runner,
     args: runtime.args,
     cwd: PROJECT_ROOT,
     env: { HOST: '0.0.0.0', PORT: String(runtime.port) },
     detached: true,
   });
-
-  if (dev.exitCode !== 0) {
-    const stderr = (await dev.stderr()).trim();
-    throw new Error(`Development server failed to start: ${stderr || `exit code ${dev.exitCode}`}`);
-  }
 
   return {
     sandboxName: sandbox.name,
