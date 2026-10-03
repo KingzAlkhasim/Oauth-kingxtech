@@ -491,6 +491,9 @@ export default function ProjectWorkspace() {
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [tab, setTab] = useState('editor'); // 'editor' | 'preview' | 'terminal' | 'settings'
   const [previewKey, setPreviewKey] = useState(0);
+  const [runtimePreviewUrl, setRuntimePreviewUrl] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
   const [copied, setCopied] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState(null);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -515,6 +518,7 @@ export default function ProjectWorkspace() {
 
   const tree = useMemo(() => buildTree(files), [files]);
   const url = previewUrl(projectId);
+  const previewSrc = runtimePreviewUrl || publishedUrl || url;
 
   const refreshFiles = useCallback(async () => {
     setIsLoadingFiles(true);
@@ -625,9 +629,29 @@ export default function ProjectWorkspace() {
     }
   };
 
+  const openProjectPreview = async () => {
+    setPreviewLoading(true);
+    setPreviewError('');
+    try {
+      // Modern projects must be rendered by the isolated sandbox runtime.
+      // The old /preview route only serves virtual text files and cannot compile TSX/JSX.
+      const runtime = await startProjectRuntime(projectId);
+      setRuntimePreviewUrl(runtime.url);
+      setPreviewKey((k) => k + 1);
+      setTab('preview');
+    } catch (err) {
+      // Fall back to the classic preview for simple HTML/CSS/JS projects.
+      setPreviewError(err.message);
+      setRuntimePreviewUrl(null);
+      setPreviewKey((k) => k + 1);
+      setTab('preview');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(publishedUrl || url);
+      await navigator.clipboard.writeText(publishedUrl || runtimePreviewUrl || url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -822,10 +846,10 @@ export default function ProjectWorkspace() {
                 <Code2 size={13} /> Editor
               </button>
               <button
-                onClick={() => { setTab('preview'); setPreviewKey((k) => k + 1); }}
+                onClick={openProjectPreview} disabled={previewLoading}
                 className={`flex items-center gap-1.5 text-[12.5px] px-2.5 py-1.5 rounded-md transition-colors duration-150 shrink-0 whitespace-nowrap ${tab === 'preview' ? 'bg-white/8 text-white' : 'text-kxmist hover:text-white'}`}
               >
-                <Eye size={13} /> Preview
+                <Eye size={13} /> {previewLoading ? 'Starting…' : 'Preview'}
               </button>
               <button
                 onClick={() => setTab('terminal')}
@@ -852,7 +876,7 @@ export default function ProjectWorkspace() {
           {tab === 'preview' && (
             <iframe
               key={previewKey}
-              src={publishedUrl || url}
+              src={previewSrc}
               title="Project preview"
               className="flex-1 w-full rounded-lg border border-white/10 bg-white"
             />
