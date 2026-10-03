@@ -87,6 +87,28 @@ export async function publishProject(projectId) {
   return { slug: data.slug, url };
 }
 
+export async function startProjectRuntime(projectId) {
+  const headers = await authHeaders(true);
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/runtime/start`), {
+    method: 'POST',
+    headers,
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Failed to start project runtime');
+  return data.runtime;
+}
+
+export async function syncProjectRuntime(projectId) {
+  const headers = await authHeaders(true);
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/runtime/sync`), {
+    method: 'POST',
+    headers,
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Failed to sync project runtime');
+  return data;
+}
+
 export async function runTerminalCommand(projectId, command, args = []) {
   const headers = await authHeaders(true);
   const res = await fetch(apiUrl(`/api/projects/${projectId}/terminal`), {
