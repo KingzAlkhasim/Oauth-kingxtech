@@ -166,7 +166,74 @@ export async function listProjectFiles(
     .order('path', { ascending: true });
 
   if (error) throw new Error(`listProjectFiles failed: ${error.message}`);
-  return data ?? [];
+  return (data ?? []).filter((file) => !file.path.startsWith('.kingxtech-dist/'));
+}
+
+export interface PublishedBuildFile {
+  path: string;
+  content: string;
+  isBinary?: boolean;
+}
+
+/** Replaces the generated static artifact set used by the permanent published URL. */
+export async function replacePublishedBuild(
+  userId: string,
+  projectId: string,
+  files: PublishedBuildFile[],
+): Promise<void> {
+  await assertProjectOwnership(userId, projectId);
+
+  const { error: deleteErr } = await supabaseAdmin
+    .from('project_files')
+    .delete()
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .like('path', '.kingxtech-dist/%');
+  if (deleteErr) throw new Error(`replacePublishedBuild cleanup failed: ${deleteErr.message}`);
+
+  if (files.length === 0) throw new Error('Published build produced no files.');
+
+  const rows = files.map((file) => ({
+    project_id: projectId,
+    user_id: userId,
+    path: `.kingxtech-dist/${file.path}`,
+    is_folder: false,
+    content: file.isBinary ? `__KX_BINARY_BASE64__:${file.content}` : file.content,
+  }));
+
+  for (let i = 0; i < rows.length; i += 100) {
+    const { error } = await supabaseAdmin
+      .from('project_files')
+      .upsert(rows.slice(i, i + 100), { onConflict: 'project_id,path' });
+    if (error) throw new Error(`replacePublishedBuild failed: ${error.message}`);
+  }
+}
+
+export async function hasPublishedBuild(projectId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path')
+    .eq('project_id', projectId)
+    .eq('path', '.kingxtech-dist/index.html')
+    .maybeSingle();
+  if (error) throw new Error(`hasPublishedBuild failed: ${error.message}`);
+  return !!data;
+}
+
+export async function readPublishedBuildFile(
+  projectId: string,
+  rawPath: string,
+): Promise<ProjectFileContent | null> {
+  const path = normalizePath(`.kingxtech-dist/${rawPath}`);
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path, is_folder, content, updated_at')
+    .eq('project_id', projectId)
+    .eq('path', path)
+    .maybeSingle();
+  if (error) throw new Error(`readPublishedBuildFile failed: ${error.message}`);
+  if (!data) return null;
+  return { ...data, path: rawPath };
 }
 
 export async function readProjectFile(
