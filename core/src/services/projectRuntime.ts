@@ -193,12 +193,16 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
       ? `${PROJECT_ROOT}/${existingConfig}`
       : '';
     const wrapper = [
-      "import { defineConfig, loadConfigFromFile, mergeConfig } from 'vite';",
+      "import { defineConfig, loadConfigFromFile } from 'vite';",
       `const userConfigPath = ${JSON.stringify(userConfigPath)};`,
       "export default defineConfig(async (env) => {",
       "  const loaded = userConfigPath ? await loadConfigFromFile(env, userConfigPath, process.cwd()) : null;",
       "  const base = loaded?.config || {};",
-      `  return mergeConfig(base, { server: { allowedHosts: [${JSON.stringify(previewHost)}] }, preview: { allowedHosts: [${JSON.stringify(previewHost)}] } });`,
+      "  return {",
+      "    ...base,",
+      `    server: { ...(base.server || {}), allowedHosts: [${JSON.stringify(previewHost)}, '.vercel.run'] },`,
+      `    preview: { ...(base.preview || {}), allowedHosts: [${JSON.stringify(previewHost)}, '.vercel.run'] },`,
+      "  };",
       "});",
       "",
     ].join("\n");
