@@ -164,12 +164,12 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
 
   let runner = commandForPackageManager(packageManager);
 
-  // Vite 6.0.9 introduced the hostname protection required for public dev
-  // servers, but the 6.0.x line has a known regression where allowedHosts
-  // can be ignored. A project declaring ^6.0.3 without a lockfile can resolve
-  // into that affected range. Keep the user's package files unchanged and
-  // normalize only the disposable sandbox runtime to the maintained Vite 6.4
-  // line when this exact affected version range is detected.
+  // Vite 6.0.9+ introduced stricter Host-header protection, and the 6.0.9+
+  // 6.0.x line has a known regression where allowedHosts can be ignored.
+  // A project declaring ^6.0.3 can therefore resolve to an affected 6.0.x
+  // release even though the user did not explicitly choose it. In the
+  // disposable sandbox only, pin affected 6.0.x installs to 6.0.8, which
+  // predates the regression. The user's package.json/lockfile is never edited.
   if (runtime.framework === 'Vite' && packageManager === 'npm') {
     const versionCheck = await sandbox.runCommand({
       cmd: 'npm',
@@ -189,7 +189,7 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
       if (major === 6 && minor === 0 && patch >= 9) {
         const compatibilityInstall = await sandbox.runCommand({
           cmd: 'npm',
-          args: ['install', 'vite@6.4.3', '--no-save', '--no-audit', '--no-fund'],
+          args: ['install', 'vite@6.0.8', '--no-save', '--no-audit', '--no-fund'],
           cwd: PROJECT_ROOT,
           timeoutMs: 120_000,
         });
