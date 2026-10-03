@@ -12,7 +12,6 @@ import { touchSession, listSessions, deleteSession } from './services/sessions';
 import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi } from './services/modelRegistry';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
-import { startProjectRuntime, runProjectCommand, syncProjectRuntime } from './services/projectRuntime';
 import { initializePaystackTransaction } from './services/paystackCheckout';
 import { runSecurityCheck, SECURITY_CHECK_CREDIT_COST } from './services/securityCheck';
 import { buildPublicEnvScript } from './services/publicEnv';
@@ -672,6 +671,7 @@ app.delete('/api/projects/:projectId/file', requireAuth, async (req: AuthedReque
 // The production NeuroCore filesystem is never used as the user's terminal.
 app.post('/api/projects/:projectId/runtime/start', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
   try {
+    const { startProjectRuntime } = await import('./services/projectRuntime');
     const runtime = await startProjectRuntime(req.user!.id, req.params.projectId);
     res.json({ success: true, runtime });
   } catch (error: any) {
@@ -681,6 +681,7 @@ app.post('/api/projects/:projectId/runtime/start', requireAuth, rateLimit, async
 
 app.post('/api/projects/:projectId/runtime/sync', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
   try {
+    const { syncProjectRuntime } = await import('./services/projectRuntime');
     const result = await syncProjectRuntime(req.user!.id, req.params.projectId);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -695,6 +696,7 @@ app.post('/api/projects/:projectId/terminal', requireAuth, rateLimit, async (req
     return;
   }
   try {
+    const { runProjectCommand } = await import('./services/projectRuntime');
     const result = await runProjectCommand(req.user!.id, req.params.projectId, command, Array.isArray(args) ? args : []);
     res.json({ success: true, ...result });
   } catch (error) {
