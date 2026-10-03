@@ -6,7 +6,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input } from '../components/ui';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
-  previewUrl, publishProject, runTerminalCommand,
+  previewUrl, publishProject, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
 } from '../lib/projectFiles';
 import { getProjectRepoLink, pushProjectToGithub, importRepoFromGithub } from '../lib/github';
 import { listProjectEnvVars, setProjectEnvVar, deleteProjectEnvVar } from '../lib/projectEnvVars';
@@ -158,9 +158,12 @@ function TreeNode({ node, depth, selectedPath, onSelect, onDelete, collapsed, on
 const ALLOWED_COMMANDS_HINT = 'git status|log|diff|branch, npm test|run|ls|lint, node --version, tsc --noEmit, ls, pwd';
 
 function TerminalTab({ projectId }) {
-  const [lines, setLines] = useState([]); // [{ type: 'cmd'|'out'|'err', text }]
+  const [lines, setLines] = useState([]);
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  const [runtime, setRuntime] = useState(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [runtimeError, setRuntimeError] = useState('');
   const [githubLink, setGithubLink] = useState(null);
   const [isPushing, setIsPushing] = useState(false);
   const scrollRef = useRef(null);
@@ -170,8 +173,50 @@ function TerminalTab({ projectId }) {
   }, [projectId]);
 
   useEffect(() => {
+    startProjectRuntime(projectId)
+      .then((result) => {
+        setRuntime(result);
+        setRuntimeError('');
+        setLines((l) => [...l, { type: 'out', text: `Sandbox ready: ${result.framework} / ${result.packageManager}` }]);
+      })
+      .catch((err) => setRuntimeError(err.message));
+  }, [projectId]);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [lines]);
+
+  const startRuntime = async () => {
+    setRuntimeLoading(true);
+    setRuntimeError('');
+    try {
+      const result = await startProjectRuntime(projectId);
+      setRuntime(result);
+      setLines((l) => [...l, { type: 'out', text: `Runtime started: ${result.url}` }]);
+    } catch (err) {
+      setRuntimeError(err.message);
+      setLines((l) => [...l, { type: 'err', text: err.message }]);
+    } finally {
+      setRuntimeLoading(false);
+    }
+  };
+
+  const syncRuntime = async () => {
+    setRuntimeLoading(true);
+    setRuntimeError('');
+    try {
+      const result = await syncProjectRuntime(projectId);
+      setLines((l) => [...l, { type: 'out', text: `Synced ${result.fileCount} file(s) into the sandbox.` }]);
+      const refreshed = await startProjectRuntime(projectId);
+      setRuntime(refreshed);
+      setLines((l) => [...l, { type: 'out', text: `Preview: ${refreshed.url}` }]);
+    } catch (err) {
+      setRuntimeError(err.message);
+      setLines((l) => [...l, { type: 'err', text: err.message }]);
+    } finally {
+      setRuntimeLoading(false);
+    }
+  };
 
   const run = async (e) => {
     e.preventDefault();
@@ -209,23 +254,35 @@ function TerminalTab({ projectId }) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] text-kxmist font-mono">Allowed: {ALLOWED_COMMANDS_HINT}</p>
-        {githubLink ? (
-          <button
-            onClick={pushToGithub}
-            disabled={isPushing}
-            className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-kx-gradient disabled:opacity-50"
-          >
-            <Upload size={12} /> {isPushing ? 'Pushing…' : `Push to ${githubLink.repo_full_name}`}
-          </button>
-        ) : (
-          <span className="text-[11px] text-kxmist">No GitHub repo linked — link one in Console → Credentials.</span>
-        )}
+      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+        <div>
+          <p className="text-[11px] text-kxmist font-mono">Sandbox terminal — isolated per project</p>
+          <p className="text-[10px] text-kxmist opacity-70">Node/Vite/React/TypeScript/Express commands run inside the project runtime.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {runtime?.url && (
+            <a href={runtime.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md border border-kxblue/30 text-kxblue hover:bg-kxblue/10">
+              <ExternalLink size={12} /> Open Preview
+            </a>
+          )}
+          <Button variant="ghost" onClick={syncRuntime} loading={runtimeLoading}>Sync & Restart</Button>
+          <Button variant="glow" onClick={startRuntime} loading={runtimeLoading}>Start Runtime</Button>
+        </div>
       </div>
 
+      {runtime && (
+        <div className="mb-2 rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2 text-[11px] font-mono text-green-300 break-all">
+          ● {runtime.framework} · {runtime.packageManager} · {runtime.url}
+        </div>
+      )}
+      {runtimeError && (
+        <div className="mb-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-[12px] text-red-300">
+          {runtimeError}
+        </div>
+      )}
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto bg-black/50 rounded-lg border border-white/10 p-3 font-mono text-[12.5px] space-y-1.5">
-        {lines.length === 0 && <p className="text-kxmist opacity-60">Run a command, or push this project to a linked GitHub repo.</p>}
+        {lines.length === 0 && <p className="text-kxmist opacity-60">The isolated project terminal is ready.</p>}
         {lines.map((l, i) => (
           <div key={i} className={l.type === 'cmd' ? 'text-white' : l.type === 'err' ? 'text-red-400' : 'text-green-400'}>
             {l.type === 'cmd' && <span className="text-kxpurple">$ </span>}
@@ -238,12 +295,30 @@ function TerminalTab({ projectId }) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={isRunning ? 'Running…' : 'git status'}
-          disabled={isRunning}
+          placeholder={isRunning ? 'Running…' : 'npm run build'}
+          disabled={isRunning || runtimeLoading}
           className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[13px] font-mono text-kxmist outline-none focus:border-kxblue"
         />
-        <Button type="submit" disabled={isRunning || !input.trim()}>Run</Button>
+        <Button type="submit" disabled={isRunning || runtimeLoading || !input.trim()}>Run</Button>
       </form>
+
+      <p className="text-[10px] text-kxmist mt-2">
+        Allowed: npm · pnpm · yarn · bun · node · npx · git · tsc · vite · ls · pwd · cat
+      </p>
+
+      <div className="flex justify-end mt-2">
+        {githubLink ? (
+          <button
+            onClick={pushToGithub}
+            disabled={isPushing}
+            className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md bg-kx-gradient disabled:opacity-50"
+          >
+            <Upload size={12} /> {isPushing ? 'Pushing…' : `Push to ${githubLink.repo_full_name}`}
+          </button>
+        ) : (
+          <span className="text-[11px] text-kxmist">No GitHub repo linked — link one in Console → Credentials.</span>
+        )}
+      </div>
     </div>
   );
 }
