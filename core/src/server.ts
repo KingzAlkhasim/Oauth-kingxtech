@@ -12,7 +12,7 @@ import { touchSession, listSessions, deleteSession } from './services/sessions';
 import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi } from './services/modelRegistry';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
-import { executeTerminalCommand } from './services/commandExecutor';
+import { startProjectRuntime, runProjectCommand, syncProjectRuntime } from './services/projectRuntime';
 import { initializePaystackTransaction } from './services/paystackCheckout';
 import { runSecurityCheck, SECURITY_CHECK_CREDIT_COST } from './services/securityCheck';
 import { buildPublicEnvScript } from './services/publicEnv';
@@ -667,13 +667,27 @@ app.delete('/api/projects/:projectId/file', requireAuth, async (req: AuthedReque
   }
 });
 
-// --- Manual terminal (workspace "Terminal" tab) -----------------------
-// Runs the SAME allowlisted commands the AI can use (see commandExecutor.ts)
-// — read-only diagnostics only (git status/log/diff, npm test/run/ls,
-// node --version, ls, pwd). Important: this executes against the real
-// backend container's filesystem, NOT the virtual per-project files stored
-// in Supabase — those are separate concepts. This is a diagnostic tool for
-// the deployed service, not a shell "inside" the AI-built project.
+// --- Project Runtime / Terminal ----------------------------------------
+// Commands run inside an isolated Vercel Sandbox belonging to this project.
+// The production NeuroCore filesystem is never used as the user's terminal.
+app.post('/api/projects/:projectId/runtime/start', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
+  try {
+    const runtime = await startProjectRuntime(req.user!.id, req.params.projectId);
+    res.json({ success: true, runtime });
+  } catch (error: any) {
+    await reportError(res, 502, error?.message || 'Failed to start project runtime', error, 'Project runtime start error:');
+  }
+});
+
+app.post('/api/projects/:projectId/runtime/sync', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
+  try {
+    const result = await syncProjectRuntime(req.user!.id, req.params.projectId);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    await reportError(res, 502, error?.message || 'Failed to sync project runtime', error, 'Project runtime sync error:');
+  }
+});
+
 app.post('/api/projects/:projectId/terminal', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
   const { command, args } = req.body;
   if (!command || typeof command !== 'string') {
@@ -681,177 +695,8 @@ app.post('/api/projects/:projectId/terminal', requireAuth, rateLimit, async (req
     return;
   }
   try {
-    await assertProjectOwnership(req.user!.id, req.params.projectId);
-    const result = await executeTerminalCommand(command, Array.isArray(args) ? args : []);
+    const result = await runProjectCommand(req.user!.id, req.params.projectId, command, Array.isArray(args) ? args : []);
     res.json({ success: true, ...result });
-  } catch (error) {
-    await handleFsError(res, error);
-  }
-});
-
-// --- GitHub push ---------------------------------------------------------
-
-app.post('/api/github/token', requireAuth, async (req: AuthedRequest, res) => {
-  const { token } = req.body;
-  if (!token || typeof token !== 'string') {
-    res.status(400).json({ success: false, error: 'token is required' });
-    return;
-  }
-  try {
-    await saveGithubToken(req.user!.id, token);
-    res.json({ success: true });
-  } catch (error) {
-    await reportError(res, 500, 'Failed to save token', error, 'GitHub token save error:');
-  }
-});
-
-app.delete('/api/github/token', requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    await deleteGithubToken(req.user!.id);
-    res.json({ success: true });
-  } catch (error) {
-    await reportError(res, 500, 'Failed to remove token', error, 'GitHub token delete error:');
-  }
-});
-
-app.get('/api/github/status', requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    const connected = await hasGithubToken(req.user!.id);
-    res.json({ success: true, connected });
-  } catch (error) {
-    await reportError(res, 500, 'Failed to check GitHub status', error, 'GitHub status error:');
-  }
-});
-
-app.get('/api/github/repos', requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    const repos = await listGithubRepos(req.user!.id);
-    res.json({ success: true, repos });
-  } catch (error: any) {
-    await reportError(res, 502, error.message || 'Failed to list GitHub repos', error, 'GitHub repos list error:');
-  }
-});
-
-app.post('/api/projects/:projectId/github/link', requireAuth, async (req: AuthedRequest, res) => {
-  const { repoFullName, branch } = req.body;
-  if (!repoFullName || typeof repoFullName !== 'string') {
-    res.status(400).json({ success: false, error: 'repoFullName is required' });
-    return;
-  }
-  try {
-    await linkProjectToRepo(req.user!.id, req.params.projectId, repoFullName, branch || 'main');
-    res.json({ success: true });
-  } catch (error) {
-    await handleFsError(res, error);
-  }
-});
-
-app.get('/api/projects/:projectId/github/link', requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    const link = await getProjectGithubLink(req.user!.id, req.params.projectId);
-    res.json({ success: true, link });
-  } catch (error) {
-    await reportError(res, 500, 'Failed to fetch GitHub link', error, 'GitHub link fetch error:');
-  }
-});
-
-app.post('/api/projects/:projectId/github/push', requireAuth, async (req: AuthedRequest, res) => {
-  const { commitMessage } = req.body;
-  try {
-    const result = await pushProjectToGithub(
-      req.user!.id,
-      req.params.projectId,
-      commitMessage || 'Update from KingxTech K-XpertAI workspace'
-    );
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    await reportError(res, 502, error.message || 'Push to GitHub failed', error, 'GitHub push error:');
-  }
-});
-
-app.post('/api/projects/:projectId/github/import', requireAuth, async (req: AuthedRequest, res) => {
-  const { repoFullName, branch } = req.body;
-  if (!repoFullName || typeof repoFullName !== 'string') {
-    res.status(400).json({ success: false, error: 'repoFullName is required' });
-    return;
-  }
-  try {
-    const result = await importRepoIntoProject(req.user!.id, req.params.projectId, repoFullName, branch || 'main');
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    await reportError(res, 502, error.message || 'Import from GitHub failed', error, 'GitHub import error:');
-  }
-});
-
-// --- Site Settings (per-project env vars) -----------------------------
-
-app.get('/api/projects/:projectId/env', requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    const vars = await listProjectEnvVars(req.user!.id, req.params.projectId);
-    res.json({ success: true, vars });
-  } catch (error) {
-    await handleFsError(res, error);
-  }
-});
-
-app.put('/api/projects/:projectId/env', requireAuth, async (req: AuthedRequest, res) => {
-  const { key, value, isPublic } = req.body;
-  if (!key || typeof key !== 'string') {
-    res.status(400).json({ success: false, error: 'key is required' });
-    return;
-  }
-  if (typeof value !== 'string') {
-    res.status(400).json({ success: false, error: 'value (string) is required' });
-    return;
-  }
-  try {
-    await upsertProjectEnvVar(req.user!.id, req.params.projectId, key, value, !!isPublic);
-    res.json({ success: true });
-  } catch (error) {
-    await handleFsError(res, error);
-  }
-});
-
-app.delete('/api/projects/:projectId/env/:id', requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    await deleteProjectEnvVar(req.user!.id, req.params.projectId, req.params.id);
-    res.json({ success: true });
-  } catch (error) {
-    await handleFsError(res, error);
-  }
-});
-
-// SecureCheck: dual-model (Claude + Gemini) security review of a project's
-// files. Visible to every user in the UI, but gated to Pro members here —
-// and even Pro members are charged from the same shared credit pool used by
-// /api/ai/generate, since running two premium models isn't free for us either.
-app.post('/api/projects/:projectId/security-check', requireAuth, async (req: AuthedRequest, res) => {
-  const userId = req.user!.id;
-  try {
-    const plan = await getUserPlan(userId);
-    if (plan !== 'paid') {
-      res.status(403).json({ success: false, error: 'SecureCheck is a Pro feature.', requiresPro: true });
-      return;
-    }
-
-    const { remaining } = await getCreditsRemaining(userId);
-    if (remaining < SECURITY_CHECK_CREDIT_COST) {
-      res.status(402).json({
-        success: false,
-        error: `SecureCheck costs ${SECURITY_CHECK_CREDIT_COST} credits — you have ${remaining} left this month.`,
-        requiresCredits: true,
-      });
-      return;
-    }
-
-    const credit = await consumeCredits(userId, SECURITY_CHECK_CREDIT_COST);
-    if (!credit.ok) {
-      res.status(402).json({ success: false, error: 'Not enough credits remaining.', requiresCredits: true });
-      return;
-    }
-
-    const result = await runSecurityCheck(userId, req.params.projectId);
-    res.json({ success: true, ...result, creditsRemaining: credit.remaining });
   } catch (error) {
     await handleFsError(res, error);
   }
