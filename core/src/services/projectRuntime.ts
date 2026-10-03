@@ -1,4 +1,4 @@
-import { Sandbox } from '@vercel/sandbox';
+import type { Sandbox } from '@vercel/sandbox';
 import { listProjectFilesWithContent, assertProjectOwnership } from './projectFs';
 
 const PROJECT_ROOT = '/vercel/sandbox/project';
@@ -8,6 +8,21 @@ const SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
 // generic Node apps can all get a browser preview without changing the
 // sandbox security boundary.
 const EXPOSED_PORTS = [3000, 3001, 4173, 5173, 8080];
+
+type SandboxModule = typeof import('@vercel/sandbox');
+let sandboxModulePromise: Promise<SandboxModule> | null = null;
+
+async function loadSandboxModule(): Promise<SandboxModule> {
+  // NeuroCore is compiled as CommonJS, while @vercel/sandbox exposes its
+  // ESM build through the import condition. TypeScript would otherwise
+  // rewrite import() to require(), which makes Node load the SDK's CJS build
+  // and crash when it requires the ESM-only @workflow/serde package.
+  if (!sandboxModulePromise) {
+    const nativeImport = new Function('return import("@vercel/sandbox")') as () => Promise<SandboxModule>;
+    sandboxModulePromise = nativeImport();
+  }
+  return sandboxModulePromise;
+}
 
 export interface RuntimeResult {
   sandboxName: string;
@@ -68,6 +83,7 @@ function detectRuntime(packageJson: any): { framework: string; port: number; arg
 }
 
 async function getSandbox(projectId: string): Promise<Sandbox> {
+  const { Sandbox } = await loadSandboxModule();
   return Sandbox.getOrCreate({
     name: sandboxName(projectId),
     runtime: 'node24',
