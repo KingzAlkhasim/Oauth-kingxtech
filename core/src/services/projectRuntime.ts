@@ -163,6 +163,47 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
   }
 
   let runner = commandForPackageManager(packageManager);
+
+  // Vite 6.0.9 introduced the hostname protection required for public dev
+  // servers, but the 6.0.x line has a known regression where allowedHosts
+  // can be ignored. A project declaring ^6.0.3 without a lockfile can resolve
+  // into that affected range. Keep the user's package files unchanged and
+  // normalize only the disposable sandbox runtime to the maintained Vite 6.4
+  // line when this exact affected version range is detected.
+  if (runtime.framework === 'Vite' && packageManager === 'npm') {
+    const versionCheck = await sandbox.runCommand({
+      cmd: 'npm',
+      args: ['ls', 'vite', '--depth=0', '--json'],
+      cwd: PROJECT_ROOT,
+      timeoutMs: 30_000,
+    });
+    try {
+      const tree = JSON.parse((await versionCheck.stdout()).trim() || '{}');
+      const installedVersion = tree?.dependencies?.vite?.version;
+      const match = typeof installedVersion === 'string'
+        ? installedVersion.match(/^(\d+)\.(\d+)\.(\d+)$/)
+        : null;
+      const major = match ? Number(match[1]) : 0;
+      const minor = match ? Number(match[2]) : 0;
+      const patch = match ? Number(match[3]) : 0;
+      if (major === 6 && minor === 0 && patch >= 9) {
+        const compatibilityInstall = await sandbox.runCommand({
+          cmd: 'npm',
+          args: ['install', 'vite@6.4.3', '--no-save', '--no-audit', '--no-fund'],
+          cwd: PROJECT_ROOT,
+          timeoutMs: 120_000,
+        });
+        if (compatibilityInstall.exitCode !== 0) {
+          const stderr = (await compatibilityInstall.stderr()).trim();
+          throw new Error('Vite compatibility install failed: ' + (stderr || 'exit code ' + compatibilityInstall.exitCode));
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && /Vite compatibility install failed/.test(error.message)) throw error;
+      // If npm's dependency tree cannot be parsed, let Vite report its own
+      // startup error instead of blocking unrelated projects.
+    }
+  }
   const previewUrl = sandbox.domain(runtime.port);
   const previewHost = new URL(previewUrl).hostname;
 
