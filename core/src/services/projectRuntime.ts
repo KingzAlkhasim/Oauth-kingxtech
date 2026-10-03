@@ -186,6 +186,7 @@ export async function runProjectCommand(
   }
 
   const sandbox = await getSandbox(projectId);
+  await syncFiles(userId, projectId, sandbox);
   const result = await sandbox.runCommand({
     cmd: command,
     args,
