@@ -685,6 +685,11 @@ app.post('/api/github/token', requireAuth, async (req: AuthedRequest, res) => {
     await saveGithubToken(req.user!.id, token);
     res.json({ success: true });
   } catch (error) {
+    const message = String((error as Error)?.message ?? error);
+    if (message.toLowerCase().includes('github token is invalid or expired')) {
+      res.status(400).json({ success: false, error: message });
+      return;
+    }
     await reportError(res, 500, 'Failed to save GitHub token', error, 'GitHub token save error:');
   }
 });
