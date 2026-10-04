@@ -220,7 +220,7 @@ export async function importRepoIntoProject(
   // Some older workspace flows submitted /tree/<branch> URLs directly.
   let normalizedRepo = repoFullName.trim();
   let normalizedBranch = branch.trim();
-  const githubUrl = normalizedRepo.match(/^https?:\\/\\/github\\.com\\/([^/]+)\\/([^/?#]+)(?:\\/tree\\/(.+))?\\/?$/i);
+  const githubUrl = normalizedRepo.match(/^https?:\/\/github\.com\/([^/]+)\/([^/?#]+)(?:\/tree\/(.+))?\/?$/i);
   if (githubUrl) {
     normalizedRepo = `${githubUrl[1]}/${githubUrl[2]}`;
     if (!normalizedBranch && githubUrl[3]) normalizedBranch = decodeURIComponent(githubUrl[3]);
