@@ -824,6 +824,17 @@ async function servePreview(res: express.Response, projectId: string, requestedP
 
   // Modern Vite projects are published from compiled artifacts. This keeps
   // browsers from receiving raw TS/TSX and makes nested /site/:slug/ paths work.
+  if (filePath === 'kx-env.js') {
+    const ownerId = await getProjectOwnerId(projectId);
+    if (!ownerId) {
+      res.status(404).type('text/plain').send('Project not found.');
+      return;
+    }
+    const script = await buildPublicEnvScript(ownerId, projectId);
+    res.type('application/javascript; charset=utf-8').send(script);
+    return;
+  }
+
   if (await hasPublishedBuild(projectId)) {
     let file = await readPublishedBuildFile(projectId, filePath);
     if (!file && !filePath.includes('.')) {
@@ -846,16 +857,7 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   }
 
   // Legacy/static projects continue to be served directly from source files.
-  if (filePath === 'kx-env.js') {
-    const ownerId = await getProjectOwnerId(projectId);
-    if (!ownerId) {
-      res.status(404).type('text/plain').send('Project not found.');
-      return;
-    }
-    const script = await buildPublicEnvScript(ownerId, projectId);
-    res.type('application/javascript; charset=utf-8').send(script);
-    return;
-  }
+
 
   let file = await readProjectFilePublic(projectId, filePath);
   if (!file && !filePath.includes('.')) {
