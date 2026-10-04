@@ -527,6 +527,45 @@ app.post('/api/projects/:projectId/file/revert', requireAuth, async (req: Authed
   }
 });
 
+// --- Project environment variables ---------------------------------------
+app.get('/api/projects/:projectId/env', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const vars = await listProjectEnvVars(req.user!.id, req.params.projectId);
+    res.json({ success: true, vars });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
+app.put('/api/projects/:projectId/env', requireAuth, async (req: AuthedRequest, res) => {
+  const key = typeof req.body?.key === 'string' ? req.body.key.trim().toUpperCase() : '';
+  const value = typeof req.body?.value === 'string' ? req.body.value : '';
+  const isPublic = req.body?.isPublic === true;
+  if (!/^[A-Z_][A-Z0-9_]{0,127}$/.test(key)) {
+    res.status(400).json({ success: false, error: 'Environment variable keys may contain only letters, numbers, and underscores, and must start with a letter or underscore.' });
+    return;
+  }
+  if (value.length > 64 * 1024) {
+    res.status(400).json({ success: false, error: 'Environment variable value is too large (maximum 64 KB).' });
+    return;
+  }
+  try {
+    await upsertProjectEnvVar(req.user!.id, req.params.projectId, key, value, isPublic);
+    res.json({ success: true });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
+app.delete('/api/projects/:projectId/env/:id', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await deleteProjectEnvVar(req.user!.id, req.params.projectId, req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
 // --- Publish (permanent hosted URL) ----------------------------------------
 
 app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequest, res) => {
