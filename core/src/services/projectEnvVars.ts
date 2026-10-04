@@ -37,6 +37,19 @@ export async function upsertProjectEnvVar(
   if (error) throw new Error(`upsertProjectEnvVar failed: ${error.message}`);
 }
 
+/** Private project variables for sandbox/build processes. Never expose these from public routes. */
+export async function getProjectEnvVarsForRuntime(userId: string, projectId: string): Promise<Record<string, string>> {
+  await assertProjectOwnership(userId, projectId);
+  const { data, error } = await supabaseAdmin
+    .from('project_env_vars')
+    .select('key, value')
+    .eq('project_id', projectId)
+    .eq('user_id', userId);
+
+  if (error) throw new Error(`getProjectEnvVarsForRuntime failed: ${error.message}`);
+  return Object.fromEntries((data ?? []).map((row) => [row.key, row.value]));
+}
+
 export async function deleteProjectEnvVar(userId: string, projectId: string, id: string): Promise<void> {
   await assertProjectOwnership(userId, projectId);
   const { error } = await supabaseAdmin
