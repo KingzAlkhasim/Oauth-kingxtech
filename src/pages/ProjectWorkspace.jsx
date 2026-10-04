@@ -388,12 +388,19 @@ function SiteSettingsTab({ projectId }) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <p className="text-[12px] text-kxmist mb-4 flex items-start gap-1.5">
+    <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+        <div className="flex items-start gap-2 text-[12px] text-kxmist leading-relaxed">
+          <Info size={13} className="mt-0.5 shrink-0" />
+          <p>Variables belong only to this project. Public variables are exposed to the published site through <code className="text-white">window.KX_ENV</code>. Never mark a secret as public.</p>
+        </div>
+      </div>
+
+      <Card className="p-4 rounded-xl">
         <Info size={13} className="mt-0.5 shrink-0" />
         Variables specific to this project — separate from your account-wide KX Cloud config. Vars marked
         <span className="text-amber-400 mx-1">Public</span> are exposed to this project's published site via <code className="text-white">window.KX_ENV</code> — never mark a real secret public.
-      </p>
+      </Card>
 
       {error && <p className="text-[12.5px] text-red-400 mb-3">{error}</p>}
 
@@ -418,7 +425,7 @@ function SiteSettingsTab({ projectId }) {
         ))}
       </div>
 
-      <div className="flex items-end gap-2 flex-wrap">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] items-end gap-3">
         <Input label="Key" value={key} onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))} placeholder="API_URL" containerClassName="flex-1" />
         <Input label="Value" value={value} onChange={(e) => setValue(e.target.value)} containerClassName="flex-1" />
         <label className="flex items-center gap-1.5 text-[12px] text-kxmist pb-2.5 cursor-pointer select-none">
@@ -428,7 +435,9 @@ function SiteSettingsTab({ projectId }) {
         <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-white/10">
+      </Card>
+
+      <Card className="p-4 rounded-xl">
         <div className="flex items-center gap-2 mb-1">
           <Shield size={15} className="text-kxblue" />
           <h3 className="text-[14px] font-semibold">SecureCheck</h3>
@@ -472,6 +481,7 @@ function SiteSettingsTab({ projectId }) {
           </>
         )}
       </div>
+      </Card>
     </div>
   );
 }
@@ -737,13 +747,15 @@ export default function ProjectWorkspace() {
       <Card className="p-3 mb-4 rounded-xl flex items-center justify-between gap-3 flex-wrap shadow-lg shadow-black/10">
         <div className="flex items-center gap-2 min-w-0">
           <Eye size={14} className="text-kxpurple shrink-0" />
-          <code className="text-[12.5px] text-kxmist truncate">{publishedUrl || url}</code>
-          {publishedUrl && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 shrink-0">Published</span>}
+          <span className="text-[12.5px] text-kxmist">
+            {publishedUrl ? 'Published site' : 'Preview URL'}
+          </span>
+          {publishedUrl && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 shrink-0">Live</span>}
           <span
             className="text-kxmist shrink-0 cursor-help"
             title={publishedUrl
-              ? "Permanent address — updates instantly whenever files change, no redeploy needed."
-              : "Already live right now. Publish gives it a permanent, friendly address instead of the raw ID. Anyone with the link can view it, same as most sharable preview tools."}
+              ? "Permanent published address for this project."
+              : "Preview runs inside an isolated KingxTech Sandbox."}
           >
             <Info size={13} />
           </span>
@@ -757,9 +769,6 @@ export default function ProjectWorkspace() {
           <button onClick={copyLink} className="flex items-center gap-1 text-[12.5px] text-kxmist hover:text-white">
             <Copy size={13} /> {copied ? 'Copied!' : 'Copy link'}
           </button>
-          <a href={publishedUrl || url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[12.5px] text-kxblue hover:text-white">
-            Open <ExternalLink size={13} />
-          </a>
         </div>
       </Card>
 
