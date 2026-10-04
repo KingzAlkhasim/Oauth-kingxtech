@@ -937,7 +937,7 @@ app.use(async (req, res, next) => {
       res.status(404).type('text/plain').send('No published site found at this address.');
       return;
     }
-    await servePreview(res, projectId, req.path.replace(/^\//, ''));
+    await servePreview(res, projectId, req.path.replace(/^\/+/, ''));
   } catch (error) {
     console.error('Subdomain site error:', error);
     Sentry.captureException(error, { tags: { route: 'subdomain-site' } });
