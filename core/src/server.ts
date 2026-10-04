@@ -6,6 +6,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import crypto from 'crypto';
 import { env } from './config/env';
+import { supabaseAdmin } from './lib/supabaseAdmin';
 import { generateContent } from './services/aiRouter';
 import type { AgentTurn } from './services/agentTools';
 import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './services/chatHistory';
