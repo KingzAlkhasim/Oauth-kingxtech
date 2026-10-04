@@ -24,6 +24,18 @@ async function gh(token: string, path: string, init: RequestInit = {}) {
 // --- Token management --------------------------------------------------
 
 export async function saveGithubToken(userId: string, token: string): Promise<void> {
+  // Validate the PAT before storing it so an invalid token cannot leave the
+  // UI showing "Connected" while every repository request fails.
+  try {
+    await gh(token, '/user');
+  } catch (error) {
+    const message = String((error as Error)?.message ?? error);
+    if (message.includes('(401)')) {
+      throw new Error('GitHub token is invalid or expired. Generate a new GitHub Personal Access Token and try again.');
+    }
+    throw error;
+  }
+
   const { error } = await supabaseAdmin
     .from('github_connections')
     .upsert({ user_id: userId, token }, { onConflict: 'user_id' });
