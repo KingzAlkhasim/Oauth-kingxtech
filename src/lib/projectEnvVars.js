@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
-
-const API_BASE = 'https://kx-neurocore-1066169621814.us-central1.run.app';
+import { apiUrl } from './apiBase';
 
 async function authHeaders() {
   const {
@@ -12,7 +11,7 @@ async function authHeaders() {
 
 export async function listProjectEnvVars(projectId) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/env`, { headers });
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/env`), { headers });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to load site settings');
   return data.vars; // [{ id, key, value, is_public, updated_at }]
@@ -20,7 +19,7 @@ export async function listProjectEnvVars(projectId) {
 
 export async function setProjectEnvVar(projectId, key, value, isPublic = false) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/env`, {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/env`), {
     method: 'PUT',
     headers,
     body: JSON.stringify({ key, value, isPublic }),
@@ -31,7 +30,7 @@ export async function setProjectEnvVar(projectId, key, value, isPublic = false) 
 
 export async function deleteProjectEnvVar(projectId, id) {
   const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/api/projects/${projectId}/env/${id}`, {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/env/${id}`), {
     method: 'DELETE',
     headers,
   });
