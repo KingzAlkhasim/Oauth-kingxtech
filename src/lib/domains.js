@@ -1,7 +1,27 @@
 import { supabase } from './supabase';
+import { apiUrl } from './apiBase';
+
+async function authHeaders() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('You must be signed in.');
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` };
+}
+
+async function api(path, options = {}) {
+  const headers = await authHeaders();
+  const res = await fetch(apiUrl(path), { ...options, headers: { ...headers, ...(options.headers || {}) } });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Domain request failed');
+  return data;
+}
 
 export async function listDomains() {
-  return supabase.from('custom_domains').select('*, projects(id, name)').order('created_at', { ascending: false });
+  try {
+    const data = await api('/api/domains');
+    return { data: data.domains || [], error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
 }
 
 export async function listDomainProjects() {
@@ -9,25 +29,28 @@ export async function listDomainProjects() {
 }
 
 export async function addDomain(domain, projectId) {
-  const { data: userData } = await supabase.auth.getUser();
-  return supabase.from('custom_domains').insert({ user_id: userData.user.id, domain, project_id: projectId }).select('*, projects(id, name)').single();
+  try {
+    const data = await api('/api/domains', { method: 'POST', body: JSON.stringify({ domain, projectId }) });
+    return { data: data.domain, vercel: data.vercel, error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
 }
 
 export async function removeDomain(id) {
-  return supabase.from('custom_domains').delete().eq('id', id);
+  try {
+    await api(`/api/domains/${id}`, { method: 'DELETE' });
+    return { error: null };
+  } catch (error) {
+    return { error };
+  }
 }
 
-export async function checkDnsRecord(domain, expectedTarget) {
-  const res = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=CNAME`);
-  const json = await res.json();
-  const answers = json.Answer || [];
-  const cnames = answers.map((a) => String(a.data).replace(/\.$/, '').toLowerCase());
-  const target = expectedTarget.replace(/\.$/, '').toLowerCase();
-  return { verified: cnames.includes(target), records: cnames, raw: json };
-}
-
-export async function verifyDomain(id, domain, expectedTarget) {
-  const { verified } = await checkDnsRecord(domain, expectedTarget);
-  const { error } = await supabase.from('custom_domains').update({ verified, last_checked_at: new Date().toISOString() }).eq('id', id);
-  return { verified, error };
+export async function verifyDomain(id) {
+  try {
+    const data = await api(`/api/domains/${id}/verify`, { method: 'POST' });
+    return { data: data.domain, vercel: data.vercel, error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
 }
