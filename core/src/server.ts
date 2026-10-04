@@ -637,6 +637,98 @@ app.delete('/api/ai/history', requireAuth, async (req: AuthedRequest, res) => {
   }
 });
 
+// --- GitHub integration -------------------------------------------------
+app.get('/api/github/status', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, connected: await hasGithubToken(req.user!.id) });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to check GitHub connection', error, 'GitHub status error:');
+  }
+});
+
+app.post('/api/github/token', requireAuth, async (req: AuthedRequest, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  if (!token) {
+    res.status(400).json({ success: false, error: 'GitHub token is required.' });
+    return;
+  }
+  try {
+    await saveGithubToken(req.user!.id, token);
+    res.json({ success: true });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to save GitHub token', error, 'GitHub token save error:');
+  }
+});
+
+app.delete('/api/github/token', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await deleteGithubToken(req.user!.id);
+    res.json({ success: true });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to remove GitHub token', error, 'GitHub token delete error:');
+  }
+});
+
+app.get('/api/github/repos', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const repos = await listGithubRepos(req.user!.id);
+    res.json({ success: true, repos });
+  } catch (error) {
+    await reportError(res, 502, 'Failed to list GitHub repositories', error, 'GitHub repos error:');
+  }
+});
+
+app.get('/api/projects/:projectId/github/link', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const link = await getProjectGithubLink(req.user!.id, req.params.projectId);
+    res.json({ success: true, link });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
+app.post('/api/projects/:projectId/github/link', requireAuth, async (req: AuthedRequest, res) => {
+  const repoFullName = typeof req.body?.repoFullName === 'string' ? req.body.repoFullName.trim() : '';
+  const branch = typeof req.body?.branch === 'string' ? req.body.branch.trim() : '';
+  if (!repoFullName || !branch) {
+    res.status(400).json({ success: false, error: 'repoFullName and branch are required.' });
+    return;
+  }
+  try {
+    await linkProjectToRepo(req.user!.id, req.params.projectId, repoFullName, branch);
+    res.json({ success: true });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
+app.post('/api/projects/:projectId/github/push', requireAuth, async (req: AuthedRequest, res) => {
+  const commitMessage = typeof req.body?.commitMessage === 'string' && req.body.commitMessage.trim()
+    ? req.body.commitMessage.trim()
+    : 'Update project from KingxTech';
+  try {
+    const result = await pushProjectToGithub(req.user!.id, req.params.projectId, commitMessage);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    await reportError(res, 502, 'Failed to push project to GitHub', error, 'GitHub push error:');
+  }
+});
+
+app.post('/api/projects/:projectId/github/import', requireAuth, async (req: AuthedRequest, res) => {
+  const repoFullName = typeof req.body?.repoFullName === 'string' ? req.body.repoFullName.trim() : '';
+  const branch = typeof req.body?.branch === 'string' ? req.body.branch.trim() : '';
+  if (!repoFullName || !branch) {
+    res.status(400).json({ success: false, error: 'repoFullName and branch are required.' });
+    return;
+  }
+  try {
+    const result = await importRepoIntoProject(req.user!.id, req.params.projectId, repoFullName, branch);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    await reportError(res, 502, 'Failed to import GitHub repository', error, 'GitHub import error:');
+  }
+});
+
 // --- Project file explorer -----------------------------------------------
 
 app.get('/api/projects/:projectId/files', requireAuth, async (req: AuthedRequest, res) => {
