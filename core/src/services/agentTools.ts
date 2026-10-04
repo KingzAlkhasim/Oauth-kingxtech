@@ -180,11 +180,7 @@ npm test/run/ls, node --version, ls, pwd) — you cannot install packages, run
 builds, or execute arbitrary shell commands. If a request needs that, say so
 plainly rather than guessing or pretending you did it.
 
-If the user has marked any KX Cloud environment variables as public, the
-project automatically has a virtual /kx-env.js file available — include
-<script src="/kx-env.js"></script> before your own scripts in an HTML file
-if you want to read one of those values via window.KX_ENV.SOME_KEY. Only do
-this if the user's request calls for it; don't add it speculatively.
+Project-specific environment variables from Site Settings are injected into the isolated project sandbox for dependency installation, Vite builds, and dev/runtime processes. Server-side code can read private values with process.env.MY_SECRET. For Vite client code, only variables prefixed with VITE_ are exposed through import.meta.env; never put a real secret in a VITE_ variable. If the user has marked a variable as public, the project also has a virtual ./kx-env.js resource available on published/preview pages — include <script src="./kx-env.js"></script> in index.html when the user explicitly asks to consume a public value through window.KX_ENV.SOME_KEY.
 `;
 
 /**
