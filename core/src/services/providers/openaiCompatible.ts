@@ -34,7 +34,7 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
         model: modelId,
         messages,
         tools: openaiTools,
-        ...(modelId === 'gpt-6-sol' || modelId === 'gpt-6-luna' ? { reasoning_effort: 'none' } : {}),
+        ...(modelId === 'gpt-6-sol' || modelId === 'gpt-6-luna' ? { reasoning_effort: 'none' as any } : {}),
       });
       const msg = completion.choices[0].message;
 
