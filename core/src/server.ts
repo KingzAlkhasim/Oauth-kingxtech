@@ -43,7 +43,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
-import { getProjectIdByCustomDomain } from './services/customDomains';
+import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
 
@@ -998,6 +998,55 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   const ext = filePath.split('.').pop() || '';
   res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(file.content ?? '');
 }
+
+// Custom domain management. Vercel registration/verification stays server-side so the
+// Vercel API token is never exposed to the browser.
+app.get('/api/domains', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('custom_domains')
+      .select('*, projects(id, name)')
+      .eq('user_id', req.user!.id)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    res.json({ success: true, domains: data ?? [] });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to load domains', error, 'Domains list error:');
+  }
+});
+
+app.post('/api/domains', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const projectId = String(req.body?.projectId || '');
+    const domain = String(req.body?.domain || '');
+    if (!projectId || !domain) {
+      res.status(400).json({ success: false, error: 'Project and domain are required.' });
+      return;
+    }
+    const result = await addCustomDomain(req.user!.id, projectId, domain);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    await reportError(res, 400, 'Failed to connect domain', error, 'Domain add error:');
+  }
+});
+
+app.post('/api/domains/:id/verify', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const result = await verifyCustomDomain(req.user!.id, req.params.id);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    await reportError(res, 400, 'Failed to verify domain', error, 'Domain verify error:');
+  }
+});
+
+app.delete('/api/domains/:id', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await removeCustomDomain(req.user!.id, req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    await reportError(res, 400, 'Failed to remove domain', error, 'Domain remove error:');
+  }
+});
 
 app.get(/^\/preview\/([^/]+)\/?(.*)$/, async (req, res) => {
   try {
