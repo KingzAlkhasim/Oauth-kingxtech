@@ -59,8 +59,23 @@ async function getGithubToken(userId: string): Promise<string> {
 }
 
 export async function hasGithubToken(userId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin.from('github_connections').select('user_id').eq('user_id', userId).maybeSingle();
-  return !!data;
+  const { data } = await supabaseAdmin
+    .from('github_connections')
+    .select('token')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (!data?.token) return false;
+
+  try {
+    await gh(data.token, '/user');
+    return true;
+  } catch (error) {
+    const message = String((error as Error)?.message ?? error);
+    // A revoked/expired PAT should behave as disconnected so the UI can
+    // immediately offer a replacement token.
+    if (message.includes('(401)')) return false;
+    throw error;
+  }
 }
 
 // --- Repo listing --------------------------------------------------------
