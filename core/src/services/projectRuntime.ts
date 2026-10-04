@@ -1,4 +1,4 @@
-import type { Sandbox } from '@vercel/sandbox';
+import type { Sandbox } from '@vercel/sandbox' with { "resolution-mode": "import" };
 import { listProjectFilesWithContent, assertProjectOwnership, replacePublishedBuild, type PublishedBuildFile } from './projectFs';
 import { getProjectEnvVarsForRuntime } from './projectEnvVars';
 
@@ -10,7 +10,7 @@ const SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
 // sandbox security boundary.
 const EXPOSED_PORTS = [3000, 3001, 4173, 5173, 8080];
 
-type SandboxModule = typeof import('@vercel/sandbox');
+type SandboxModule = typeof import('@vercel/sandbox', { with: { "resolution-mode": "import" } });
 let sandboxModulePromise: Promise<SandboxModule> | null = null;
 
 async function loadSandboxModule(): Promise<SandboxModule> {
