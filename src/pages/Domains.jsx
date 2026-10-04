@@ -45,7 +45,7 @@ export default function Domains() {
 
   const verify = async (d) => {
     setError(''); setVerifying(d.id);
-    const { error: verifyError } = await verifyDomain(d.id, d.domain, d.target_cname);
+    const { error: verifyError } = await verifyDomain(d.id);
     setVerifying(null);
     if (verifyError) { setError(verifyError.message); return; }
     refresh();
@@ -106,11 +106,21 @@ export default function Domains() {
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 px-4 py-3">
               <p className="text-[12px] font-mono text-kxmist mb-1.5">DNS setup</p>
-              <div className="flex items-center gap-6 text-[13px] font-mono flex-wrap">
-                <span><span className="text-kxmist">Type</span> CNAME</span>
-                <span><span className="text-kxmist">Host</span> {d.domain.split('.')[0]}</span>
-                <span><span className="text-kxmist">Value</span> {d.target_cname}</span>
-              </div>
+              {d.verified ? (
+                <p className="text-[13px] text-emerald-300">Vercel has verified this domain. HTTPS will be served automatically.</p>
+              ) : Array.isArray(d.verification) && d.verification.length ? (
+                <div className="space-y-2">
+                  {d.verification.map((record, index) => (
+                    <div key={index} className="flex items-start gap-5 text-[13px] font-mono flex-wrap">
+                      <span><span className="text-kxmist">Type</span> {record.type || 'TXT'}</span>
+                      <span><span className="text-kxmist">Name</span> {record.domain || d.domain}</span>
+                      <span className="break-all"><span className="text-kxmist">Value</span> {record.value}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[13px] text-kxmist">Vercel is preparing the DNS verification instructions. Try Verify DNS in a moment.</p>
+              )}
             </div>
             {d.verified && <p className="flex items-center gap-2 text-[12.5px] text-emerald-300 mt-3"><CheckCircle2 size={14} /> DNS verified</p>}
           </Card>
