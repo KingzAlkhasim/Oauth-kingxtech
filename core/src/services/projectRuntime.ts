@@ -1,5 +1,6 @@
 import type { Sandbox } from '@vercel/sandbox';
 import { listProjectFilesWithContent, assertProjectOwnership, replacePublishedBuild, type PublishedBuildFile } from './projectFs';
+import { getProjectEnvVarsForRuntime } from './projectEnvVars';
 
 const PROJECT_ROOT = '/vercel/sandbox/project';
 const SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
@@ -142,13 +143,14 @@ export async function buildProjectForPublish(userId: string, projectId: string):
   if (!packageJson) throw new Error('This project has no package.json yet.');
 
   const packageManager = detectPackageManager(files.map((file) => file.path));
+  const projectEnv = await getProjectEnvVarsForRuntime(userId, projectId);
   const runtime = detectRuntime(packageJson);
   if (runtime.framework !== 'Vite') {
     throw new Error('Permanent publishing currently supports Vite projects. Use Preview for other runtime-based projects.');
   }
 
   const { cmd: installCmd, args: installArgs } = installCommand(packageManager);
-  const install = await sandbox.runCommand({ cmd: installCmd, args: installArgs, cwd: PROJECT_ROOT, timeoutMs: 180_000 });
+  const install = await sandbox.runCommand({ cmd: installCmd, args: installArgs, cwd: PROJECT_ROOT, env: projectEnv, timeoutMs: 180_000 });
   if (install.exitCode !== 0) {
     const stderr = (await install.stderr()).trim();
     throw new Error(`Dependency install failed: ${stderr || `exit code ${install.exitCode}`}`);
@@ -167,6 +169,7 @@ export async function buildProjectForPublish(userId: string, projectId: string):
     cmd: './node_modules/.bin/vite',
     args: ['build', '--base', './', '--outDir', '.kingxtech-dist'],
     cwd: PROJECT_ROOT,
+    env: projectEnv,
     timeoutMs: 180_000,
   });
   if (build.exitCode !== 0) {
@@ -216,6 +219,7 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
   }
 
   const packageManager = detectPackageManager(files.map((file) => file.path));
+  const projectEnv = await getProjectEnvVarsForRuntime(userId, projectId);
   const runtime = detectRuntime(packageJson);
   const { cmd: installCmd, args: installArgs } = installCommand(packageManager);
 
@@ -223,6 +227,7 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
     cmd: installCmd,
     args: installArgs,
     cwd: PROJECT_ROOT,
+    env: projectEnv,
   });
 
   if (install.exitCode !== 0) {
@@ -277,6 +282,7 @@ export async function startProjectRuntime(userId: string, projectId: string): Pr
 
   let commandArgs = runtime.args;
   const runtimeEnv: Record<string, string> = {
+    ...projectEnv,
     HOST: '0.0.0.0',
     PORT: String(runtime.port),
     __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: previewHost,
