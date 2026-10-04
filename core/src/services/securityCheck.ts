@@ -10,8 +10,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 // those can read/write/edit project files. A review should only ever read
 // and report, never touch anything.
 const CLAUDE_MODEL_ID = 'claude-sonnet-5';
-const GEMINI_MODEL_ID = 'gemini-3.1-pro-preview';
-export const SECURITY_CHECK_CREDIT_COST = 14; // 8 (Claude Sonnet) + 6 (Gemini Pro), matches modelRegistry's per-model costs
+const GEMINI_MODEL_ID = 'gemini-3.8-flash';
+export const SECURITY_CHECK_CREDIT_COST = 14; // One SecureCheck run costs 14 credits, regardless of whether Claude succeeds or fallback Gemini runs.
 
 const MAX_CONTEXT_CHARS = 60_000; // keep both calls well inside context limits regardless of project size
 
@@ -73,27 +73,31 @@ export async function runSecurityCheck(userId: string, projectId: string): Promi
   const files = await listProjectFilesWithContent(userId, projectId);
   const fileContext = buildFileContext(files);
 
-  // Each model's review is independent — if one fails (rate limit, no
-  // credit on that provider's account, transient outage, etc.) we still
-  // want to return whatever the other one produced, rather than failing
-  // the whole SecureCheck run and charging the user for nothing.
-  const [claudeSettled, geminiSettled] = await Promise.allSettled([
-    reviewWithClaude(fileContext),
-    reviewWithGemini(fileContext),
-  ]);
+  // SecureCheck is deliberately sequential: Claude is the primary reviewer.
+  // Gemini 3.8 Flash is only used when Claude fails, avoiding two provider
+  // calls for every run while keeping a fallback available.
+  let claude: string | null = null;
+  let gemini: string | null = null;
+  let claudeError: string | null = null;
+  let geminiError: string | null = null;
 
-  const claude = claudeSettled.status === 'fulfilled' ? claudeSettled.value : null;
-  const gemini = geminiSettled.status === 'fulfilled' ? geminiSettled.value : null;
-  const claudeError = claudeSettled.status === 'rejected' ? String(claudeSettled.reason?.message ?? claudeSettled.reason) : null;
-  const geminiError = geminiSettled.status === 'rejected' ? String(geminiSettled.reason?.message ?? geminiSettled.reason) : null;
-
-  if (!claude && !gemini) {
-    // Both failed — this genuinely is a total failure, worth surfacing to
-    // Sentry via the route's normal error handling rather than returning a
-    // "successful" response with nothing in it.
-    throw new Error(`SecureCheck: both reviewers failed. Claude: ${claudeError}. Gemini: ${geminiError}`);
+  try {
+    claude = await reviewWithClaude(fileContext);
+  } catch (error) {
+    claudeError = String((error as Error)?.message ?? error);
   }
 
+  if (!claude) {
+    try {
+      gemini = await reviewWithGemini(fileContext);
+    } catch (error) {
+      geminiError = String((error as Error)?.message ?? error);
+    }
+  }
+
+  if (!claude && !gemini) {
+    throw new Error(`SecureCheck: primary and fallback reviewers failed. Claude: ${claudeError}. Gemini: ${geminiError}`);
+  }
   return {
     claude,
     gemini,
