@@ -215,10 +215,22 @@ export async function importRepoIntoProject(
 ): Promise<ImportResult> {
   await assertProjectOwnership(userId, projectId);
   const token = await getGithubToken(userId);
-  const [owner, repo] = repoFullName.split('/');
-  if (!owner || !repo) throw new Error(`Invalid repo name: ${repoFullName}`);
 
-  const tree = await gh(token, `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+  // Accept both the canonical "owner/repo" form and a GitHub repository URL.
+  // Some older workspace flows submitted /tree/<branch> URLs directly.
+  let normalizedRepo = repoFullName.trim();
+  let normalizedBranch = branch.trim();
+  const githubUrl = normalizedRepo.match(/^https?:\\/\\/github\\.com\\/([^/]+)\\/([^/?#]+)(?:\\/tree\\/(.+))?\\/?$/i);
+  if (githubUrl) {
+    normalizedRepo = `${githubUrl[1]}/${githubUrl[2]}`;
+    if (!normalizedBranch && githubUrl[3]) normalizedBranch = decodeURIComponent(githubUrl[3]);
+  }
+
+  const [owner, repo] = normalizedRepo.split('/');
+  if (!owner || !repo || normalizedRepo.split('/').length !== 2) throw new Error(`Invalid repo name: ${repoFullName}`);
+  if (!normalizedBranch) throw new Error('GitHub branch is required.');
+
+  const tree = await gh(token, `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(normalizedBranch)}?recursive=1`);
   const blobs = ((tree.tree as any[]) ?? []).filter((e) => e.type === 'blob');
 
   let imported = 0;
