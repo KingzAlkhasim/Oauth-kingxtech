@@ -43,6 +43,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
+import { getProjectIdByCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
 
@@ -1006,6 +1007,26 @@ app.get(/^\/preview\/([^/]+)\/?(.*)$/, async (req, res) => {
     Sentry.captureException(error, { tags: { route: 'preview' } });
     await Sentry.flush(2000).catch(() => {});
     res.status(500).type('text/plain').send('Preview failed to load.');
+  }
+});
+
+// Custom domains: Vercel routes the hostname to NeuroCore, then we resolve
+// the verified hostname to its KingxTech project and serve that project's
+// compiled production build from the root path.
+app.use(async (req, res, next) => {
+  const host = req.hostname.toLowerCase();
+  if (!host || host === 'site.kingxtech.name.ng' || host.endsWith('.vercel.app') || host.endsWith('.vercel.run')) return next();
+  try {
+    const projectId = await getProjectIdByCustomDomain(host);
+    if (!projectId) return next();
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${env.ALLOWED_ORIGINS.join(' ')}`);
+    await servePreview(res, projectId, req.path.replace(/^\\/+/, ''));
+  } catch (error) {
+    console.error('Custom domain route error:', error);
+    Sentry.captureException(error, { tags: { route: 'custom-domain' } });
+    await Sentry.flush(2000).catch(() => {});
+    res.status(500).type('text/plain').send('Custom domain failed to load.');
   }
 });
 
