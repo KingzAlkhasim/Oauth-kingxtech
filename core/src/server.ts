@@ -637,6 +637,35 @@ app.delete('/api/ai/history', requireAuth, async (req: AuthedRequest, res) => {
   }
 });
 
+// --- SecureCheck ----------------------------------------------------------
+app.post('/api/projects/:projectId/security-check', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await assertProjectOwnership(req.user!.id, req.params.projectId);
+    const plan = await getUserPlan(req.user!.id);
+    if (plan !== 'paid') {
+      res.status(402).json({ success: false, error: 'SecureCheck requires the Pro plan.', requiresPro: true });
+      return;
+    }
+
+    const credit = await consumeCredits(req.user!.id, SECURITY_CHECK_CREDIT_COST);
+    if (!credit.ok) {
+      res.status(402).json({
+        success: false,
+        error: `Insufficient credits — SecureCheck requires ${SECURITY_CHECK_CREDIT_COST} credits.`,
+        requiresCredits: true,
+        creditsRemaining: credit.remaining,
+      });
+      return;
+    }
+
+    const result = await runSecurityCheck(req.user!.id, req.params.projectId);
+    await logUsage(req.user!.id, 'security', 'securecheck', SECURITY_CHECK_CREDIT_COST, req.params.projectId);
+    res.json({ success: true, ...result, creditsRemaining: credit.remaining });
+  } catch (error) {
+    await reportError(res, 500, 'SecureCheck failed to run', error, 'SecureCheck error:');
+  }
+});
+
 // --- GitHub integration -------------------------------------------------
 app.get('/api/github/status', requireAuth, async (req: AuthedRequest, res) => {
   try {
