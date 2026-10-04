@@ -2,7 +2,7 @@ import { env } from '../config/env';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { assertProjectOwnership } from './projectFs';
 
-const VERCEL_PROJECT = 'neurocore';
+// Production Vercel project receiving customer custom domains.\nconst VERCEL_PROJECT = 'neurocore';
 const VERCEL_API = 'https://api.vercel.com';
 
 type VercelVerification = {
