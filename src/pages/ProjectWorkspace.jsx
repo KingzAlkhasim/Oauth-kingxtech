@@ -331,10 +331,6 @@ function SiteSettingsTab({ projectId }) {
   const [isPublic, setIsPublic] = useState(false);
   const [saving, setSaving] = useState(false);
   const [revealed, setRevealed] = useState({});
-
-  // SecureCheck: visible to everyone, usable only by Pro members (who also
-  // spend credits per run) — isPro is null while we don't know yet, so we
-  // don't flash a "Pro required" state before the real answer comes back.
   const [isPro, setIsPro] = useState(null);
   const [scRunning, setScRunning] = useState(false);
   const [scError, setScError] = useState('');
@@ -369,7 +365,9 @@ function SiteSettingsTab({ projectId }) {
     setError('');
     try {
       await setProjectEnvVar(projectId, key.trim(), value, isPublic);
-      setKey(''); setValue(''); setIsPublic(false);
+      setKey('');
+      setValue('');
+      setIsPublic(false);
       refresh();
     } catch (err) {
       setError(err.message);
@@ -389,52 +387,61 @@ function SiteSettingsTab({ projectId }) {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+      <Card className="p-4 rounded-xl">
         <div className="flex items-start gap-2 text-[12px] text-kxmist leading-relaxed">
           <Info size={13} className="mt-0.5 shrink-0" />
-          <p>Variables belong only to this project. Public variables are exposed to the published site through <code className="text-white">window.KX_ENV</code>. Never mark a secret as public.</p>
+          <p>
+            Variables belong only to this project. Public variables are exposed to the published site through{' '}
+            <code className="text-white">window.KX_ENV</code>. Never mark a secret as public.
+          </p>
         </div>
-      </div>
-
-      <Card className="p-4 rounded-xl">
-        <Info size={13} className="mt-0.5 shrink-0" />
-        Variables specific to this project — separate from your account-wide KX Cloud config. Vars marked
-        <span className="text-amber-400 mx-1">Public</span> are exposed to this project's published site via <code className="text-white">window.KX_ENV</code> — never mark a real secret public.
       </Card>
 
-      {error && <p className="text-[12.5px] text-red-400 mb-3">{error}</p>}
+      {error && (
+        <p className="text-[12.5px] text-red-400 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2">
+          {error}
+        </p>
+      )}
 
-      <div className="flex flex-col gap-2 mb-4">
-        {vars === null && <p className="text-[13px] text-kxmist">Loading…</p>}
-        {vars?.length === 0 && <p className="text-[13px] text-kxmist">No variables set for this project yet.</p>}
-        {vars?.map((v) => (
-          <div key={v.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-3.5 py-2.5">
-            <div className="font-mono text-[13px] flex items-center gap-2 min-w-0">
-              <span className="text-kxblue truncate">{v.key}</span>
-              <span className="text-kxmist">=</span>
-              <span className="truncate">{revealed[v.id] ? v.value : '••••••••'}</span>
-              {v.is_public && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-sans shrink-0">Public</span>}
-            </div>
-            <div className="flex items-center gap-3 text-kxmist shrink-0">
-              <button onClick={() => setRevealed((r) => ({ ...r, [v.id]: !r[v.id] }))} className="text-[11.5px] hover:text-white">
-                {revealed[v.id] ? 'Hide' : 'Reveal'}
-              </button>
-              <button onClick={() => remove(v.id)} className="hover:text-red-400"><Trash2 size={13} /></button>
-            </div>
+      <Card className="p-4 rounded-xl">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-[14px] font-semibold">Environment variables</h3>
+            <p className="text-[11.5px] text-kxmist mt-0.5">Private by default. Injected into this project's runtime.</p>
           </div>
-        ))}
-      </div>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-kxmist">Project only</span>
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] items-end gap-3">
-        <Input label="Key" value={key} onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))} placeholder="API_URL" containerClassName="flex-1" />
-        <Input label="Value" value={value} onChange={(e) => setValue(e.target.value)} containerClassName="flex-1" />
-        <label className="flex items-center gap-1.5 text-[12px] text-kxmist pb-2.5 cursor-pointer select-none">
-          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-          Public
-        </label>
-        <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
-      </div>
+        <div className="flex flex-col gap-2 mb-4">
+          {vars === null && <p className="text-[13px] text-kxmist">Loading…</p>}
+          {vars?.length === 0 && <p className="text-[13px] text-kxmist">No variables set for this project yet.</p>}
+          {vars?.map((v) => (
+            <div key={v.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+              <div className="font-mono text-[13px] flex items-center gap-2 min-w-0">
+                <span className="text-kxblue truncate">{v.key}</span>
+                <span className="text-kxmist">=</span>
+                <span className="truncate">{revealed[v.id] ? v.value : '••••••••'}</span>
+                {v.is_public && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-sans shrink-0">Public</span>}
+              </div>
+              <div className="flex items-center gap-3 text-kxmist shrink-0">
+                <button onClick={() => setRevealed((r) => ({ ...r, [v.id]: !r[v.id] }))} className="text-[11.5px] hover:text-white">
+                  {revealed[v.id] ? 'Hide' : 'Reveal'}
+                </button>
+                <button onClick={() => remove(v.id)} className="hover:text-red-400" title="Delete variable"><Trash2 size={13} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] items-end gap-3">
+          <Input label="Key" value={key} onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))} placeholder="API_URL" />
+          <Input label="Value" value={value} onChange={(e) => setValue(e.target.value)} />
+          <label className="flex items-center gap-1.5 text-[12px] text-kxmist pb-2.5 cursor-pointer select-none">
+            <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+            Public
+          </label>
+          <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
+        </div>
       </Card>
 
       <Card className="p-4 rounded-xl">
@@ -443,15 +450,14 @@ function SiteSettingsTab({ projectId }) {
           <h3 className="text-[14px] font-semibold">SecureCheck</h3>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-kxblue/15 text-kxblue font-sans">Pro</span>
         </div>
-        <p className="text-[12.5px] text-kxmist mb-3">
-          A dual-model security review of this project's code — Claude and Gemini each review your files independently for secrets, missing auth checks, injection risks, and similar real issues. Costs 14 credits per run.
+        <p className="text-[12.5px] text-kxmist mb-3 leading-relaxed">
+          Dual-model security review for secrets, missing auth checks, injection risks, and similar issues. Costs 14 credits per run.
         </p>
 
         {isPro === false && (
-          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3.5 py-3 text-[12.5px] text-kxmist">
-            <Lock size={13} className="shrink-0" />
-            SecureCheck is available on the Pro plan.{' '}
-            <a href="/billing" className="text-kxblue hover:underline">Upgrade to run it</a>.
+          <div className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3.5 py-3 text-[12.5px] text-kxmist">
+            <Lock size={13} className="shrink-0 mt-0.5" />
+            <span>SecureCheck is available on the Pro plan. <a href="/billing" className="text-kxblue hover:underline">Upgrade to run it</a>.</span>
           </div>
         )}
 
@@ -480,12 +486,10 @@ function SiteSettingsTab({ projectId }) {
             )}
           </>
         )}
-      </div>
       </Card>
     </div>
   );
 }
-
 export default function ProjectWorkspace() {
   useSeo({ title: 'Project Workspace — KingxTech', noindex: true });
   useRequireAuth();
