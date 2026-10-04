@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import crypto from 'crypto';
 import { env } from './config/env';
 import { generateContent } from './services/aiRouter';
+import type { AgentTurn } from './services/agentTools';
 import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './services/chatHistory';
 import { touchSession, listSessions, deleteSession } from './services/sessions';
 import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi } from './services/modelRegistry';
@@ -139,7 +140,7 @@ app.post('/api/v1/chat/completions', requireAuth, rateLimit, async (req: AuthedR
   }
 
   const systemPrompt = normalized.filter((message: any) => message.role === 'system').map((message: any) => message.text).join('\n\n');
-  const history = normalized
+  const history: AgentTurn[] = normalized
     .filter((message: any) => message.role === 'user' || message.role === 'assistant')
     .slice(0, -1)
     .map((message: any) => ({ role: message.role === 'assistant' ? 'model' : 'user', text: message.text }));
