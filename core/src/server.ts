@@ -1028,12 +1028,6 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
 }
 
 async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
-  let filePath = requestedPath || 'index.html';');
-}
-
-const PWA_INTERCEPTOR = true;
-
-async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
   let filePath = requestedPath || 'index.html';
   if (filePath === '') filePath = 'index.html';
 
