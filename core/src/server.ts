@@ -1019,7 +1019,7 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const snippet = marker + '\n'
     + '<link rel="manifest" href="./manifest.webmanifest">\n'
     + '<meta name="theme-color" content="' + config.themeColor + '">\n'
-    + '<meta name="color-scheme" content="dark">\n'
+    + ''
     + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
     + marker;
 
