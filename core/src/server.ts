@@ -1005,15 +1005,14 @@ async function servePreview(res: express.Response, projectId: string, requestedP
       return;
     }
     const content = file.content ?? '';
+    const servedPath = !filePath.includes('.') ? 'index.html' : filePath;
     if (content.startsWith('__KX_BINARY_BASE64__:')) {
       const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
-      const servedPath = filePath;
       const ext = servedPath.split('.').pop() || '';
       applyPublishedSiteCache(res, servedPath);
       res.type(MIME_TYPES[ext] || 'application/octet-stream').send(binary);
       return;
     }
-    const servedPath = filePath;
     const ext = servedPath.split('.').pop() || '';
     applyPublishedSiteCache(res, servedPath);
     res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(content);
