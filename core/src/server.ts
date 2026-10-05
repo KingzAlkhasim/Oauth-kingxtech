@@ -575,9 +575,10 @@ app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequ
   try {
     const slug = await publishProject(req.user!.id, req.params.projectId);
     await buildProjectForPublish(req.user!.id, req.params.projectId);
-    const url = env.PUBLIC_SITE_BASE_DOMAIN
-      ? `https://${slug}.${env.PUBLIC_SITE_BASE_DOMAIN}/`
-      : `/site/${slug}/`;
+    // KingxTech's canonical published URL is path-based on the public site host.
+    // Keep /site/:slug/ as a legacy backend route, but never advertise the Vercel
+    // function URL to users as the published address.
+    const url = `https://site.kingxtech.name.ng/${slug}/`;
     res.json({ success: true, slug, url });
   } catch (error) {
     await handleFsError(res, error);
