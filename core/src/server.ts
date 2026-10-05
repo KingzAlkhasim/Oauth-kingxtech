@@ -1015,14 +1015,19 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const marker = '<!-- KX-PWA -->';
   const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
   if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
+
   const snippet = marker + '\n'
     + '<link rel="manifest" href="./manifest.webmanifest">\n'
     + '<meta name="theme-color" content="' + config.themeColor + '">\n'
     + '<meta name="color-scheme" content="dark">\n'
     + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
     + marker;
-  if (/<\/head>/i.test(cleaned)) return cleaned.replace(/<\/head>/i, snippet + '</head>');
-  return cleaned.replace(/<body[^>]*>/i, snippet + 'async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
+
+  if (/<\\/head>/i.test(cleaned)) return cleaned.replace(/<\\/head>/i, () => snippet + '</head>');
+  return cleaned.replace(/<body[^>]*>/i, (match) => snippet + match);
+}
+
+async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
   let filePath = requestedPath || 'index.html';');
 }
 
@@ -1063,9 +1068,9 @@ async function servePreview(res: express.Response, projectId: string, requestedP
       res.status(404).type('text/plain').send('Not found.');
       return;
     }
+    const servedPath = !filePath.includes('.') ? 'index.html' : filePath;
     let content = file.content ?? '';
     if (extIsHtml(servedPath, content)) content = await injectPwaHtml(projectId, content);
-    const servedPath = !filePath.includes('.') ? 'index.html' : filePath;
     if (content.startsWith('__KX_BINARY_BASE64__:')) {
       const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
       const ext = servedPath.split('.').pop() || '';
@@ -1093,7 +1098,9 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   const servedPath = file ? (filePath.includes('.') || filePath === 'index.html' ? filePath : 'index.html') : filePath;
   const ext = servedPath.split('.').pop() || '';
   applyPublishedSiteCache(res, servedPath);
-  res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(file.content ?? '');
+  let content = file.content ?? '';
+  if (extIsHtml(servedPath, content)) content = await injectPwaHtml(projectId, content);
+  res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(content);
 }
 
 // Custom domain management. Vercel registration/verification stays server-side so the
