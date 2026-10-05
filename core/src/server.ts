@@ -56,6 +56,22 @@ app.use(helmet());
 // ambient browser credentials.
 app.use(cors({ origin: true, credentials: false }));
 app.use(express.json({ limit: '2mb' }));
+function applyPublishedSiteSecurity(req: express.Request, res: express.Response) {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https:",
+      "style-src 'self' 'unsafe-inline' https:",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data: https:",
+      "connect-src 'self' https: wss:",
+      `frame-ancestors 'self' ${env.ALLOWED_ORIGINS.join(' ')}`,
+    ].join('; ')
+  );
+}
+
 
 // Lightweight deployment/uptime check.
 app.get('/', (_req, res) => {
@@ -903,9 +919,8 @@ const MIME_TYPES: Record<string, string> = {
   txt: 'text/plain; charset=utf-8',
 };
 
-app.use(['/preview', '/site'], (_req, res, next) => {
-  res.removeHeader('X-Frame-Options');
-  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${env.ALLOWED_ORIGINS.join(' ')}`);
+app.use(['/preview', '/site'], (req, res, next) => {
+  applyPublishedSiteSecurity(req, res);
   next();
 });
 
@@ -930,8 +945,7 @@ app.use(async (req, res, next) => {
   const subdomain = host.slice(0, -suffix.length);
   if (!subdomain || ['www', 'api', 'app'].includes(subdomain)) return next();
 
-  res.removeHeader('X-Frame-Options');
-  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${env.ALLOWED_ORIGINS.join(' ')}`);
+  applyPublishedSiteSecurity(req, res);
 
   try {
     const projectId = await getProjectIdBySlug(subdomain);
@@ -1070,8 +1084,7 @@ app.use(async (req, res, next) => {
   try {
     const projectId = await getProjectIdByCustomDomain(host);
     if (!projectId) return next();
-    res.removeHeader('X-Frame-Options');
-    res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${env.ALLOWED_ORIGINS.join(' ')}`);
+    applyPublishedSiteSecurity(req, res);
     let requestPath = req.path;
     while (requestPath.startsWith('/')) requestPath = requestPath.slice(1);
     await servePreview(res, projectId, requestPath);
@@ -1089,6 +1102,7 @@ app.use(async (req, res, next) => {
 // are never interpreted as site slugs.
 app.get(/^\/([^/]+)\/?(.*)$/, async (req, res, next) => {
   if (req.hostname !== 'site.kingxtech.name.ng') return next();
+  applyPublishedSiteSecurity(req, res);
   try {
     const slug = req.params[0];
     const projectId = await getProjectIdBySlug(slug);
@@ -1106,6 +1120,7 @@ app.get(/^\/([^/]+)\/?(.*)$/, async (req, res, next) => {
 });
 
 app.get(/^\/site\/([^/]+)\/?(.*)$/, async (req, res) => {
+  applyPublishedSiteSecurity(req, res);
   try {
     const projectId = await getProjectIdBySlug(req.params[0]);
     if (!projectId) {
