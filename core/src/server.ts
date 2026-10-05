@@ -44,9 +44,12 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
+import { getProjectPwaConfig, setProjectPwaEnabled, buildPwaManifest, buildPwaServiceWorker } from './services/pwa';
 import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
+
+const PWA_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#09090B"/><circle cx="256" cy="256" r="218" fill="none" stroke="#8B5CF6" stroke-width="22" opacity=".35"/><path d="M126 326V186l56 56 74-106 74 106 56-56v140" fill="none" stroke="#D946C6" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/><circle cx="126" cy="326" r="22" fill="#D946C6"/><circle cx="256" cy="136" r="22" fill="#8B5CF6"/><circle cx="386" cy="326" r="22" fill="#00A3FF"/></svg>';
 
 const app = express();
 app.use(helmet());
@@ -585,6 +588,32 @@ app.delete('/api/projects/:projectId/env/:id', requireAuth, async (req: AuthedRe
   }
 });
 
+// --- Per-project PWA settings --------------------------------------------
+
+app.get('/api/projects/:projectId/pwa', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await assertProjectOwnership(req.user!.id, req.params.projectId);
+    const config = await getProjectPwaConfig(req.params.projectId);
+    res.json({ success: true, pwa: config ? { enabled: config.enabled } : { enabled: false } });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
+app.put('/api/projects/:projectId/pwa', requireAuth, async (req: AuthedRequest, res) => {
+  const enabled = req.body?.enabled;
+  if (typeof enabled !== 'boolean') {
+    res.status(400).json({ success: false, error: 'enabled must be a boolean.' });
+    return;
+  }
+  try {
+    await setProjectPwaEnabled(req.user!.id, req.params.projectId, enabled);
+    res.json({ success: true, enabled });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
 // --- Publish (permanent hosted URL) ----------------------------------------
 
 app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequest, res) => {
@@ -977,9 +1006,39 @@ app.use(async (req, res, next) => {
   }
 });
 
+function extIsHtml(filePath: string, content: string): boolean {
+  return filePath.toLowerCase().endsWith('.html') || /<html[\s>]/i.test(content);
+}
+
+async function injectPwaHtml(projectId: string, content: string): Promise<string> {
+  const config = await getProjectPwaConfig(projectId);
+  const marker = '<!-- KX-PWA -->';
+  const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
+  if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
+  const snippet = marker + '\n'
+    + '<link rel="manifest" href="./manifest.webmanifest">\n'
+    + '<meta name="theme-color" content="' + config.themeColor + '">\n'
+    + '<meta name="color-scheme" content="dark">\n'
+    + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
+    + marker;
+  if (/<\/head>/i.test(cleaned)) return cleaned.replace(/<\/head>/i, snippet + '</head>');
+  return cleaned.replace(/<body[^>]*>/i, snippet + 'async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
+  let filePath = requestedPath || 'index.html';');
+}
+
+const PWA_INTERCEPTOR = true;
+
 async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
   let filePath = requestedPath || 'index.html';
   if (filePath === '') filePath = 'index.html';
+
+  const pwaConfig = await getProjectPwaConfig(projectId);
+  if (filePath === 'manifest.webmanifest' || filePath === 'sw.js' || filePath === 'pwa-icon.svg') {
+    if (!pwaConfig?.enabled) { res.status(404).type('text/plain').send('Not found.'); return; }
+    if (filePath === 'manifest.webmanifest') { res.setHeader('Cache-Control', 'no-cache'); res.type('application/manifest+json').send(buildPwaManifest(pwaConfig)); return; }
+    if (filePath === 'sw.js') { res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Service-Worker-Allowed', './'); res.type('application/javascript; charset=utf-8').send(buildPwaServiceWorker(projectId)); return; }
+    res.setHeader('Cache-Control', 'public, max-age=86400'); res.type('image/svg+xml').send(PWA_ICON_SVG); return;
+  }
 
   // Modern Vite projects are published from compiled artifacts. This keeps
   // browsers from receiving raw TS/TSX and makes nested /site/:slug/ paths work.
@@ -1004,7 +1063,8 @@ async function servePreview(res: express.Response, projectId: string, requestedP
       res.status(404).type('text/plain').send('Not found.');
       return;
     }
-    const content = file.content ?? '';
+    let content = file.content ?? '';
+    if (extIsHtml(servedPath, content)) content = await injectPwaHtml(projectId, content);
     const servedPath = !filePath.includes('.') ? 'index.html' : filePath;
     if (content.startsWith('__KX_BINARY_BASE64__:')) {
       const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
