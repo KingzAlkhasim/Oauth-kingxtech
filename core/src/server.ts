@@ -1023,7 +1023,7 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
     + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
     + marker;
 
-  if (/<\\/head>/i.test(cleaned)) return cleaned.replace(/<\\/head>/i, () => snippet + '</head>');
+  if (/<\/head>/i.test(cleaned)) return cleaned.replace(/<\/head>/i, () => snippet + '</head>');
   return cleaned.replace(/<body[^>]*>/i, (match) => snippet + match);
 }
 
