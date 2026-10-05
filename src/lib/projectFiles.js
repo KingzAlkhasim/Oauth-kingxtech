@@ -83,7 +83,9 @@ export async function publishProject(projectId) {
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to publish project');
-  const url = data.url.startsWith('http') ? data.url : apiUrl(data.url);
+  // Always use KingxTech's canonical public-site origin for the UI.
+  // This prevents an old backend/Vercel hostname from leaking into Publish/Copy link.
+  const url = data.slug ? siteUrl(`/${data.slug}/`) : (data.url.startsWith('http') ? data.url : apiUrl(data.url));
   return { slug: data.slug, url };
 }
 
