@@ -901,6 +901,21 @@ app.post('/api/projects/:projectId/terminal', requireAuth, rateLimit, async (req
 // on every request — there is no separate "build" step, so a project is
 // live the instant the AI (or you) saves a file. Binary assets aren't
 // supported yet — the virtual filesystem only stores text content.
+function applyPublishedSiteCache(res: express.Response, filePath: string) {
+  const normalizedPath = filePath.replace(/^\/+/, '');
+  const isHashedAsset =
+    /^assets\/[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/.test(normalizedPath);
+
+  if (isHashedAsset) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return;
+  }
+
+  if (normalizedPath.toLowerCase().endsWith('.html')) {
+    res.setHeader('Cache-Control', 'no-cache');
+  }
+}
+
 const MIME_TYPES: Record<string, string> = {
   html: 'text/html; charset=utf-8',
   css: 'text/css; charset=utf-8',
@@ -975,6 +990,7 @@ async function servePreview(res: express.Response, projectId: string, requestedP
       return;
     }
     const script = await buildPublicEnvScript(ownerId, projectId);
+    res.setHeader('Cache-Control', 'no-cache');
     res.type('application/javascript; charset=utf-8').send(script);
     return;
   }
@@ -991,11 +1007,15 @@ async function servePreview(res: express.Response, projectId: string, requestedP
     const content = file.content ?? '';
     if (content.startsWith('__KX_BINARY_BASE64__:')) {
       const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
-      const ext = filePath.split('.').pop() || '';
+      const servedPath = filePath;
+      const ext = servedPath.split('.').pop() || '';
+      applyPublishedSiteCache(res, servedPath);
       res.type(MIME_TYPES[ext] || 'application/octet-stream').send(binary);
       return;
     }
-    const ext = filePath.split('.').pop() || '';
+    const servedPath = filePath;
+    const ext = servedPath.split('.').pop() || '';
+    applyPublishedSiteCache(res, servedPath);
     res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(content);
     return;
   }
@@ -1011,7 +1031,9 @@ async function servePreview(res: express.Response, projectId: string, requestedP
     res.status(404).type('text/plain').send('Not found. Ask K-XpertAI to create an index.html to get started.');
     return;
   }
-  const ext = filePath.split('.').pop() || '';
+  const servedPath = file ? (filePath.includes('.') || filePath === 'index.html' ? filePath : 'index.html') : filePath;
+  const ext = servedPath.split('.').pop() || '';
+  applyPublishedSiteCache(res, servedPath);
   res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(file.content ?? '');
 }
 
