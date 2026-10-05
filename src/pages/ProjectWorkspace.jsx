@@ -12,6 +12,7 @@ import { getProjectRepoLink, pushProjectToGithub, importRepoFromGithub } from '.
 import { listProjectEnvVars, setProjectEnvVar, deleteProjectEnvVar } from '../lib/projectEnvVars';
 import { runSecurityCheck } from '../lib/securityCheck';
 import { getBillingProfile } from '../lib/billing';
+import { getProjectPwa, setProjectPwa } from '../lib/projectPwa';
 import CodeMirror from '@uiw/react-codemirror';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
@@ -335,10 +336,34 @@ function SiteSettingsTab({ projectId }) {
   const [scRunning, setScRunning] = useState(false);
   const [scError, setScError] = useState('');
   const [scResult, setScResult] = useState(null);
+  const [pwaEnabled, setPwaEnabled] = useState(false);
+  const [pwaLoading, setPwaLoading] = useState(true);
+  const [pwaSaving, setPwaSaving] = useState(false);
 
   useEffect(() => {
     getBillingProfile().then(({ data }) => setIsPro(!!data?.is_pro_member));
-  }, []);
+    getProjectPwa(projectId)
+      .then((pwa) => setPwaEnabled(!!pwa?.enabled))
+      .catch((e) => setError(e.message))
+      .finally(() => setPwaLoading(false));
+  }, [projectId]);
+
+  const togglePwa = async (enabled) => {
+    const confirmed = confirm(enabled
+      ? 'Enable Install as App for this published site? KingxTech will add a scoped PWA manifest and service worker without changing your project files.'
+      : 'Disable Install as App for this published site? New visits will stop registering the PWA. Existing installed app icons cannot be removed remotely.');
+    if (!confirmed) return;
+    setPwaSaving(true);
+    setError('');
+    try {
+      await setProjectPwa(projectId, enabled);
+      setPwaEnabled(enabled);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPwaSaving(false);
+    }
+  };
 
   const runSecureCheck = async () => {
     setScRunning(true);
@@ -387,6 +412,24 @@ function SiteSettingsTab({ projectId }) {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
+      <Card className="p-4 rounded-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-[14px] font-semibold">Install as App</h3>
+            <p className="text-[11.5px] text-kxmist mt-0.5 leading-relaxed">
+              Add PWA install support to this project only. It stays off for every project until its owner enables it here.
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <input type="checkbox" className="sr-only peer" checked={pwaEnabled} disabled={pwaLoading || pwaSaving} onChange={(e) => togglePwa(e.target.checked)} />
+            <span className="w-11 h-6 rounded-full bg-white/10 peer-checked:bg-kxpurple transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
+          </label>
+        </div>
+        <div className="mt-3 text-[11px] text-kxmist">
+          {pwaLoading ? 'Loading PWA setting…' : pwaEnabled ? 'Enabled for this project.' : 'Disabled — the published site stays a normal website.'}
+        </div>
+      </Card>
+
       <Card className="p-4 rounded-xl">
         <div className="flex items-start gap-2 text-[12px] text-kxmist leading-relaxed">
           <Info size={13} className="mt-0.5 shrink-0" />
