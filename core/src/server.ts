@@ -1071,7 +1071,9 @@ app.use(async (req, res, next) => {
     if (!projectId) return next();
     res.removeHeader('X-Frame-Options');
     res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${env.ALLOWED_ORIGINS.join(' ')}`);
-    await servePreview(res, projectId, req.path.replace(/^\\/+/, ''));
+    let requestPath = req.path;
+    while (requestPath.startsWith('/')) requestPath = requestPath.slice(1);
+    await servePreview(res, projectId, requestPath);
   } catch (error) {
     console.error('Custom domain route error:', error);
     Sentry.captureException(error, { tags: { route: 'custom-domain' } });
