@@ -140,7 +140,27 @@ export async function buildProjectForPublish(userId: string, projectId: string):
   const packageFile = files.find((file) => file.path === 'package.json');
   const packageJson = packageFile ? JSON.parse(packageFile.content) : null;
 
-  if (!packageJson) throw new Error('This project has no package.json yet.');
+  // Static HTML/CSS/JS projects do not need a package manager or build step.
+  // Publish their source tree directly when an index.html entry point exists.
+  if (!packageJson) {
+    const staticFiles = files.filter((file) =>
+      file.path !== '.kingxtech-dist' && !file.path.startsWith('.kingxtech-dist/')
+    );
+    if (!staticFiles.some((file) => file.path === 'index.html')) {
+      throw new Error('Static publishing requires an index.html file.');
+    }
+
+    const publishedFiles: PublishedBuildFile[] = staticFiles.map((file) => {
+      const content = file.content ?? '';
+      const binaryPrefix = '__KX_BINARY_BASE64__:';
+      return content.startsWith(binaryPrefix)
+        ? { path: file.path, content: content.slice(binaryPrefix.length), isBinary: true }
+        : { path: file.path, content };
+    });
+
+    await replacePublishedBuild(userId, projectId, publishedFiles);
+    return { framework: 'Static HTML', fileCount: publishedFiles.length };
+  }
 
   const packageManager = detectPackageManager(files.map((file) => file.path));
   const projectEnv = await getProjectEnvVarsForRuntime(userId, projectId);
