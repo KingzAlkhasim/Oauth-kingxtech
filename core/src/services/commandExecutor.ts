@@ -31,10 +31,14 @@ const ALLOWLIST: Record<string, Validator> = {
     ['status', 'log', 'diff', 'branch', '--version'].includes(args[0]) &&
     args.slice(1).every(isSafeToken),
 
-  // npm: safe, non-mutating subcommands only
-  npm: (args) =>
-    ['test', 'run', 'ls', '--version', 'lint'].includes(args[0]) &&
-    args.slice(1).every(isSafeToken),
+  // npm: safe, non-mutating diagnostics only. Package-management
+  // commands are explicitly blocked even if they are passed as arguments.
+  npm: (args) => {
+    const blocked = ['create', 'install', 'i', 'ci', 'add', 'init', 'uninstall', 'remove', 'update', 'upgrade', 'exec'];
+    if (blocked.includes(args[0])) return false;
+    return ['test', 'run', 'ls', '--version', 'lint'].includes(args[0]) &&
+      args.slice(1).every(isSafeToken);
+  },
 
   // node/tsc version checks — harmless introspection
   node: (args) => args.length === 1 && args[0] === '--version',
