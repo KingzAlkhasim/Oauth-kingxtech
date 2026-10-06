@@ -116,6 +116,70 @@ async function reportError(
   res.status(status).json({ success: false, error: message });
 }
 
+function formatAgentError(error: any): string {
+  const status = error?.status ?? error?.statusCode ?? error?.response?.status;
+  const code = String(error?.code ?? '');
+  const message = String(error?.message ?? error ?? '');
+  const headers = error?.headers ?? error?.response?.headers;
+
+  const headerValue = (name: string): string | undefined => {
+    if (!headers) return undefined;
+    if (typeof headers.get === 'function') {
+      return headers.get(name) ?? headers.get(name.toLowerCase()) ?? undefined;
+    }
+    return headers[name] ?? headers[name.toLowerCase()];
+  };
+
+  if (status === 429 || /429|rate.?limit|quota|daily limit/i.test(message)) {
+    const resetHeader = headerValue('x-ratelimit-reset') ?? headerValue('x-ratelimit-reset-requests');
+    const retryAfter = headerValue('retry-after');
+    let resetText = resetHeader ?? '';
+
+    if (resetText && /^\d+(?:\.\d+)?$/.test(resetText)) {
+      const numeric = Number(resetText);
+      if (numeric > 1_000_000_000) {
+        resetText = new Date(numeric * 1000).toLocaleTimeString();
+      }
+    }
+
+    if (!resetText && retryAfter) {
+      const seconds = Number.parseFloat(retryAfter.replace(/s$/i, ''));
+      if (Number.isFinite(seconds) && seconds > 0) {
+        resetText = new Date(Date.now() + seconds * 1000).toLocaleTimeString();
+      } else {
+        resetText = retryAfter;
+      }
+    }
+
+    const embeddedReset = message.match(/(?:retry|reset)[^\d]{0,30}(?:in|at)\s+([^,.]+)/i)?.[1];
+    resetText ||= embeddedReset || '';
+
+    return resetText
+      ? `Daily provider limit reached. Try again after ${resetText}.`
+      : 'Daily provider limit reached. The provider did not return a reset time; please try again later.';
+  }
+
+  if (
+    code === 'ETIMEDOUT' ||
+    code === 'ESOCKETTIMEDOUT' ||
+    error?.name === 'AbortError' ||
+    /timed? ?out|timeout/i.test(message)
+  ) {
+    return 'The AI provider timed out before completing the request. Please try again.';
+  }
+
+  if (
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    /ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|provider.*down|service unavailable/i.test(`${code} ${message}`)
+  ) {
+    return 'The AI provider is currently unavailable. Please try again shortly.';
+  }
+
+  return message || 'The AI provider returned an unexpected error.';
+}
+
 // --- Public OpenAI-compatible API ---------------------------------------
 // These routes are deliberately separate from the internal K-XpertAI workspace
 // endpoint above. API-key callers cannot access project files or terminal tools.
@@ -279,6 +343,24 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
 
   const { model, cleanPrompt, unknownTag } = parseModelTag(rawPrompt);
 
+  let activeProjectId: string | undefined;
+  if (projectId) {
+    try {
+      await assertProjectOwnership(userId, projectId);
+      activeProjectId = projectId;
+    } catch (error) {
+      if (error instanceof ProjectAccessError) {
+        res.status(404).json({
+          success: false,
+          error: 'Project not found or no longer belongs to this account. Re-open an existing project workspace.',
+        });
+        return;
+      }
+      await reportError(res, 500, 'Failed to validate project workspace', error, 'Project validation error:');
+      return;
+    }
+  }
+
   // Plan gate — free-plan users can only use the genuinely-free open-weights
   // models. Everything else (Gemini, Claude, GPT) needs a paid plan, since
   // it either costs KingxTech real money or is a premium third-party model.
@@ -387,20 +469,20 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
           model.provider,
           model.modelId,
           history,
-          { userId, projectId: projectId || undefined, turnId, readOnly: isPlanningMode },
+          { userId, projectId: activeProjectId, turnId, readOnly: isPlanningMode },
           (step) => sendEvent({ type: 'step', step })
         )
     );
 
     sendEvent({ type: 'status', label: isPlanningMode ? 'Writing the final plan…' : 'Finalizing changes…' });
-    await touchSession(userId, sessionId, projectId || undefined, cleanPrompt);
+    await touchSession(userId, sessionId, activeProjectId, cleanPrompt);
     await saveMessageToDb(userId, sessionId, { role: 'user', text: cleanPrompt });
     await saveMessageToDb(userId, sessionId, { role: 'model', text: aiResponse.text });
     if (req.authMethod !== 'api_key') {
-      await logUsage(userId, model.provider, model.code, model.creditCost, projectId || undefined);
+      await logUsage(userId, model.provider, model.code, model.creditCost, activeProjectId);
     }
 
-    const changes = projectId ? await getTurnChanges(userId, projectId, turnId) : [];
+    const changes = activeProjectId ? await getTurnChanges(userId, activeProjectId, turnId) : [];
 
     let output = aiResponse.text;
     if (unknownTag) {
@@ -419,12 +501,9 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   } catch (error: any) {
     console.error('Agent Error:', error, 'user:', userId);
     Sentry.captureException(error, { tags: { route: 'api.ai.generate', model_code: model.code } });
-    const isRateLimit = error?.status === 429 || /429|rate.?limit/i.test(error?.message ?? '');
     sendEvent({
       type: 'error',
-      error: isRateLimit
-        ? "The free model is busy right now (shared usage limit) — this is temporary. Wait about 30 seconds and try again."
-        : 'Failed to process agent request',
+      error: formatAgentError(error),
     });
   } finally {
     // Cloud Run can scale an instance down between requests, and Sentry
