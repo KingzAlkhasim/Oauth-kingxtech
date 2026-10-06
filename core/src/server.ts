@@ -44,7 +44,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
-import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker } from './services/pwa';
+import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, buildPwaIconPng } from './services/pwa';
 import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
@@ -1033,11 +1033,39 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   if (filePath === '') filePath = 'index.html';
 
   const pwaConfig = await getProjectPwaConfig(projectId);
-  if (filePath === 'manifest.webmanifest' || filePath === 'sw.js' || filePath === 'pwa-icon.svg') {
+  if (
+    filePath === 'manifest.webmanifest' ||
+    filePath === 'sw.js' ||
+    filePath === 'pwa-icon.svg' ||
+    filePath === 'pwa-icon-192.png' ||
+    filePath === 'pwa-icon-512.png'
+  ) {
     if (!pwaConfig?.enabled) { res.status(404).type('text/plain').send('Not found.'); return; }
-    if (filePath === 'manifest.webmanifest') { const colors = await getProjectPwaColors(projectId, pwaConfig); res.setHeader('Cache-Control', 'no-cache'); res.type('application/manifest+json').send(buildPwaManifest(pwaConfig, colors)); return; }
-    if (filePath === 'sw.js') { res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Service-Worker-Allowed', './'); res.type('application/javascript; charset=utf-8').send(buildPwaServiceWorker(projectId)); return; }
-    res.setHeader('Cache-Control', 'public, max-age=86400'); res.type('image/svg+xml').send(PWA_ICON_SVG); return;
+    if (filePath === 'manifest.webmanifest') {
+      const colors = await getProjectPwaColors(projectId, pwaConfig);
+      res.setHeader('Cache-Control', 'no-cache');
+      res.type('application/manifest+json').send(buildPwaManifest(pwaConfig, colors));
+      return;
+    }
+    if (filePath === 'sw.js') {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Service-Worker-Allowed', './');
+      res.type('application/javascript; charset=utf-8').send(buildPwaServiceWorker(projectId));
+      return;
+    }
+    if (filePath === 'pwa-icon-192.png') {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.type('image/png').send(buildPwaIconPng(192));
+      return;
+    }
+    if (filePath === 'pwa-icon-512.png') {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.type('image/png').send(buildPwaIconPng(512));
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.type('image/svg+xml').send(PWA_ICON_SVG);
+    return;
   }
 
   // Modern Vite projects are published from compiled artifacts. This keeps
