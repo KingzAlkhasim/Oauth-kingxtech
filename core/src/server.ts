@@ -1016,10 +1016,10 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
   if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
 
-  const hasThemeColor = /<meta\\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
+  const hasThemeColor = /<meta\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
   const snippet = marker + '\n'
     + '<link rel="manifest" href="./manifest.webmanifest">\n'
-    + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">\\n')
+    + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">' + '\n')
     + ''
     + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
     + marker;
