@@ -44,7 +44,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
-import { getProjectPwaConfig, setProjectPwaEnabled, buildPwaManifest, buildPwaServiceWorker } from './services/pwa';
+import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker } from './services/pwa';
 import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
@@ -1016,9 +1016,10 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
   if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
 
+  const hasThemeColor = /<meta\\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
   const snippet = marker + '\n'
     + '<link rel="manifest" href="./manifest.webmanifest">\n'
-    + '<meta name="theme-color" content="' + config.themeColor + '">\n'
+    + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">\\n')
     + ''
     + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
     + marker;
@@ -1034,7 +1035,7 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   const pwaConfig = await getProjectPwaConfig(projectId);
   if (filePath === 'manifest.webmanifest' || filePath === 'sw.js' || filePath === 'pwa-icon.svg') {
     if (!pwaConfig?.enabled) { res.status(404).type('text/plain').send('Not found.'); return; }
-    if (filePath === 'manifest.webmanifest') { res.setHeader('Cache-Control', 'no-cache'); res.type('application/manifest+json').send(buildPwaManifest(pwaConfig)); return; }
+    if (filePath === 'manifest.webmanifest') { const colors = await getProjectPwaColors(projectId, pwaConfig); res.setHeader('Cache-Control', 'no-cache'); res.type('application/manifest+json').send(buildPwaManifest(pwaConfig, colors)); return; }
     if (filePath === 'sw.js') { res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Service-Worker-Allowed', './'); res.type('application/javascript; charset=utf-8').send(buildPwaServiceWorker(projectId)); return; }
     res.setHeader('Cache-Control', 'public, max-age=86400'); res.type('image/svg+xml').send(PWA_ICON_SVG); return;
   }
