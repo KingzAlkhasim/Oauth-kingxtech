@@ -76,6 +76,64 @@ const FILE_TOOLS = [
 ];
 const MUTATING_TOOLS = ['writeProjectFile', 'createProjectFolder', 'deleteProjectFile'];
 
+export const AGENT_MAX_TOOL_STEPS = 15;
+export const AGENT_MAX_DURATION_MS = 240_000;
+const TOOL_RESULT_MAX_CHARS = 60_000;
+const TOOL_RESULT_TRUNCATION_MARKER = '[TRUNCATED: file continues, do not overwrite the whole file]';
+
+export function serializeToolResult(result: unknown): string {
+  const serialized = typeof result === 'string' ? result : JSON.stringify(result);
+  if (serialized.length <= TOOL_RESULT_MAX_CHARS) return serialized;
+  const keep = Math.max(0, TOOL_RESULT_MAX_CHARS - TOOL_RESULT_TRUNCATION_MARKER.length - 1);
+  return serialized.slice(0, keep) + '\n' + TOOL_RESULT_TRUNCATION_MARKER;
+}
+
+export function isConnectionReset(error: unknown): boolean {
+  const e = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  return e?.code === 'ECONNRESET' || e?.cause?.code === 'ECONNRESET';
+}
+
+export function isAgentTimeout(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'AGENT_TIMEOUT';
+}
+
+export async function runProviderCall<T>(
+  operation: () => Promise<T>,
+  deadlineAt: number
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      throw Object.assign(new Error('Agent execution time limit reached.'), { code: 'AGENT_TIMEOUT' });
+    }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(Object.assign(new Error('Agent execution time limit reached.'), { code: 'AGENT_TIMEOUT' }));
+          }, remainingMs);
+        }),
+      ]);
+    } catch (error) {
+      if (attempt === 0 && isConnectionReset(error)) {
+        attempt += 1;
+        continue;
+      }
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+}
+
+export function buildAgentTimeoutSummary(steps: ToolStep[]): string {
+  const summary = synthesizeFallbackText(steps);
+  return summary + '\n\nI stopped the agent after 240 seconds to avoid the platform timeout.';
+}
+
 export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'executeTerminalCommand',
@@ -181,6 +239,13 @@ builds, or execute arbitrary shell commands. If a request needs that, say so
 plainly rather than guessing or pretending you did it.
 
 Project-specific environment variables from Site Settings are injected into the isolated project sandbox for dependency installation, Vite builds, and dev/runtime processes. Server-side code can read private values with process.env.MY_SECRET. For Vite client code, only variables prefixed with VITE_ are exposed through import.meta.env; never put a real secret in a VITE_ variable. If the user has marked a variable as public, the project also has a virtual ./kx-env.js resource available on published/preview pages — include <script src="./kx-env.js"></script> in index.html when the user explicitly asks to consume a public value through window.KX_ENV.SOME_KEY.
+Agent workflow rules:
+- Read each file at most once per turn unless you need to verify a specific change.
+- Do not run git, ls, or pwd unless the user explicitly asks for those diagnostics.
+- For implementation requests, start editing within your first 3 tool steps; do not spend the turn only exploring.
+- Batch independent tool calls when possible instead of making them one at a time.
+- If you introduce a new external import, add the corresponding dependency to package.json.
+- Never rewrite an entire file from a partial/truncated read. If a file was only partially visible, read the remaining content before using writeProjectFile.
 `;
 
 /**
