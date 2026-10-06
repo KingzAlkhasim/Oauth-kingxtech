@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
-import { assertProjectOwnership } from './projectFs';
+import { assertProjectOwnership, hasPublishedBuild, readPublishedBuildFile, readProjectFilePublic } from './projectFs';
 
 export interface ProjectPwaConfig {
   name: string;
@@ -34,13 +34,34 @@ export async function setProjectPwaEnabled(userId: string, projectId: string, en
   if (error) throw new Error('setProjectPwaEnabled failed: ' + error.message);
 }
 
-export function buildPwaManifest(config: ProjectPwaConfig): string {
+function extractMetaColor(html: string, name: string): string | null {
+  const re = new RegExp('<meta\\s+[^>]*name=["\\\']' + name + '["\\\'][^>]*content=["\\\'](#[0-9a-fA-F]{3,8})["\\\'][^>]*>', 'i');
+  return html.match(re)?.[1] ?? null;
+}
+
+export async function getProjectPwaColors(projectId: string, fallback: ProjectPwaConfig): Promise<{ themeColor: string; backgroundColor: string }> {
+  let html = '';
+  if (await hasPublishedBuild(projectId)) {
+    const file = await readPublishedBuildFile(projectId, 'index.html');
+    html = file?.content ?? '';
+  } else {
+    const file = await readProjectFilePublic(projectId, 'index.html');
+    html = file?.content ?? '';
+  }
+
+  return {
+    themeColor: extractMetaColor(html, 'theme-color') ?? fallback.themeColor,
+    backgroundColor: extractMetaColor(html, 'pwa-background-color') ?? fallback.backgroundColor,
+  };
+}
+
+export function buildPwaManifest(config: ProjectPwaConfig, colors?: { themeColor: string; backgroundColor: string }): string {
   const name = config.name.trim() || 'KingxTech Project';
   return JSON.stringify({
     id: './', name, short_name: name.slice(0, 20),
     description: name + ' — published with KingxTech.',
     start_url: './', scope: './', display: 'standalone',
-    theme_color: config.themeColor, background_color: config.backgroundColor,
+    theme_color: colors?.themeColor ?? config.themeColor, background_color: colors?.backgroundColor ?? config.backgroundColor,
     icons: [
       { src: './pwa-icon.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable' },
       { src: './pwa-icon.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' },
