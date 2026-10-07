@@ -1146,24 +1146,24 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const config = await getProjectPwaConfig(projectId);
   const marker = '<!-- KX-PWA -->';
   const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
-  if (!config?.enabled || !/<html[\\s>]/i.test(cleaned)) return cleaned;
+  if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
 
   const ownerId = await getProjectOwnerId(projectId);
   const plan = ownerId ? await getUserPlan(ownerId) : undefined;
   const customIconUrl = await getProjectPwaIconPublicUrl(projectId, config, ownerId, plan);
-  const hasThemeColor = /<meta\\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
+  const hasThemeColor = /<meta\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
   const withoutOldAppleIcon = customIconUrl
-    ? cleaned.replace(/<link\\s+[^>]*rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*>/gi, '')
+    ? cleaned.replace(/<link\s+[^>]*rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*>/gi, '')
     : cleaned;
   const htmlWithIcon = customIconUrl ? withoutOldAppleIcon : cleaned;
-  const snippet = marker + '\\n'
-    + '<link rel="manifest" href="./manifest.webmanifest">\\n'
-    + (customIconUrl ? '<link rel="apple-touch-icon" href="./pwa-icon-192.png">\\n' : '')
-    + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">' + '\\n')
-    + '<script>if (\\'serviceWorker\\' in navigator) { window.addEventListener(\\'load\\', () => navigator.serviceWorker.register(\\'./sw.js\\', { scope: \\'./\\', updateViaCache: \\'none\\' }).catch(() => {})); }</script>\\n'
+  const snippet = marker + '\n'
+    + '<link rel="manifest" href="./manifest.webmanifest">\n'
+    + (customIconUrl ? '<link rel="apple-touch-icon" href="./pwa-icon-192.png">\n' : '')
+    + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">' + '\n')
+    + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
     + marker;
 
-  if (/<\\/head>/i.test(htmlWithIcon)) return htmlWithIcon.replace(/<\\/head>/i, () => snippet + '</head>');
+  if (/<\/head>/i.test(htmlWithIcon)) return htmlWithIcon.replace(/<\/head>/i, () => snippet + '</head>');
   return htmlWithIcon.replace(/<body[^>]*>/i, (match) => snippet + match);
 }
 async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
