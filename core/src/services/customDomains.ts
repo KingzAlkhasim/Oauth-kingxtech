@@ -125,20 +125,16 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
     last_checked_at: new Date().toISOString(),
   };
 
-  let data;
-  let error;
-
-  if (existingDomain) {
-    ({ data, error } = await supabaseAdmin
+  const { data, error } = existingDomain
+    ? await supabaseAdmin
       .from('custom_domains')
       .update(domainValues)
       .eq('domain', domain)
       .eq('user_id', userId)
       .eq('project_id', projectId)
       .select('*, projects(id, name)')
-      .single());
-  } else {
-    ({ data, error } = await supabaseAdmin
+      .single()
+    : await supabaseAdmin
       .from('custom_domains')
       .insert({
         user_id: userId,
@@ -146,8 +142,7 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
         ...domainValues,
       })
       .select('*, projects(id, name)')
-      .single());
-  }
+      .single();
 
   if (error) throw new Error(`custom domain save failed: ${error.message}`);
   return { domain: data, vercel };
