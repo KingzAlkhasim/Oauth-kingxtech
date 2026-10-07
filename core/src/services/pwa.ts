@@ -75,7 +75,7 @@ export async function validatePwaIcon(buffer: Buffer): Promise<{ width: number; 
   } catch {
     throw new PwaIconError(400, 'The uploaded file is not a valid PNG image.');
   }
-  if (metadata.format !== 'png') throw new Error('Icon must be a PNG image. SVG and all other file types are not supported.');
+  if (metadata.format !== 'png') throw new PwaIconError(400, 'Icon must be a PNG image. SVG and all other file types are not supported.');
   if (!metadata.width || !metadata.height) throw new PwaIconError(400, 'Could not read the PNG dimensions.');
   if (metadata.width !== metadata.height) throw new PwaIconError(400, 'Icon must be square (the same width and height).');
   if (metadata.width < MIN_PWA_ICON_SIZE || metadata.height < MIN_PWA_ICON_SIZE) {
