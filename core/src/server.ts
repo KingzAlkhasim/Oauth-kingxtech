@@ -44,7 +44,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
-import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon } from './services/pwa';
+import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
@@ -714,27 +714,23 @@ app.post('/api/projects/:projectId/pwa/icon', requireAuth, express.raw({ type: '
   try {
     const plan = await getUserPlan(req.user!.id);
     if (plan !== 'paid') {
-      res.status(403).json({ success: false, error: 'Custom PWA icons require the Pro plan.', requiresPro: true });
-      return;
+      throw new PwaIconError(403, 'Custom PWA icons require the Pro plan.');
     }
     if (req.headers['content-type']?.split(';')[0].toLowerCase() !== 'image/png') {
-      res.status(415).json({ success: false, error: 'Icon must be uploaded as a PNG image. SVG and all other file types are not supported.' });
-      return;
+      throw new PwaIconError(415, 'Icon must be uploaded as a PNG image. SVG and all other file types are not supported.');
     }
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-      res.status(400).json({ success: false, error: 'Choose a PNG icon file to upload.' });
-      return;
+      throw new PwaIconError(400, 'Choose a PNG icon file to upload.');
     }
     const result = await uploadProjectPwaIcon(req.user!.id, req.params.projectId, req.body);
     res.json({ success: true, customIconUrl: result.publicUrl });
   } catch (error) {
-    const message = String((error as Error)?.message ?? error);
-    if (/requires the Pro plan/i.test(message)) {
-      res.status(403).json({ success: false, error: message, requiresPro: true });
-      return;
-    }
-    if (/must be|could not|valid PNG|icon/i.test(message)) {
-      res.status(400).json({ success: false, error: message });
+    if (error instanceof PwaIconError) {
+      res.status(error.status).json({
+        success: false,
+        error: error.message,
+        ...(error.status === 403 ? { requiresPro: true } : {}),
+      });
       return;
     }
     await handleFsError(res, error);
@@ -746,11 +742,6 @@ app.delete('/api/projects/:projectId/pwa/icon', requireAuth, async (req: AuthedR
     await removeProjectPwaIcon(req.user!.id, req.params.projectId);
     res.json({ success: true, customIconUrl: null });
   } catch (error) {
-    const message = String((error as Error)?.message ?? error);
-    if (/requires the Pro plan/i.test(message)) {
-      res.status(403).json({ success: false, error: message, requiresPro: true });
-      return;
-    }
     await handleFsError(res, error);
   }
 });
@@ -1155,25 +1146,26 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const config = await getProjectPwaConfig(projectId);
   const marker = '<!-- KX-PWA -->';
   const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
-  if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
-  const htmlWithIcon = customIconUrl ? withoutOldAppleIcon : cleaned;
+  if (!config?.enabled || !/<html[\\s>]/i.test(cleaned)) return cleaned;
 
-  const hasThemeColor = /<meta\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
-  const customIconUrl = await getProjectPwaIconPublicUrl(projectId);
+  const ownerId = await getProjectOwnerId(projectId);
+  const plan = ownerId ? await getUserPlan(ownerId) : undefined;
+  const customIconUrl = await getProjectPwaIconPublicUrl(projectId, config, ownerId, plan);
+  const hasThemeColor = /<meta\\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
   const withoutOldAppleIcon = customIconUrl
-    ? cleaned.replace(/<link\s+[^>]*rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*>/gi, '')
+    ? cleaned.replace(/<link\\s+[^>]*rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*>/gi, '')
     : cleaned;
-  const snippet = marker + '\n'
-    + '<link rel="manifest" href="./manifest.webmanifest">\n'
-    + (customIconUrl ? '<link rel="apple-touch-icon" href="./pwa-icon-192.png">\n' : '')
-    + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">' + '\n')
-    + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
+  const htmlWithIcon = customIconUrl ? withoutOldAppleIcon : cleaned;
+  const snippet = marker + '\\n'
+    + '<link rel="manifest" href="./manifest.webmanifest">\\n'
+    + (customIconUrl ? '<link rel="apple-touch-icon" href="./pwa-icon-192.png">\\n' : '')
+    + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">' + '\\n')
+    + '<script>if (\\'serviceWorker\\' in navigator) { window.addEventListener(\\'load\\', () => navigator.serviceWorker.register(\\'./sw.js\\', { scope: \\'./\\', updateViaCache: \\'none\\' }).catch(() => {})); }</script>\\n'
     + marker;
 
-  if (/<\/head>/i.test(htmlWithIcon)) return htmlWithIcon.replace(/<\/head>/i, () => snippet + '</head>');
+  if (/<\\/head>/i.test(htmlWithIcon)) return htmlWithIcon.replace(/<\\/head>/i, () => snippet + '</head>');
   return htmlWithIcon.replace(/<body[^>]*>/i, (match) => snippet + match);
 }
-
 async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
   let filePath = requestedPath || 'index.html';
   if (filePath === '') filePath = 'index.html';
