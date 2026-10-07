@@ -44,7 +44,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
-import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, buildPwaIconPng, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon } from './services/pwa';
+import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon } from './services/pwa';
 import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
@@ -712,6 +712,11 @@ app.put('/api/projects/:projectId/pwa', requireAuth, async (req: AuthedRequest, 
 
 app.post('/api/projects/:projectId/pwa/icon', requireAuth, express.raw({ type: '*/*', limit: '2mb' }), async (req: AuthedRequest, res) => {
   try {
+    const plan = await getUserPlan(req.user!.id);
+    if (plan !== 'paid') {
+      res.status(403).json({ success: false, error: 'Custom PWA icons require the Pro plan.', requiresPro: true });
+      return;
+    }
     if (req.headers['content-type']?.split(';')[0].toLowerCase() !== 'image/png') {
       res.status(415).json({ success: false, error: 'Icon must be uploaded as a PNG image. SVG and all other file types are not supported.' });
       return;
