@@ -17,7 +17,7 @@ export interface ProjectPwaConfig {
 export const PWA_ICON_BUCKET = 'project-pwa-icons';
 
 export class PwaIconError extends Error {
-  constructor(public readonly status: 400 | 403, message: string) {
+  constructor(public readonly status: 400 | 403 | 415, message: string) {
     super(message);
     this.name = 'PwaIconError';
   }
