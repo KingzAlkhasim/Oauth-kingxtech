@@ -68,11 +68,11 @@ function StepLine({ step }) {
 // highlighter dependency — but styled to fit the drawer's dark theme.
 function MarkdownMessage({ text }) {
   return (
-    <div className="kxpert-md text-[13px] leading-relaxed">
+    <div className="kxpert-md min-w-0 break-words [overflow-wrap:anywhere] text-[13px] leading-relaxed">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          p: ({ children }) => <p className="mb-2 last:mb-0 whitespace-pre-wrap">{children}</p>,
+          p: ({ children }) => <p className="mb-2 last:mb-0 whitespace-pre-wrap min-w-0 break-words [overflow-wrap:anywhere]">{children}</p>,
           strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
           a: ({ href, children }) => (
@@ -118,13 +118,13 @@ function MarkdownMessage({ text }) {
               );
             }
             return (
-              <div className="my-2 rounded-lg border border-kxpurple/30 bg-black overflow-hidden">
+              <div className="my-2 min-w-0 max-w-full rounded-lg border border-kxpurple/30 bg-black overflow-hidden">
                 {match && (
                   <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-kxmist/60 border-b border-white/10">
                     {match[1]}
                   </div>
                 )}
-                <pre className="px-3 py-2 overflow-x-auto">
+                <pre className="max-w-full px-3 py-2 overflow-x-auto">
                   <code className="font-mono text-[12px] text-green-400 leading-relaxed" {...props}>
                     {children}
                   </code>
@@ -507,7 +507,7 @@ export default function KXpertDrawer() {
               {history.map((m, i) => (
                 <div
                   key={i}
-                  className={`max-w-[90%] rounded-xl px-3.5 py-2.5 text-[13px] ${
+                  className={`max-w-[90%] min-w-0 break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-[13px] ${
                     m.role === 'user'
                       ? 'self-end bg-kxsurface2'
                       : m.type === 'tool'
