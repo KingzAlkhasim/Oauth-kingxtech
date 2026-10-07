@@ -15,6 +15,13 @@ export interface ProjectPwaConfig {
 }
 
 export const PWA_ICON_BUCKET = 'project-pwa-icons';
+
+export class PwaIconError extends Error {
+  constructor(public readonly status: 400 | 403, message: string) {
+    super(message);
+    this.name = 'PwaIconError';
+  }
+}
 const MAX_PWA_ICON_BYTES = 1024 * 1024;
 const MIN_PWA_ICON_SIZE = 512;
 const MAX_PWA_ICON_SIZE = 1024;
@@ -40,43 +47,49 @@ export async function getProjectPwaConfig(projectId: string): Promise<ProjectPwa
   };
 }
 
-export async function getProjectPwaIconPublicUrl(projectId: string): Promise<string | null> {
-  const config = await getProjectPwaConfig(projectId);
-  if (!config?.pwaIconPath) return null;
-  const ownerId = await getProjectOwnerId(projectId);
-  if (!ownerId || await getUserPlan(ownerId) !== 'paid') return null;
-  return supabaseAdmin.storage.from(PWA_ICON_BUCKET).getPublicUrl(config.pwaIconPath).data.publicUrl;
+export async function getProjectPwaIconPublicUrl(
+  projectId: string,
+  config?: ProjectPwaConfig | null,
+  ownerId?: string | null,
+  plan?: 'free' | 'paid',
+): Promise<string | null> {
+  const resolvedConfig = config === undefined ? await getProjectPwaConfig(projectId) : config;
+  if (!resolvedConfig?.pwaIconPath) return null;
+  const resolvedOwnerId = ownerId === undefined ? await getProjectOwnerId(projectId) : ownerId;
+  const resolvedPlan = plan === undefined && resolvedOwnerId ? await getUserPlan(resolvedOwnerId) : plan;
+  if (!resolvedOwnerId || resolvedPlan !== 'paid') return null;
+  return supabaseAdmin.storage.from(PWA_ICON_BUCKET).getPublicUrl(resolvedConfig.pwaIconPath).data.publicUrl;
 }
 
 export async function validatePwaIcon(buffer: Buffer): Promise<{ width: number; height: number }> {
   if (buffer.length > MAX_PWA_ICON_BYTES) {
-    throw new Error('Icon must be 1 MB or smaller.');
+    throw new PwaIconError(400, 'Icon must be 1 MB or smaller.');
   }
   if (buffer.length < PNG_SIGNATURE.length || !buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
-    throw new Error('Icon must be a PNG image. SVG and all other file types are not supported.');
+    throw new PwaIconError(400, 'Icon must be a PNG image. SVG and all other file types are not supported.');
   }
 
   let metadata: sharp.Metadata;
   try {
     metadata = await sharp(buffer, { limitInputPixels: MAX_PWA_ICON_SIZE * MAX_PWA_ICON_SIZE }).metadata();
   } catch {
-    throw new Error('The uploaded file is not a valid PNG image.');
+    throw new PwaIconError(400, 'The uploaded file is not a valid PNG image.');
   }
   if (metadata.format !== 'png') throw new Error('Icon must be a PNG image. SVG and all other file types are not supported.');
-  if (!metadata.width || !metadata.height) throw new Error('Could not read the PNG dimensions.');
-  if (metadata.width !== metadata.height) throw new Error('Icon must be square (the same width and height).');
+  if (!metadata.width || !metadata.height) throw new PwaIconError(400, 'Could not read the PNG dimensions.');
+  if (metadata.width !== metadata.height) throw new PwaIconError(400, 'Icon must be square (the same width and height).');
   if (metadata.width < MIN_PWA_ICON_SIZE || metadata.height < MIN_PWA_ICON_SIZE) {
-    throw new Error('Icon must be at least 512×512 pixels.');
+    throw new PwaIconError(400, 'Icon must be at least 512×512 pixels.');
   }
   if (metadata.width > MAX_PWA_ICON_SIZE || metadata.height > MAX_PWA_ICON_SIZE) {
-    throw new Error('Icon must be no larger than 1024×1024 pixels.');
+    throw new PwaIconError(400, 'Icon must be no larger than 1024×1024 pixels.');
   }
   return { width: metadata.width, height: metadata.height };
 }
 
 export async function uploadProjectPwaIcon(userId: string, projectId: string, buffer: Buffer): Promise<{ publicUrl: string }> {
   await assertProjectOwnership(userId, projectId);
-  if (await getUserPlan(userId) !== 'paid') throw new Error('Custom PWA icons require the Pro plan.');
+  if (await getUserPlan(userId) !== 'paid') throw new PwaIconError(403, 'Custom PWA icons require the Pro plan.');
   await validatePwaIcon(buffer);
 
   const { data: project, error: projectError } = await supabaseAdmin
@@ -107,7 +120,6 @@ export async function uploadProjectPwaIcon(userId: string, projectId: string, bu
 
 export async function removeProjectPwaIcon(userId: string, projectId: string): Promise<void> {
   await assertProjectOwnership(userId, projectId);
-  if (await getUserPlan(userId) !== 'paid') throw new Error('Custom PWA icons require the Pro plan.');
   const { data: project, error } = await supabaseAdmin
     .from('projects').select('pwa_icon_path').eq('id', projectId).eq('user_id', userId).maybeSingle();
   if (error) throw new Error('Failed to load current PWA icon: ' + error.message);
