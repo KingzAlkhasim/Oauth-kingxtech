@@ -76,8 +76,23 @@ function applyPublishedSiteSecurity(req: express.Request, res: express.Response)
 }
 
 
-// Lightweight deployment/uptime check.
-app.get('/', (_req, res) => {
+// Lightweight deployment/uptime check. Keep this API/internal-only so
+// published custom domains can fall through to their project handler.
+app.get('/', (req, res, next) => {
+  const host = req.hostname.toLowerCase();
+  const apiHost = (process.env.API_HOSTNAME || '').trim().toLowerCase().replace(/:\\d+$/, '');
+  const isApiInternalHost =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.vercel.run') ||
+    host === 'neurocore.vercel.app' ||
+    host === 'neurocore-rouge.vercel.app' ||
+    host === 'neurocore-kingzalkhasims-projects.vercel.app' ||
+    host === 'neurocore-git-feat-pwa-platform-kingzalkhasims-projects.vercel.app' ||
+    (apiHost !== '' && host === apiHost);
+
+  if (!isApiInternalHost) return next();
   res.status(200).json({ ok: true, service: 'KX-Neurocore', status: 'online' });
 });
 
