@@ -754,7 +754,7 @@ export default function ProjectWorkspace() {
     setIsPublishing(true);
     setError('');
     try {
-      const { url: hostedUrl, slug } = await publishProject(projectId);
+      const { url: hostedUrl } = await publishProject(projectId);
       setPublishedUrl(hostedUrl);
     } catch (err) {
       setError(err.message);
