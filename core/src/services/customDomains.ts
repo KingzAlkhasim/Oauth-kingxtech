@@ -117,17 +117,37 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
     body: JSON.stringify({ name: domain }),
   });
 
-  const { data, error } = await supabaseAdmin
-    .from('custom_domains')
-    .upsert({
-      domain,
-      verified: vercel.verified === true,
-      target_cname: 'cname.vercel-dns.com',
-      verification: vercel.verification ?? [],
-      last_checked_at: new Date().toISOString(),
-    }, { onConflict: 'domain' })
-    .select('*, projects(id, name)')
-    .single();
+  const domainValues = {
+    domain,
+    verified: vercel.verified === true,
+    target_cname: 'cname.vercel-dns.com',
+    verification: vercel.verification ?? [],
+    last_checked_at: new Date().toISOString(),
+  };
+
+  let data;
+  let error;
+
+  if (existingDomain) {
+    ({ data, error } = await supabaseAdmin
+      .from('custom_domains')
+      .update(domainValues)
+      .eq('domain', domain)
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .select('*, projects(id, name)')
+      .single());
+  } else {
+    ({ data, error } = await supabaseAdmin
+      .from('custom_domains')
+      .insert({
+        user_id: userId,
+        project_id: projectId,
+        ...domainValues,
+      })
+      .select('*, projects(id, name)')
+      .single());
+  }
 
   if (error) throw new Error(`custom domain save failed: ${error.message}`);
   return { domain: data, vercel };
