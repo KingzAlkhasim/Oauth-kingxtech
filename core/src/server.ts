@@ -76,8 +76,19 @@ function applyPublishedSiteSecurity(req: express.Request, res: express.Response)
 }
 
 
-// Lightweight deployment/uptime check.
-app.get('/', (_req, res) => {
+// Lightweight deployment/uptime check. This endpoint is only for NeuroCore/API
+// hosts; published/custom domains must fall through to their site handlers.
+function isApiInternalHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === env.GATEWAY_HOSTNAME ||
+    hostname.endsWith('.vercel.app') ||
+    hostname.endsWith('.vercel.run')
+  );
+}
+
+app.get('/', (req, res, next) => {
+  if (!isApiInternalHost(req.hostname.toLowerCase())) return next();
   res.status(200).json({ ok: true, service: 'KX-Neurocore', status: 'online' });
 });
 
