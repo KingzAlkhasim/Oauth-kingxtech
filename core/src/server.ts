@@ -44,7 +44,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
-import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, buildPwaIconPng } from './services/pwa';
+import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
@@ -684,7 +684,15 @@ app.get('/api/projects/:projectId/pwa', requireAuth, async (req: AuthedRequest, 
   try {
     await assertProjectOwnership(req.user!.id, req.params.projectId);
     const config = await getProjectPwaConfig(req.params.projectId);
-    res.json({ success: true, pwa: config ? { enabled: config.enabled } : { enabled: false } });
+    const ownerId = config?.pwaIconPath ? await getProjectOwnerId(req.params.projectId) : null;
+    const plan = ownerId ? await getUserPlan(ownerId) : undefined;
+    res.json({
+      success: true,
+      pwa: config ? {
+        enabled: config.enabled,
+        customIconUrl: await getProjectPwaIconPublicUrl(req.params.projectId, config, ownerId, plan),
+      } : { enabled: false, customIconUrl: null },
+    });
   } catch (error) {
     await handleFsError(res, error);
   }
@@ -699,6 +707,42 @@ app.put('/api/projects/:projectId/pwa', requireAuth, async (req: AuthedRequest, 
   try {
     await setProjectPwaEnabled(req.user!.id, req.params.projectId, enabled);
     res.json({ success: true, enabled });
+  } catch (error) {
+    await handleFsError(res, error);
+  }
+});
+
+app.post('/api/projects/:projectId/pwa/icon', requireAuth, express.raw({ type: '*/*', limit: '2mb' }), async (req: AuthedRequest, res) => {
+  try {
+    const plan = await getUserPlan(req.user!.id);
+    if (plan !== 'paid') {
+      throw new PwaIconError(403, 'Custom PWA icons require the Pro plan.');
+    }
+    if (req.headers['content-type']?.split(';')[0].toLowerCase() !== 'image/png') {
+      throw new PwaIconError(415, 'Icon must be uploaded as a PNG image. SVG and all other file types are not supported.');
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new PwaIconError(400, 'Choose a PNG icon file to upload.');
+    }
+    const result = await uploadProjectPwaIcon(req.user!.id, req.params.projectId, req.body);
+    res.json({ success: true, customIconUrl: result.publicUrl });
+  } catch (error) {
+    if (error instanceof PwaIconError) {
+      res.status(error.status).json({
+        success: false,
+        error: error.message,
+        ...(error.status === 403 ? { requiresPro: true } : {}),
+      });
+      return;
+    }
+    await handleFsError(res, error);
+  }
+});
+
+app.delete('/api/projects/:projectId/pwa/icon', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await removeProjectPwaIcon(req.user!.id, req.params.projectId);
+    res.json({ success: true, customIconUrl: null });
   } catch (error) {
     await handleFsError(res, error);
   }
@@ -1106,18 +1150,24 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
   if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
 
+  const ownerId = await getProjectOwnerId(projectId);
+  const plan = ownerId ? await getUserPlan(ownerId) : undefined;
+  const customIconUrl = await getProjectPwaIconPublicUrl(projectId, config, ownerId, plan);
   const hasThemeColor = /<meta\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
+  const withoutOldAppleIcon = customIconUrl
+    ? cleaned.replace(/<link\s+[^>]*rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*>/gi, '')
+    : cleaned;
+  const htmlWithIcon = customIconUrl ? withoutOldAppleIcon : cleaned;
   const snippet = marker + '\n'
     + '<link rel="manifest" href="./manifest.webmanifest">\n'
+    + (customIconUrl ? '<link rel="apple-touch-icon" href="./pwa-icon-192.png">\n' : '')
     + (hasThemeColor ? '' : '<meta name="theme-color" content="' + config.themeColor + '">' + '\n')
-    + ''
     + '<script>if (\'serviceWorker\' in navigator) { window.addEventListener(\'load\', () => navigator.serviceWorker.register(\'./sw.js\', { scope: \'./\', updateViaCache: \'none\' }).catch(() => {})); }</script>\n'
     + marker;
 
-  if (/<\/head>/i.test(cleaned)) return cleaned.replace(/<\/head>/i, () => snippet + '</head>');
-  return cleaned.replace(/<body[^>]*>/i, (match) => snippet + match);
+  if (/<\/head>/i.test(htmlWithIcon)) return htmlWithIcon.replace(/<\/head>/i, () => snippet + '</head>');
+  return htmlWithIcon.replace(/<body[^>]*>/i, (match) => snippet + match);
 }
-
 async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
   let filePath = requestedPath || 'index.html';
   if (filePath === '') filePath = 'index.html';
@@ -1144,13 +1194,13 @@ async function servePreview(res: express.Response, projectId: string, requestedP
       return;
     }
     if (filePath === 'pwa-icon-192.png') {
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.type('image/png').send(buildPwaIconPng(192));
+      res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+      res.type('image/png').send(await getProjectPwaIconPng(projectId, 192));
       return;
     }
     if (filePath === 'pwa-icon-512.png') {
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.type('image/png').send(buildPwaIconPng(512));
+      res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+      res.type('image/png').send(await getProjectPwaIconPng(projectId, 512));
       return;
     }
     res.setHeader('Cache-Control', 'public, max-age=86400');

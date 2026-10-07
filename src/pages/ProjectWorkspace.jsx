@@ -14,7 +14,7 @@ import { runSecurityCheck } from '../lib/securityCheck';
 import { getBillingProfile } from '../lib/billing';
 import { siteUrl } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
-import { getProjectPwa, setProjectPwa } from '../lib/projectPwa';
+import { getProjectPwa, setProjectPwa, uploadProjectPwaIcon, removeProjectPwaIcon } from '../lib/projectPwa';
 import CodeMirror from '@uiw/react-codemirror';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
@@ -357,11 +357,17 @@ function SiteSettingsTab({ projectId }) {
   const [pwaEnabled, setPwaEnabled] = useState(false);
   const [pwaLoading, setPwaLoading] = useState(true);
   const [pwaSaving, setPwaSaving] = useState(false);
+  const [pwaIconUrl, setPwaIconUrl] = useState(null);
+  const [pwaIconBusy, setPwaIconBusy] = useState(false);
+  const pwaIconInputRef = useRef(null);
 
   useEffect(() => {
     getBillingProfile().then(({ data }) => setIsPro(!!data?.is_pro_member));
     getProjectPwa(projectId)
-      .then((pwa) => setPwaEnabled(!!pwa?.enabled))
+      .then((pwa) => {
+        setPwaEnabled(!!pwa?.enabled);
+        setPwaIconUrl(pwa?.customIconUrl || null);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setPwaLoading(false));
   }, [projectId]);
@@ -380,6 +386,43 @@ function SiteSettingsTab({ projectId }) {
       setError(err.message);
     } finally {
       setPwaSaving(false);
+    }
+  };
+
+  const uploadIcon = async (file) => {
+    if (!file) return;
+    if (file.type !== 'image/png') {
+      setError('Icon must be a PNG image. SVG and all other file types are not supported.');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setError('Icon must be 1 MB or smaller.');
+      return;
+    }
+
+    setPwaIconBusy(true);
+    setError('');
+    try {
+      const data = await uploadProjectPwaIcon(projectId, file);
+      setPwaIconUrl((data.customIconUrl || '') + '?v=' + Date.now());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPwaIconBusy(false);
+    }
+  };
+
+  const removeIcon = async () => {
+    if (!pwaIconUrl || !confirm('Remove this custom PWA icon and return to the default KingxTech icon?')) return;
+    setPwaIconBusy(true);
+    setError('');
+    try {
+      await removeProjectPwaIcon(projectId);
+      setPwaIconUrl(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPwaIconBusy(false);
     }
   };
 
@@ -446,6 +489,59 @@ function SiteSettingsTab({ projectId }) {
         <div className="mt-3 text-[11px] text-kxmist">
           {pwaLoading ? 'Loading PWA setting…' : pwaEnabled ? 'Enabled for this project.' : 'Disabled — the published site stays a normal website.'}
         </div>
+      </Card>
+
+      <Card className="p-4 rounded-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-[14px] font-semibold">Custom PWA icon</h3>
+            <p className="text-[11.5px] text-kxmist mt-0.5 leading-relaxed">
+              Use a square PNG from 512×512 to 1024×1024, up to 1 MB.
+            </p>
+          </div>
+          {isPro ? (
+            <div className="flex items-center gap-2 shrink-0">
+              {pwaIconUrl && (
+                <img src={pwaIconUrl} alt="Custom PWA icon preview" className="w-12 h-12 rounded-xl border border-white/10 object-cover bg-white" />
+              )}
+              <button
+                type="button"
+                disabled={pwaIconBusy}
+                onClick={() => pwaIconInputRef.current?.click()}
+                className="text-[12px] px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-kxmist hover:text-white disabled:opacity-50"
+              >
+                {pwaIconBusy ? 'Uploading…' : 'Upload icon'}
+              </button>
+              {pwaIconUrl && (
+                <button
+                  type="button"
+                  disabled={pwaIconBusy}
+                  onClick={removeIcon}
+                  className="text-[12px] text-red-300 hover:text-red-200 disabled:opacity-50"
+                >
+                  Remove icon
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-[11.5px] text-kxmist shrink-0">
+              <Lock size={13} className="text-kxpurple" />
+              <span>Custom icon is a Pro feature</span>
+              <a href="/billing" className="text-kxpurple hover:text-white underline underline-offset-2">Billing</a>
+            </div>
+          )}
+        </div>
+        <input
+          ref={pwaIconInputRef}
+          type="file"
+          accept="image/png"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            uploadIcon(file);
+          }}
+        />
       </Card>
 
       <Card className="p-4 rounded-xl">

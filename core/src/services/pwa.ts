@@ -1,6 +1,9 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { deflateSync } from 'node:zlib';
-import { assertProjectOwnership, hasPublishedBuild, readPublishedBuildFile, readProjectFilePublic } from './projectFs';
+import crypto from 'node:crypto';
+import sharp from 'sharp';
+import { assertProjectOwnership, getProjectOwnerId, hasPublishedBuild, readPublishedBuildFile, readProjectFilePublic } from './projectFs';
+import { getUserPlan } from './credits';
 
 export interface ProjectPwaConfig {
   name: string;
@@ -8,14 +11,28 @@ export interface ProjectPwaConfig {
   enabled: boolean;
   themeColor: string;
   backgroundColor: string;
+  pwaIconPath: string | null;
 }
+
+export const PWA_ICON_BUCKET = 'project-pwa-icons';
+
+export class PwaIconError extends Error {
+  constructor(public readonly status: 400 | 403 | 415, message: string) {
+    super(message);
+    this.name = 'PwaIconError';
+  }
+}
+const MAX_PWA_ICON_BYTES = 1024 * 1024;
+const MIN_PWA_ICON_SIZE = 512;
+const MAX_PWA_ICON_SIZE = 1024;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 const DEFAULT_THEME = '#ffffff';
 
 export async function getProjectPwaConfig(projectId: string): Promise<ProjectPwaConfig | null> {
   const { data, error } = await supabaseAdmin
     .from('projects')
-    .select('name, slug, pwa_enabled, pwa_theme_color, pwa_background_color')
+    .select('name, slug, pwa_enabled, pwa_theme_color, pwa_background_color, pwa_icon_path')
     .eq('id', projectId)
     .maybeSingle();
   if (error) throw new Error('getProjectPwaConfig failed: ' + error.message);
@@ -26,7 +43,111 @@ export async function getProjectPwaConfig(projectId: string): Promise<ProjectPwa
     enabled: data.pwa_enabled === true,
     themeColor: data.pwa_theme_color || DEFAULT_THEME,
     backgroundColor: data.pwa_background_color || DEFAULT_THEME,
+    pwaIconPath: data.pwa_icon_path ?? null,
   };
+}
+
+export async function getProjectPwaIconPublicUrl(
+  projectId: string,
+  config?: ProjectPwaConfig | null,
+  ownerId?: string | null,
+  plan?: 'free' | 'paid',
+): Promise<string | null> {
+  const resolvedConfig = config === undefined ? await getProjectPwaConfig(projectId) : config;
+  if (!resolvedConfig?.pwaIconPath) return null;
+  const resolvedOwnerId = ownerId === undefined ? await getProjectOwnerId(projectId) : ownerId;
+  const resolvedPlan = plan === undefined && resolvedOwnerId ? await getUserPlan(resolvedOwnerId) : plan;
+  if (!resolvedOwnerId || resolvedPlan !== 'paid') return null;
+  return supabaseAdmin.storage.from(PWA_ICON_BUCKET).getPublicUrl(resolvedConfig.pwaIconPath).data.publicUrl;
+}
+
+export async function validatePwaIcon(buffer: Buffer): Promise<{ width: number; height: number }> {
+  if (buffer.length > MAX_PWA_ICON_BYTES) {
+    throw new PwaIconError(400, 'Icon must be 1 MB or smaller.');
+  }
+  if (buffer.length < PNG_SIGNATURE.length || !buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    throw new PwaIconError(400, 'Icon must be a PNG image. SVG and all other file types are not supported.');
+  }
+
+  let metadata: sharp.Metadata;
+  try {
+    metadata = await sharp(buffer, { limitInputPixels: MAX_PWA_ICON_SIZE * MAX_PWA_ICON_SIZE }).metadata();
+  } catch {
+    throw new PwaIconError(400, 'The uploaded file is not a valid PNG image.');
+  }
+  if (metadata.format !== 'png') throw new PwaIconError(400, 'Icon must be a PNG image. SVG and all other file types are not supported.');
+  if (!metadata.width || !metadata.height) throw new PwaIconError(400, 'Could not read the PNG dimensions.');
+  if (metadata.width !== metadata.height) throw new PwaIconError(400, 'Icon must be square (the same width and height).');
+  if (metadata.width < MIN_PWA_ICON_SIZE || metadata.height < MIN_PWA_ICON_SIZE) {
+    throw new PwaIconError(400, 'Icon must be at least 512×512 pixels.');
+  }
+  if (metadata.width > MAX_PWA_ICON_SIZE || metadata.height > MAX_PWA_ICON_SIZE) {
+    throw new PwaIconError(400, 'Icon must be no larger than 1024×1024 pixels.');
+  }
+  return { width: metadata.width, height: metadata.height };
+}
+
+export async function uploadProjectPwaIcon(userId: string, projectId: string, buffer: Buffer): Promise<{ publicUrl: string }> {
+  await assertProjectOwnership(userId, projectId);
+  if (await getUserPlan(userId) !== 'paid') throw new PwaIconError(403, 'Custom PWA icons require the Pro plan.');
+  await validatePwaIcon(buffer);
+
+  const { data: project, error: projectError } = await supabaseAdmin
+    .from('projects').select('pwa_icon_path').eq('id', projectId).eq('user_id', userId).maybeSingle();
+  if (projectError) throw new Error('Failed to load current PWA icon: ' + projectError.message);
+  if (!project) throw new Error('You do not own this project.');
+
+  const path = userId + '/' + projectId + '/' + crypto.randomUUID() + '.png';
+  const { error: uploadError } = await supabaseAdmin.storage.from(PWA_ICON_BUCKET).upload(path, buffer, {
+    contentType: 'image/png', cacheControl: '300', upsert: false,
+  });
+  if (uploadError) throw new Error('Failed to upload icon: ' + uploadError.message);
+
+  const { error: updateError } = await supabaseAdmin
+    .from('projects').update({ pwa_icon_path: path }).eq('id', projectId).eq('user_id', userId);
+  if (updateError) {
+    await supabaseAdmin.storage.from(PWA_ICON_BUCKET).remove([path]).catch(() => undefined);
+    throw new Error('Failed to save icon: ' + updateError.message);
+  }
+
+  if (project.pwa_icon_path) {
+    await supabaseAdmin.storage.from(PWA_ICON_BUCKET).remove([project.pwa_icon_path]).catch((error) => {
+      console.error('Failed to remove replaced PWA icon:', (error as Error)?.message || error);
+    });
+  }
+  return { publicUrl: supabaseAdmin.storage.from(PWA_ICON_BUCKET).getPublicUrl(path).data.publicUrl };
+}
+
+export async function removeProjectPwaIcon(userId: string, projectId: string): Promise<void> {
+  await assertProjectOwnership(userId, projectId);
+  const { data: project, error } = await supabaseAdmin
+    .from('projects').select('pwa_icon_path').eq('id', projectId).eq('user_id', userId).maybeSingle();
+  if (error) throw new Error('Failed to load current PWA icon: ' + error.message);
+  if (!project) throw new Error('You do not own this project.');
+  if (!project.pwa_icon_path) return;
+  const { error: updateError } = await supabaseAdmin.from('projects')
+    .update({ pwa_icon_path: null }).eq('id', projectId).eq('user_id', userId);
+  if (updateError) throw new Error('Failed to remove icon: ' + updateError.message);
+  const { error: deleteError } = await supabaseAdmin.storage.from(PWA_ICON_BUCKET).remove([project.pwa_icon_path]);
+  if (deleteError) console.error('Failed to delete removed PWA icon:', deleteError.message);
+}
+
+export async function getProjectPwaIconPng(projectId: string, size: 192 | 512): Promise<Buffer> {
+  const config = await getProjectPwaConfig(projectId);
+  if (!config?.pwaIconPath) return buildPwaIconPng(size);
+  const ownerId = await getProjectOwnerId(projectId);
+  if (!ownerId || await getUserPlan(ownerId) !== 'paid') return buildPwaIconPng(size);
+
+  const { data, error } = await supabaseAdmin.storage.from(PWA_ICON_BUCKET).download(config.pwaIconPath);
+  if (error || !data) return buildPwaIconPng(size);
+  try {
+    const source = Buffer.from(await data.arrayBuffer());
+    await validatePwaIcon(source);
+    return await sharp(source).resize(size, size, { fit: 'cover' }).png().toBuffer();
+  } catch (error) {
+    console.error('Failed to render custom PWA icon, using default:', error);
+    return buildPwaIconPng(size);
+  }
 }
 
 export async function setProjectPwaEnabled(userId: string, projectId: string, enabled: boolean): Promise<void> {

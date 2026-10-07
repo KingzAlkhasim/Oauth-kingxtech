@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.9.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.3",
@@ -29,7 +29,8 @@
     "pino": "^9.2.0",
     "pino-http": "^10.1.0",
     "zod": "^3.23.8",
-    "@vercel/sandbox": "^3.5.1"
+    "@vercel/sandbox": "^3.5.1",
+    "sharp": "^0.35.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
