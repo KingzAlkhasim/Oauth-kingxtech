@@ -30,6 +30,10 @@ function normalizeDomain(value: string): string {
   return value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
 }
 
+function isDnsSafeSlug(value: string): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value);
+}
+
 function requireVercelConfig() {
   if (!env.VERCEL_TOKEN || !env.VERCEL_TEAM_ID) {
     throw new Error('Custom domain management is not configured on the server.');
@@ -74,8 +78,8 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
   if (domain.endsWith(`.${KINGXTECH_BASE_DOMAIN}`)) {
     const slug = domain.slice(0, -(KINGXTECH_BASE_DOMAIN.length + 1));
 
-    if (!slug || slug.includes('.') || RESERVED_KINGXTECH_SUBDOMAINS.has(slug)) {
-      throw new Error('This KingxTech subdomain is reserved.');
+    if (!isDnsSafeSlug(slug) || RESERVED_KINGXTECH_SUBDOMAINS.has(slug)) {
+      throw new Error('This KingxTech subdomain must use a lowercase DNS-safe project slug.');
     }
 
     const { data: project, error: projectError } = await supabaseAdmin
@@ -91,6 +95,23 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
     }
   }
 
+  const { data: existingDomain, error: existingDomainError } = await supabaseAdmin
+    .from('custom_domains')
+    .select('user_id, project_id')
+    .eq('domain', domain)
+    .maybeSingle();
+
+  if (existingDomainError) {
+    throw new Error('custom domain lookup failed: ' + existingDomainError.message);
+  }
+
+  if (
+    existingDomain &&
+    (existingDomain.user_id !== userId || existingDomain.project_id !== projectId)
+  ) {
+    throw new Error('This domain is already connected to another project.');
+  }
+
   const vercel = await vercelRequest(`/v10/projects/${encodeURIComponent(VERCEL_PROJECT)}/domains`, {
     method: 'POST',
     body: JSON.stringify({ name: domain }),
@@ -99,8 +120,6 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
   const { data, error } = await supabaseAdmin
     .from('custom_domains')
     .upsert({
-      user_id: userId,
-      project_id: projectId,
       domain,
       verified: vercel.verified === true,
       target_cname: 'cname.vercel-dns.com',
