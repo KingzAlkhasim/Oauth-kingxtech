@@ -684,11 +684,13 @@ app.get('/api/projects/:projectId/pwa', requireAuth, async (req: AuthedRequest, 
   try {
     await assertProjectOwnership(req.user!.id, req.params.projectId);
     const config = await getProjectPwaConfig(req.params.projectId);
+    const ownerId = config?.pwaIconPath ? await getProjectOwnerId(req.params.projectId) : null;
+    const plan = ownerId ? await getUserPlan(ownerId) : undefined;
     res.json({
       success: true,
       pwa: config ? {
         enabled: config.enabled,
-        customIconUrl: await getProjectPwaIconPublicUrl(req.params.projectId),
+        customIconUrl: await getProjectPwaIconPublicUrl(req.params.projectId, config, ownerId, plan),
       } : { enabled: false, customIconUrl: null },
     });
   } catch (error) {
