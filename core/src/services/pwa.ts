@@ -99,7 +99,7 @@ export async function uploadProjectPwaIcon(userId: string, projectId: string, bu
 
   if (project.pwa_icon_path) {
     await supabaseAdmin.storage.from(PWA_ICON_BUCKET).remove([project.pwa_icon_path]).catch((error) => {
-      console.error('Failed to remove replaced PWA icon:', error?.message || error);
+      console.error('Failed to remove replaced PWA icon:', (error as Error)?.message || error);
     });
   }
   return { publicUrl: supabaseAdmin.storage.from(PWA_ICON_BUCKET).getPublicUrl(path).data.publicUrl };
