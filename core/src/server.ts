@@ -1300,6 +1300,17 @@ app.get(/^\/([^/]+)\/?(.*)$/, async (req, res, next) => {
       res.status(404).type('text/plain').send('No published site found at this address.');
       return;
     }
+
+    // Keep published project URLs directory-shaped so relative assets,
+    // manifests, service workers, and icons resolve under /<slug>/.
+    // req.originalUrl contributes only the query string here, preserving it
+    // across the canonical 301 redirect.
+    if (!req.path.endsWith('/') && req.params[1] === '') {
+      const queryString = req.originalUrl.slice(req.path.length);
+      res.redirect(301, `${req.path}/${queryString}`);
+      return;
+    }
+
     await servePreview(res, projectId, req.params[1]);
   } catch (error) {
     console.error('Custom site route error:', error);
