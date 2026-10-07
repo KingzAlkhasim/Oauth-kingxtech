@@ -12,6 +12,8 @@ import { getProjectRepoLink, pushProjectToGithub, importRepoFromGithub } from '.
 import { listProjectEnvVars, setProjectEnvVar, deleteProjectEnvVar } from '../lib/projectEnvVars';
 import { runSecurityCheck } from '../lib/securityCheck';
 import { getBillingProfile } from '../lib/billing';
+import { siteUrl } from '../lib/apiBase';
+import { supabase } from '../lib/supabase';
 import { getProjectPwa, setProjectPwa } from '../lib/projectPwa';
 import CodeMirror from '@uiw/react-codemirror';
 import { html } from '@codemirror/lang-html';
@@ -158,7 +160,7 @@ function TreeNode({ node, depth, selectedPath, onSelect, onDelete, collapsed, on
 
 const ALLOWED_COMMANDS_HINT = 'git status|log|diff|branch, npm test|run|ls|lint, node --version, tsc --noEmit, ls, pwd';
 
-function TerminalTab({ projectId }) {
+function TerminalTab({ projectId, publishedUrl }) {
   const [lines, setLines] = useState([]);
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
@@ -260,20 +262,36 @@ function TerminalTab({ projectId }) {
           <p className="text-[11px] text-kxmist font-mono">Sandbox terminal — isolated per project</p>
           <p className="text-[10px] text-kxmist opacity-70">Node/Vite/React/TypeScript/Express commands run inside the project runtime.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2 w-full">
           {runtime?.url && (
-            <a href={runtime.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md border border-kxblue/30 text-kxblue hover:bg-kxblue/10">
+            <a href={runtime.url} target="_blank" rel="noreferrer" className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 text-[12px] px-2.5 py-1 rounded-md border border-kxblue/30 text-kxblue hover:bg-kxblue/10">
               <ExternalLink size={12} /> Open Preview
             </a>
           )}
-          <Button variant="ghost" onClick={syncRuntime} loading={runtimeLoading}>Sync & Restart</Button>
-          <Button variant="glow" onClick={startRuntime} loading={runtimeLoading}>Start Runtime</Button>
+          <Button variant="ghost" className="flex-1 min-w-[120px]" onClick={syncRuntime} loading={runtimeLoading}>Sync & Restart</Button>
+          <Button variant="glow" className="flex-1 min-w-[120px]" onClick={startRuntime} loading={runtimeLoading}>Start Runtime</Button>
         </div>
       </div>
 
       {runtime && (
         <div className="mb-2 rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2 text-[11px] font-mono text-green-300 break-all">
-          ● {runtime.framework} · {runtime.packageManager} · {runtime.url}
+          ● {runtime.framework} · {runtime.packageManager} ·{' '}
+          {publishedUrl ? (
+            <>
+              <a href={publishedUrl} target="_blank" rel="noreferrer" className="text-green-200 hover:text-white underline underline-offset-2">
+                {publishedUrl}
+              </a>
+              <span className="ml-2 inline-flex max-w-full items-center gap-1 text-[10px] text-kxmist/70">
+                · <a href={runtime.url} target="_blank" rel="noreferrer" className="truncate hover:text-white" title={runtime.url}>
+                  Live dev preview
+                </a>
+              </span>
+            </>
+          ) : (
+            <a href={runtime.url} target="_blank" rel="noreferrer" className="hover:text-white underline underline-offset-2">
+              {runtime.url}
+            </a>
+          )}
         </div>
       )}
       {runtimeError && (
@@ -553,6 +571,7 @@ export default function ProjectWorkspace() {
   const [previewError, setPreviewError] = useState('');
   const [copied, setCopied] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState(null);
+  const [publishedSlug, setPublishedSlug] = useState(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -593,6 +612,23 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     refreshFiles();
   }, [refreshFiles]);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('projects')
+      .select('slug, published_at')
+      .eq('id', projectId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const slug = data?.published_at && data?.slug ? data.slug : null;
+        setPublishedSlug(slug);
+        setPublishedUrl(slug ? siteUrl(`/${slug}/`) : null);
+      });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
 
   // The K-XpertAI drawer broadcasts this after it edits files in this
   // project, so the tree/editor/preview here stay in sync automatically.
@@ -720,7 +756,8 @@ export default function ProjectWorkspace() {
     setIsPublishing(true);
     setError('');
     try {
-      const { url: hostedUrl } = await publishProject(projectId);
+      const { url: hostedUrl, slug } = await publishProject(projectId);
+      setPublishedSlug(slug || null);
       setPublishedUrl(hostedUrl);
     } catch (err) {
       setError(err.message);
@@ -938,7 +975,7 @@ export default function ProjectWorkspace() {
             />
           )}
 
-          {tab === 'terminal' && <TerminalTab projectId={projectId} />}
+          {tab === 'terminal' && <TerminalTab projectId={projectId} publishedUrl={publishedUrl} />}
 
           {tab === 'settings' && <SiteSettingsTab projectId={projectId} />}
 
