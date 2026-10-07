@@ -571,7 +571,6 @@ export default function ProjectWorkspace() {
   const [previewError, setPreviewError] = useState('');
   const [copied, setCopied] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState(null);
-  const [publishedSlug, setPublishedSlug] = useState(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -623,7 +622,6 @@ export default function ProjectWorkspace() {
       .then(({ data }) => {
         if (cancelled) return;
         const slug = data?.published_at && data?.slug ? data.slug : null;
-        setPublishedSlug(slug);
         setPublishedUrl(slug ? siteUrl(`/${slug}/`) : null);
       });
     return () => { cancelled = true; };
@@ -757,7 +755,6 @@ export default function ProjectWorkspace() {
     setError('');
     try {
       const { url: hostedUrl, slug } = await publishProject(projectId);
-      setPublishedSlug(slug || null);
       setPublishedUrl(hostedUrl);
     } catch (err) {
       setError(err.message);
