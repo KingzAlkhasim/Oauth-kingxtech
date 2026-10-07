@@ -5,6 +5,10 @@ import { assertProjectOwnership } from './projectFs';
 // Production Vercel project receiving customer custom domains.
 const VERCEL_PROJECT = 'neurocore';
 const VERCEL_API = 'https://api.vercel.com';
+const KINGXTECH_BASE_DOMAIN = 'kingxtech.name.ng';
+const RESERVED_KINGXTECH_SUBDOMAINS = new Set([
+  'auth', 'site', 'api', 'www', 'docs', 'admin', 'console', 'mail', 'status', 'app', 'cdn', 'static',
+]);
 
 type VercelVerification = {
   type?: string;
@@ -62,8 +66,29 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
   const domain = normalizeDomain(rawDomain);
 
   if (!domain || !domain.includes('.') || domain.length > 253) throw new Error('Enter a valid domain name.');
-  if (domain === 'kingxtech.name.ng' || domain.endsWith('.kingxtech.name.ng')) {
-    throw new Error('KingxTech domains cannot be connected as customer custom domains.');
+
+  if (domain === KINGXTECH_BASE_DOMAIN) {
+    throw new Error('kingxtech.name.ng itself cannot be connected as a project domain.');
+  }
+
+  if (domain.endsWith(`.${KINGXTECH_BASE_DOMAIN}`)) {
+    const slug = domain.slice(0, -(KINGXTECH_BASE_DOMAIN.length + 1));
+
+    if (!slug || slug.includes('.') || RESERVED_KINGXTECH_SUBDOMAINS.has(slug)) {
+      throw new Error('This KingxTech subdomain is reserved.');
+    }
+
+    const { data: project, error: projectError } = await supabaseAdmin
+      .from('projects')
+      .select('slug')
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (projectError) throw new Error(`Project lookup failed: ${projectError.message}`);
+    if (!project?.slug || project.slug !== slug) {
+      throw new Error("You can only use the KingxTech subdomain matching this project's own slug.");
+    }
   }
 
   const vercel = await vercelRequest(`/v10/projects/${encodeURIComponent(VERCEL_PROJECT)}/domains`, {
