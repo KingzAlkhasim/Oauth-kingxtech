@@ -10,7 +10,7 @@ export interface ProjectPwaConfig {
   backgroundColor: string;
 }
 
-const DEFAULT_THEME = '#09090B';
+const DEFAULT_THEME = '#ffffff';
 
 export async function getProjectPwaConfig(projectId: string): Promise<ProjectPwaConfig | null> {
   const { data, error } = await supabaseAdmin
