@@ -857,6 +857,14 @@ export default function ProjectWorkspace() {
     try {
       const { url: hostedUrl } = await publishProject(projectId);
       setPublishedUrl(hostedUrl);
+
+      const { data, error: publishedAtError } = await supabase
+        .from('projects')
+        .select('published_at')
+        .eq('id', projectId)
+        .maybeSingle();
+      if (publishedAtError) throw publishedAtError;
+      setPublishedAt(data?.published_at || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -944,11 +952,26 @@ export default function ProjectWorkspace() {
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {!publishedUrl && (
-            <button onClick={publish} disabled={isPublishing} className="flex items-center gap-1 text-[12.5px] text-kxpurple hover:text-white">
-              <Rocket size={13} /> {isPublishing ? 'Publishing…' : 'Publish'}
-            </button>
-          )}
+          <button
+            onClick={publish}
+            disabled={isPublishing}
+            className={
+              publishedUrl
+                ? hasUnpublishedChanges
+                  ? 'flex items-center gap-1 text-[12.5px] font-medium text-amber-300 hover:text-amber-200 px-2 py-1 rounded-md bg-amber-500/10 border border-amber-400/20'
+                  : 'flex items-center gap-1 text-[12.5px] text-kxmist hover:text-white px-2 py-1 rounded-md'
+                : 'flex items-center gap-1 text-[12.5px] text-kxpurple hover:text-white'
+            }
+          >
+            <Rocket size={13} />
+            {isPublishing
+              ? 'Publishing…'
+              : publishedUrl
+                ? hasUnpublishedChanges
+                  ? 'Publish changes'
+                  : 'Republish'
+                : 'Publish'}
+          </button>
           <button onClick={copyLink} className="flex items-center gap-1 text-[12.5px] text-kxmist hover:text-white">
             <Copy size={13} /> {copied ? 'Copied!' : 'Copy link'}
           </button>
