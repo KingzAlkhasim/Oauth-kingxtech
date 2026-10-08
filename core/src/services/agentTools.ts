@@ -272,12 +272,12 @@ export function synthesizeFallbackText(steps: ToolStep[]): string {
   const summary = steps
     .filter((s) => s.status === 'ok')
     .map((s) => `- ${s.summary}`)
-    .join('\n');
+    .join('\\n');
   const errors = steps.filter((s) => s.status === 'error');
 
-  let text = summary ? `Done. Here's what I did:\n${summary}` : "I ran some tools but didn't produce a final summary — here's what happened:";
+  let text = summary ? `Done. Here's what I did:\\n${summary}` : "I ran some tools but didn't produce a final summary — here's what happened:";
   if (errors.length > 0) {
-    text += `\n\nSome steps had issues:\n${errors.map((s) => `- ${s.summary}`).join('\n')}`;
+    text += `\\n\\nSome steps had issues:\\n${errors.map((s) => `- ${s.summary}`).join('\\n')}`;
   }
   return text;
 }
@@ -333,8 +333,9 @@ async function runToolInner(
 
     switch (name) {
       case 'verifyProject': {
-        result = await verifyProject(ctx.userId, ctx.projectId!);
-        summary = result.ok
+        const verification = await verifyProject(ctx.userId, ctx.projectId!);
+        result = verification;
+        summary = verification.ok
           ? 'Verified the project: TypeScript check and Vite build completed successfully.'
           : 'Project verification found TypeScript or Vite build errors.';
         break;
