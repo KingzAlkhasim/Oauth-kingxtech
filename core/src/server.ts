@@ -760,7 +760,9 @@ app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequ
     const url = `https://site.kingxtech.name.ng/${slug}/`;
     res.json({ success: true, slug, url });
   } catch (error) {
-    await handleFsError(res, error);
+    const status = error instanceof ProjectAccessError ? 403 : 500;
+    const message = error instanceof Error && error.message ? error.message : String(error || 'Publish failed.');
+    await reportError(res, status, message, error, 'Publish error:');
   }
 });
 

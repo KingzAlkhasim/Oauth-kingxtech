@@ -134,6 +134,76 @@ function commandForPackageManager(packageManager: string): string {
         : 'npm';
 }
 
+const VERIFY_PROJECT_TIMEOUT_MS = 120_000;
+const VERIFY_OUTPUT_MAX_CHARS = 12_000;
+
+function trimVerifyOutput(value: string): string {
+  const text = value.trim();
+  if (text.length <= VERIFY_OUTPUT_MAX_CHARS) return text;
+  const half = Math.floor((VERIFY_OUTPUT_MAX_CHARS - 80) / 2);
+  return text.slice(0, half) + '\n… [output trimmed] …\n' + text.slice(-half);
+}
+
+async function runVerifyCommand(sandbox: Sandbox, command: { cmd: string; args: string[] }, cwd: string, deadlineAt: number, timeoutMs: number) {
+  const remainingMs = deadlineAt - Date.now();
+  if (remainingMs <= 0) return { timedOut: true, exitCode: -1, stdout: '', stderr: 'Verification time limit reached.' };
+  const effectiveTimeout = Math.min(timeoutMs, remainingMs);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const result = await Promise.race([
+      sandbox.runCommand({ ...command, cwd, timeoutMs: effectiveTimeout }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(Object.assign(new Error('Verification time limit reached.'), { code: 'VERIFY_TIMEOUT' })), effectiveTimeout + 1000);
+      }),
+    ]);
+    return { timedOut: false, exitCode: result.exitCode, stdout: await result.stdout(), stderr: await result.stderr() };
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'VERIFY_TIMEOUT') return { timedOut: true, exitCode: -1, stdout: '', stderr: 'Verification time limit reached.' };
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export async function verifyProject(userId: string, projectId: string): Promise<{
+  ok: boolean;
+  installed: boolean;
+  timedOut: boolean;
+  durationMs: number;
+  tsc: { exitCode: number; output: string };
+  vite: { exitCode: number; output: string };
+}> {
+  await assertProjectOwnership(userId, projectId);
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + VERIFY_PROJECT_TIMEOUT_MS;
+  const sandbox = await getSandbox(projectId);
+  const files = await syncFiles(userId, projectId, sandbox);
+  const packageFile = files.find((file) => file.path === 'package.json');
+  if (!packageFile) throw new Error('Project verification requires a package.json file.');
+  try { JSON.parse(packageFile.content); } catch { throw new Error('Project verification could not parse package.json.'); }
+
+  const packageManager = detectPackageManager(files.map((file) => file.path));
+  const hasNodeModules = await sandbox.runCommand({ cmd: 'test', args: ['-d', 'node_modules'], cwd: PROJECT_ROOT, timeoutMs: 5_000 });
+  let installed = false;
+  if (hasNodeModules.exitCode !== 0) {
+    const { cmd, args } = installCommand(packageManager);
+    const install = await runVerifyCommand(sandbox, { cmd, args }, PROJECT_ROOT, deadlineAt, 60_000);
+    if (install.timedOut) return { ok: false, installed: false, timedOut: true, durationMs: Date.now() - startedAt, tsc: { exitCode: -1, output: 'Skipped because dependency installation timed out.' }, vite: { exitCode: -1, output: 'Skipped because dependency installation timed out.' } };
+    if (install.exitCode !== 0) return { ok: false, installed: false, timedOut: false, durationMs: Date.now() - startedAt, tsc: { exitCode: -1, output: 'Skipped because dependency installation failed.' }, vite: { exitCode: -1, output: trimVerifyOutput(install.stderr || install.stdout || 'Dependency installation failed.') } };
+    installed = true;
+  }
+
+  const tsc = await runVerifyCommand(sandbox, { cmd: './node_modules/.bin/tsc', args: ['--noEmit'] }, PROJECT_ROOT, deadlineAt, 45_000);
+  const tscOutput = trimVerifyOutput(tsc.stderr || tsc.stdout || (tsc.exitCode === 0 ? 'TypeScript check passed.' : 'TypeScript check failed.'));
+  const verifyDir = '.kx-verify-dist';
+  await sandbox.runCommand({ cmd: 'rm', args: ['-rf', verifyDir], cwd: PROJECT_ROOT, timeoutMs: 5_000 });
+  const vite = await runVerifyCommand(sandbox, { cmd: './node_modules/.bin/vite', args: ['build', '--outDir', verifyDir, '--emptyOutDir'] }, PROJECT_ROOT, deadlineAt, 60_000);
+  await sandbox.runCommand({ cmd: 'rm', args: ['-rf', verifyDir], cwd: PROJECT_ROOT, timeoutMs: 5_000 }).catch(() => undefined);
+  const viteOutput = trimVerifyOutput(vite.stderr || vite.stdout || (vite.exitCode === 0 ? 'Vite build passed.' : 'Vite build failed.'));
+  const timedOut = tsc.timedOut || vite.timedOut || Date.now() >= deadlineAt;
+  return { ok: !timedOut && tsc.exitCode === 0 && vite.exitCode === 0, installed, timedOut, durationMs: Date.now() - startedAt, tsc: { exitCode: tsc.exitCode, output: tscOutput }, vite: { exitCode: vite.exitCode, output: viteOutput } };
+}
+
 export async function buildProjectForPublish(userId: string, projectId: string): Promise<{ framework: string; fileCount: number }> {
   const sandbox = await getSandbox(projectId);
   const files = await syncFiles(userId, projectId, sandbox);

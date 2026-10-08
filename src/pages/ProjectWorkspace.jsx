@@ -667,6 +667,7 @@ export default function ProjectWorkspace() {
   const [previewError, setPreviewError] = useState('');
   const [copied, setCopied] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState(null);
+  const [publishedAt, setPublishedAt] = useState(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -690,6 +691,9 @@ export default function ProjectWorkspace() {
   const tree = useMemo(() => buildTree(files), [files]);
   const url = previewUrl(projectId);
   const previewSrc = runtimePreviewUrl || publishedUrl || url;
+  const hasUnpublishedChanges = Boolean(
+    publishedAt && files.some((file) => file.updated_at && new Date(file.updated_at).getTime() > new Date(publishedAt).getTime())
+  );
 
   const refreshFiles = useCallback(async () => {
     setIsLoadingFiles(true);
@@ -717,6 +721,7 @@ export default function ProjectWorkspace() {
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled) return;
+        setPublishedAt(data?.published_at || null);
         const slug = data?.published_at && data?.slug ? data.slug : null;
         setPublishedUrl(slug ? siteUrl(`/${slug}/`) : null);
       });
@@ -928,6 +933,7 @@ export default function ProjectWorkspace() {
             {publishedUrl ? 'Published site' : 'Preview URL'}
           </span>
           {publishedUrl && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 shrink-0">Live</span>}
+          {hasUnpublishedChanges && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 shrink-0">Unpublished changes</span>}
           <span
             className="text-kxmist shrink-0 cursor-help"
             title={publishedUrl

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { AGENT_MAX_DURATION_MS, AGENT_MAX_TOOL_STEPS, buildAgentTimeoutSummary, isAgentTimeout, runProviderCall, runTool, serializeToolResult, SYSTEM_INSTRUCTION } from '../agentTools';
+import { AGENT_MAX_DURATION_MS, AGENT_MAX_TOOL_STEPS, buildAgentTimeoutSummary, isAgentTimeout, runProviderCall, runTool, serializeToolResult, buildSystemInstruction } from '../agentTools';
 import type { AgentOpts, AgentResult, ToolDef, ToolStep } from '../agentTools';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -29,7 +29,7 @@ export async function runAnthropicAgent(opts: AgentOpts): Promise<AgentResult> {
         () => anthropic.messages.create({
           model: modelId,
           max_tokens: 4096,
-          system: SYSTEM_INSTRUCTION,
+          system: buildSystemInstruction(ctx.readOnly),
           messages,
           tools: anthropicTools,
         }),

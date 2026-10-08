@@ -5,7 +5,7 @@ import {
   type Tool as GeminiTool,
   type Content,
 } from '@google/generative-ai';
-import { AGENT_MAX_DURATION_MS, AGENT_MAX_TOOL_STEPS, buildAgentTimeoutSummary, isAgentTimeout, runProviderCall, runTool, serializeToolResult, SYSTEM_INSTRUCTION } from '../agentTools';
+import { AGENT_MAX_DURATION_MS, AGENT_MAX_TOOL_STEPS, buildAgentTimeoutSummary, isAgentTimeout, runProviderCall, runTool, serializeToolResult, buildSystemInstruction } from '../agentTools';
 import type { AgentOpts, AgentResult, ToolDef, JSONSchemaProp, ToolStep } from '../agentTools';
 
 function toGeminiProp(p: JSONSchemaProp): any {
@@ -36,7 +36,7 @@ export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI) {
     const { modelId, history, prompt, tools, ctx, onStep } = opts;
     const geminiTools: GeminiTool[] = [{ functionDeclarations: tools.map(toGeminiTool) }];
 
-    const model = genAI.getGenerativeModel({ model: modelId, tools: geminiTools, systemInstruction: SYSTEM_INSTRUCTION });
+    const model = genAI.getGenerativeModel({ model: modelId, tools: geminiTools, systemInstruction: buildSystemInstruction(ctx.readOnly) });
     const geminiHistory: Content[] = history.map((h) => ({ role: h.role, parts: [{ text: h.text }] }));
     const contents: Content[] = [
       ...geminiHistory,

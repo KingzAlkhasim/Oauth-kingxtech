@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { AGENT_MAX_DURATION_MS, AGENT_MAX_TOOL_STEPS, buildAgentTimeoutSummary, isAgentTimeout, runProviderCall, runTool, serializeToolResult, SYSTEM_INSTRUCTION } from '../agentTools';
+import { AGENT_MAX_DURATION_MS, AGENT_MAX_TOOL_STEPS, buildAgentTimeoutSummary, isAgentTimeout, runProviderCall, runTool, serializeToolResult, buildSystemInstruction } from '../agentTools';
 import type { AgentOpts, AgentResult, ToolDef, ToolStep } from '../agentTools';
 
 function toOpenAITool(t: ToolDef): OpenAI.Chat.ChatCompletionTool {
@@ -17,7 +17,7 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
     const { modelId, history, prompt, tools, ctx, onStep } = opts;
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: SYSTEM_INSTRUCTION },
+      { role: 'system', content: buildSystemInstruction(ctx.readOnly) },
       ...history.map((h) => ({
         role: (h.role === 'model' ? 'assistant' : 'user') as 'assistant' | 'user',
         content: h.text,

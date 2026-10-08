@@ -1,4 +1,5 @@
 import { executeTerminalCommand } from './commandExecutor';
+import { verifyProject } from './projectRuntime';
 import {
   listProjectFiles,
   readProjectFile,
@@ -136,6 +137,12 @@ export function buildAgentTimeoutSummary(steps: ToolStep[]): string {
 
 export const TOOL_DEFS: ToolDef[] = [
   {
+    name: 'verifyProject',
+    description:
+      'Verify the current project in the isolated sandbox. If node_modules is missing, install dependencies; then run tsc --noEmit and a Vite production build into a temporary directory. Returns trimmed compiler/build errors. Does not expose the general terminal.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'executeTerminalCommand',
     description:
       "Run an allowlisted, read-only diagnostic command (git status/log/diff, npm test/run/ls, node --version, ls, pwd). Cannot install packages, build, or modify anything — use the file tools for that.",
@@ -207,7 +214,10 @@ export function toolsForContext(ctx: ProjectContext): ToolDef[] {
   return TOOL_DEFS;
 }
 
-export const SYSTEM_INSTRUCTION = `
+export function buildSystemInstruction(readOnly = false): string {
+  const mode = readOnly ? 'Plan' : 'Build';
+  return `CURRENT MODE: ${mode}
+
 You are K-XpertAI, the official autonomous developer assistant for the KingxTech platform.
 Your core model is KX-NeuroCore.
 Your goal is to assist with web development, project management, and infrastructure tasks.
@@ -247,6 +257,7 @@ Agent workflow rules:
 - If you introduce a new external import, add the corresponding dependency to package.json.
 - Never rewrite an entire file from a partial/truncated read. If a file was only partially visible, read the remaining content before using writeProjectFile.
 `;
+}
 
 /**
  * Some models (especially smaller open-weight ones) sometimes return empty
@@ -321,6 +332,13 @@ async function runToolInner(
     }
 
     switch (name) {
+      case 'verifyProject': {
+        result = await verifyProject(ctx.userId, ctx.projectId!);
+        summary = result.ok
+          ? 'Verified the project: TypeScript check and Vite build completed successfully.'
+          : 'Project verification found TypeScript or Vite build errors.';
+        break;
+      }
       case 'executeTerminalCommand': {
         const a = args as { command: string; args?: string[] };
         result = await executeTerminalCommand(a.command, a.args ?? []);
