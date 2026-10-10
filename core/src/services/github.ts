@@ -187,30 +187,61 @@ export async function pushProjectToGithub(
   const secretPatterns: Array<{ type: string; pattern: RegExp }> = [
     { type: 'Google API key (AIza…)', pattern: /\bAIza[A-Za-z0-9_-]{35}\b/g },
     { type: 'secret key (sk-…)', pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g },
-    { type: 'service_role credential marker', pattern: /service_role/gi },
     { type: 'private-key header', pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/gi },
     { type: 'GitHub classic token (ghp_…)', pattern: /\bghp_[A-Za-z0-9]{20,}\b/g },
     { type: 'GitHub fine-grained token (github_pat_…)', pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g },
   ];
+  const serviceRoleJwtPattern = /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
+  const serviceRoleAssignmentPattern = /\bSERVICE_ROLE_KEY\s*=\s*(['"]?)([^\s"'#]+)\1/gi;
   const secretFindings = new Map<string, Set<string>>();
   for (const file of files) {
     const content = file.content ?? '';
     if (content.startsWith('__KX_BINARY_BASE64__:')) continue;
+    const addFinding = (type: string) => {
+      const types = secretFindings.get(file.path) ?? new Set<string>();
+      types.add(type);
+      secretFindings.set(file.path, types);
+    };
+
     for (const { type, pattern } of secretPatterns) {
       pattern.lastIndex = 0;
-      if (pattern.test(content)) {
-        const types = secretFindings.get(file.path) ?? new Set<string>();
-        types.add(type);
-        secretFindings.set(file.path, types);
+      if (pattern.test(content)) addFinding(type);
+    }
+
+    // Only flag JWTs whose decoded payload explicitly declares role=service_role.
+    serviceRoleJwtPattern.lastIndex = 0;
+    for (const match of content.matchAll(serviceRoleJwtPattern)) {
+      try {
+        const payloadPart = match[0].split('.')[1];
+        const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(Buffer.from(normalized, 'base64').toString('utf-8'));
+        if (payload?.role === 'service_role') {
+          addFinding('Supabase service_role JWT');
+          break;
+        }
+      } catch {
+        // Ignore malformed JWT-shaped strings.
       }
+    }
+
+    // Flag literal credential assignments, but allow common environment lookups
+    // and obvious template/example placeholders.
+    serviceRoleAssignmentPattern.lastIndex = 0;
+    for (const match of content.matchAll(serviceRoleAssignmentPattern)) {
+      const value = match[2];
+      if (value.length < 20) continue;
+      if (/^(?:process\.env\.|import\.meta\.env\.|Deno\.env\.|Bun\.env\.|env\(|getenv\()/i.test(value)) continue;
+      if (/^(?:\$\{[^}]+\}|<[^>]+>|\{\{[^}]+\}\}|your[_-]|replace[_-]?me\b|change[_-]?me\b|placeholder\b|example\b|xxx+)/i.test(value)) continue;
+      addFinding('SERVICE_ROLE_KEY assignment');
+      break;
     }
   }
   if (secretFindings.size > 0) {
     const findings = [...secretFindings.entries()]
       .map(([path, types]) => `- ${path}: ${[...types].join(', ')}`)
-      .join('\\n');
+      .join('\n');
     throw new Error(
-      `GitHub push blocked: possible secrets detected. Remove or replace these values before pushing; secret values are not shown:\\n${findings}`
+      `GitHub push blocked: possible secrets detected. Remove or replace these values before pushing; secret values are not shown:\n${findings}`
     );
   }
 
