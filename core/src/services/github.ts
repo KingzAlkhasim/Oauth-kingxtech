@@ -137,6 +137,7 @@ export async function getProjectGithubLink(userId: string, projectId: string): P
 export interface PushResult {
   commitUrl: string;
   filesChanged: number;
+  filesSkipped: number;
 }
 
 export async function pushProjectToGithub(
@@ -151,7 +152,21 @@ export async function pushProjectToGithub(
   const [owner, repo] = link.repo_full_name.split('/');
   if (!owner || !repo) throw new Error(`Invalid repo name: ${link.repo_full_name}`);
 
-  const files = await listProjectFilesWithContent(userId, projectId);
+  const projectFiles = await listProjectFilesWithContent(userId, projectId);
+  const ignoredPushPrefixes = [
+    '.kingxtech-dist/',
+    '.kx-verify-dist/',
+    'node_modules/',
+    '.git/',
+    'dist/',
+    'build/',
+    '.next/',
+    '.cache/',
+  ];
+  const files = projectFiles.filter(
+    (file) => !ignoredPushPrefixes.some((prefix) => file.path.startsWith(prefix))
+  );
+  const filesSkipped = projectFiles.length - files.length;
   if (files.length === 0) throw new Error('This project has no files to push yet.');
 
   // 1. Resolve the branch's current commit — create the branch from the
@@ -174,29 +189,51 @@ export async function pushProjectToGithub(
   const baseCommit = await gh(token, `/repos/${owner}/${repo}/git/commits/${baseCommitSha}`);
   const baseTreeSha = baseCommit.tree.sha;
 
-  // 3. Create a blob for every file.
-  const treeEntries = [];
+  // 3. Remove legacy generated output from the destination repo on the next push.
+  const treeEntries: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
+  try {
+    const existingTree = await gh(token, `/repos/${owner}/${repo}/git/trees/${baseTreeSha}?recursive=1`);
+    if (existingTree.truncated) {
+      console.warn('GitHub base tree was truncated; skipping .kingxtech-dist cleanup for this push.');
+    } else {
+      for (const entry of existingTree.tree ?? []) {
+        if (entry.path.startsWith('.kingxtech-dist/')) {
+          treeEntries.push({ path: entry.path, mode: '100644', type: 'blob', sha: null });
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('Could not inspect the GitHub base tree for .kingxtech-dist cleanup; continuing push.', error);
+  }
+
+  // 4. Create a blob for every source file. Decode marked binary payloads as base64.
   for (const file of files) {
+    const content = file.content ?? '';
+    const binaryPrefix = '__KX_BINARY_BASE64__:';
+    const isBinaryPayload = content.startsWith(binaryPrefix);
     const blob = await gh(token, `/repos/${owner}/${repo}/git/blobs`, {
       method: 'POST',
-      body: JSON.stringify({ content: file.content ?? '', encoding: 'utf-8' }),
+      body: JSON.stringify({
+        content: isBinaryPayload ? content.slice(binaryPrefix.length) : content,
+        encoding: isBinaryPayload ? 'base64' : 'utf-8',
+      }),
     });
     treeEntries.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
   }
 
-  // 4. Create a new tree on top of the base tree.
+  // 5. Create a new tree on top of the base tree.
   const newTree = await gh(token, `/repos/${owner}/${repo}/git/trees`, {
     method: 'POST',
     body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
   });
 
-  // 5. Create the commit.
+  // 6. Create the commit.
   const newCommit = await gh(token, `/repos/${owner}/${repo}/git/commits`, {
     method: 'POST',
     body: JSON.stringify({ message: commitMessage, tree: newTree.sha, parents: [baseCommitSha] }),
   });
 
-  // 6. Move the branch ref to the new commit.
+  // 7. Move the branch ref to the new commit.
   await gh(token, `/repos/${owner}/${repo}/git/refs/heads/${link.branch}`, {
     method: 'PATCH',
     body: JSON.stringify({ sha: newCommit.sha }),
@@ -205,6 +242,7 @@ export async function pushProjectToGithub(
   return {
     commitUrl: `https://github.com/${owner}/${repo}/commit/${newCommit.sha}`,
     filesChanged: files.length,
+    filesSkipped,
   };
 }
 
