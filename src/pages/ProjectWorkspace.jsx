@@ -492,56 +492,35 @@ function SiteSettingsTab({ projectId }) {
       </Card>
 
       <Card className="p-4 rounded-xl">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h3 className="text-[14px] font-semibold">Custom PWA icon</h3>
-            <p className="text-[11.5px] text-kxmist mt-0.5 leading-relaxed">
-              Use a square PNG from 512×512 to 1024×1024, up to 1 MB.
-            </p>
+        <div className="flex flex-col gap-3 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-[14px] font-semibold min-w-0">Custom PWA icon</h3>
+            <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full border border-kxpurple/30 bg-kxpurple/10 text-kxpurple">Pro</span>
           </div>
+          <p className="text-[11.5px] text-kxmist leading-relaxed w-full min-w-0">Use a square PNG from 512×512 to 1024×1024, up to 1 MB.</p>
           {isPro ? (
-            <div className="flex items-center gap-2 shrink-0">
-              {pwaIconUrl && (
-                <img src={pwaIconUrl} alt="Custom PWA icon preview" className="w-12 h-12 rounded-xl border border-white/10 object-cover bg-white" />
-              )}
-              <button
-                type="button"
-                disabled={pwaIconBusy}
-                onClick={() => pwaIconInputRef.current?.click()}
-                className="text-[12px] px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-kxmist hover:text-white disabled:opacity-50"
-              >
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              {pwaIconUrl && <img src={pwaIconUrl} alt="Custom PWA icon preview" className="w-12 h-12 rounded-xl border border-white/10 object-cover bg-white shrink-0" />}
+              <button type="button" disabled={pwaIconBusy} onClick={() => pwaIconInputRef.current?.click()} className="text-[12px] px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-kxmist hover:text-white disabled:opacity-50">
                 {pwaIconBusy ? 'Uploading…' : 'Upload icon'}
               </button>
-              {pwaIconUrl && (
-                <button
-                  type="button"
-                  disabled={pwaIconBusy}
-                  onClick={removeIcon}
-                  className="text-[12px] text-red-300 hover:text-red-200 disabled:opacity-50"
-                >
-                  Remove icon
-                </button>
-              )}
+              {pwaIconUrl && <button type="button" disabled={pwaIconBusy} onClick={removeIcon} className="text-[12px] text-red-300 hover:text-red-200 disabled:opacity-50">Remove icon</button>}
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-[11.5px] text-kxmist shrink-0">
-              <Lock size={13} className="text-kxpurple" />
-              <span>Custom icon is a Pro feature</span>
-              <a href="/billing" className="text-kxpurple hover:text-white underline underline-offset-2">Billing</a>
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2 min-w-0 text-[11.5px] text-kxmist">
+                <Lock size={13} className="text-kxpurple shrink-0" />
+                <span className="min-w-0">Custom icon is a Pro feature</span>
+              </div>
+              <a href="/billing" className="text-[12px] text-kxpurple hover:text-white underline underline-offset-2">Upgrade in Billing</a>
             </div>
           )}
         </div>
-        <input
-          ref={pwaIconInputRef}
-          type="file"
-          accept="image/png"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = '';
-            uploadIcon(file);
-          }}
-        />
+        <input ref={pwaIconInputRef} type="file" accept="image/png" className="hidden" onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          uploadIcon(file);
+        }} />
       </Card>
 
       <Card className="p-4 rounded-xl">

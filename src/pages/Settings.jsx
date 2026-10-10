@@ -5,6 +5,7 @@ import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import useCurrentUser, { initials } from '../lib/useCurrentUser';
 import { supabase } from '../lib/supabase';
+import { useEnsureAal2 } from '../lib/ensureAal2';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { logActivity, listActivity } from '../lib/activity';
 import { User, ShieldCheck, Monitor, KeyRound, ScrollText, Laptop, Plus, Lock } from 'lucide-react';
@@ -84,8 +85,13 @@ function ProfileTab() {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [avatarError, setAvatarError] = useState('');
+  const [avatarNotice, setAvatarNotice] = useState('');
+  const [basicInfoError, setBasicInfoError] = useState('');
+  const [basicInfoNotice, setBasicInfoNotice] = useState('');
+  const [developerError, setDeveloperError] = useState('');
+  const [developerNotice, setDeveloperNotice] = useState('');
+  const { ensureAal2, modal: emailAal2Modal } = useEnsureAal2();
 
   useEffect(() => {
     if (user) {
@@ -109,46 +115,53 @@ function ProfileTab() {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const saveBasicInfo = async () => {
-    setError(''); setNotice(''); setSaving(true);
+    setBasicInfoError(''); setBasicInfoNotice(''); setSaving(true);
+    const emailChanged = form.email.trim().toLowerCase() !== (user.email || '').trim().toLowerCase();
     const updates = { data: { full_name: form.fullName, username: form.username } };
-    if (form.email !== user.email) updates.email = form.email;
-
-    const { error: updateError } = await supabase.auth.updateUser(updates);
-    setSaving(false);
-    if (updateError) { setError(updateError.message); return; }
-    setNotice(
-      form.email !== user.email
-        ? 'Saved. Check your new email address to confirm the change.'
-        : 'Profile updated.'
-    );
+    if (emailChanged) updates.email = form.email.trim();
+    try {
+      if (emailChanged && !(await ensureAal2())) return;
+      const { error: updateError } = await supabase.auth.updateUser(updates);
+      if (updateError) { setBasicInfoError(updateError.message); return; }
+      setBasicInfoNotice(emailChanged ? 'Saved. Check your new email address to confirm the change.' : 'Profile updated.');
+    } catch (err) {
+      setBasicInfoError(err.message || 'Could not save your profile changes.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveDeveloperProfile = async () => {
-    setError(''); setNotice(''); setSaving(true);
-    const { error: updateError } = await supabase.auth.updateUser({
-      data: {
-        developer_role: form.role,
-        experience_level: form.experience,
-        company_name: form.company || null,
-        github_url: form.github || null,
-      },
-    });
-    setSaving(false);
-    if (updateError) { setError(updateError.message); return; }
-    setNotice('Developer profile updated.');
+    setDeveloperError(''); setDeveloperNotice(''); setSaving(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          developer_role: form.role,
+          experience_level: form.experience,
+          company_name: form.company || null,
+          github_url: form.github || null,
+        },
+      });
+      if (updateError) { setDeveloperError(updateError.message); return; }
+      setDeveloperNotice('Developer profile updated.');
+    } catch (err) {
+      setDeveloperError(err.message || 'Could not save your developer profile.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const uploadAvatar = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setError(''); setNotice(''); setAvatarUploading(true);
+    setAvatarError(''); setAvatarNotice(''); setAvatarUploading(true);
 
     const path = `${user.id}/${Date.now()}-${file.name}`;
     const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
 
     if (uploadError) {
       setAvatarUploading(false);
-      setError(
+      setAvatarError(
         uploadError.message?.includes('not found')
           ? "No 'avatars' storage bucket exists yet in Supabase — create a public bucket named avatars (Storage → New bucket) to enable uploads."
           : uploadError.message
@@ -159,15 +172,15 @@ function ProfileTab() {
     const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
     const { error: updateError } = await supabase.auth.updateUser({ data: { avatar_url: pub.publicUrl } });
     setAvatarUploading(false);
-    if (updateError) { setError(updateError.message); return; }
+    if (updateError) { setAvatarError(updateError.message); return; }
     set('avatarUrl', pub.publicUrl);
-    setNotice('Profile picture updated.');
+    setAvatarNotice('Profile picture updated.');
   };
 
   return (
     <>
       <Section title="Profile picture">
-        <Notice error={error} notice={notice} />
+        <Notice error={avatarError} notice={avatarNotice} />
         <div className="flex items-center gap-4">
           {form.avatarUrl ? (
             <img src={form.avatarUrl} alt="" className="w-16 h-16 rounded-full object-cover" />
@@ -185,6 +198,8 @@ function ProfileTab() {
       </Section>
 
       <Section title="Basic info">
+        <Notice error={basicInfoError} notice={basicInfoNotice} />
+        {emailAal2Modal}
         <div className="grid sm:grid-cols-2 gap-4">
           <Input label="Full name" value={form.fullName} onChange={(e) => set('fullName', e.target.value)} />
           <Input
@@ -200,6 +215,7 @@ function ProfileTab() {
       </Section>
 
       <Section title="Developer profile" desc="Shown to teams you collaborate with.">
+        <Notice error={developerError} notice={developerNotice} />
         <div className="grid sm:grid-cols-2 gap-4">
           <Input label="Role" value={form.role} onChange={(e) => set('role', e.target.value)} />
           <Input label="Experience level" value={form.experience} onChange={(e) => set('experience', e.target.value)} />
@@ -237,31 +253,33 @@ function PasswordSection() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const { user } = useCurrentUser();
+  const { ensureAal2, modal: passwordAal2Modal } = useEnsureAal2();
 
   const submit = async () => {
     setError(''); setNotice('');
+    if (next.length < 8) { setError('Your password must be at least 8 characters long.'); return; }
     if (next !== confirm) { setError("New passwords don't match."); return; }
     setSaving(true);
-
-    // Re-verify the current password before changing it.
-    const { error: reauthError } = await supabase.auth.signInWithPassword({ email: user.email, password: current });
-    if (reauthError) {
+    try {
+      const { error: reauthError } = await supabase.auth.signInWithPassword({ email: user.email, password: current });
+      if (reauthError) { setError('Current password is incorrect.'); return; }
+      if (!(await ensureAal2())) return;
+      const { error: updateError } = await supabase.auth.updateUser({ password: next });
+      if (updateError) { setError(updateError.message); return; }
+      setNotice('Password updated.');
+      logActivity('Password changed');
+      setCurrent(''); setNext(''); setConfirm('');
+    } catch (err) {
+      setError(err.message || 'Could not update your password.');
+    } finally {
       setSaving(false);
-      setError('Current password is incorrect.');
-      return;
     }
-
-    const { error: updateError } = await supabase.auth.updateUser({ password: next });
-    setSaving(false);
-    if (updateError) { setError(updateError.message); return; }
-    setNotice('Password updated.');
-    logActivity('Password changed');
-    setCurrent(''); setNext(''); setConfirm('');
   };
 
   return (
     <Section title="Password">
       <Notice error={error} notice={notice} />
+      {passwordAal2Modal}
       <div className="grid sm:grid-cols-2 gap-4">
         <Input label="Current password" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         <div />
