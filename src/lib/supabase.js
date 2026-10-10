@@ -17,3 +17,9 @@ export const supabase = createClient(url, anonKey, {
     detectSessionInUrl: true,
   },
 });
+
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    sessionStorage.setItem('kx_password_recovery', '1');
+  }
+});

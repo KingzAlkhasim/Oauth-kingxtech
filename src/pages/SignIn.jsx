@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import { Button, Input, Checkbox, Divider, SocialButtons } from '../components/ui';
 import { KeyRound } from 'lucide-react';
@@ -16,6 +16,8 @@ export default function SignIn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
+  const notice = location.state?.notice;
   const [params] = useSearchParams();
   const redirect = params.get('redirect');
 
@@ -60,6 +62,12 @@ export default function SignIn() {
       {redirect && (
         <p className="text-[12px] font-mono text-kxblue/90 bg-kxblue/10 border border-kxblue/20 rounded-lg px-3 py-2 mb-6">
           Continuing to {redirect}
+        </p>
+      )}
+
+      {notice && (
+        <p role="status" className="text-[12.5px] text-emerald-300 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2 mb-6">
+          {notice}
         </p>
       )}
 
