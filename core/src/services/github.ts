@@ -163,11 +163,56 @@ export async function pushProjectToGithub(
     '.next/',
     '.cache/',
   ];
+  const isSensitivePath = (filePath: string): boolean => {
+    const name = filePath.split('/').pop() ?? filePath;
+    if (name === '.env.example' || name === '.env.sample') return false;
+    return (
+      name === '.env' ||
+      name.startsWith('.env.') ||
+      /\.(?:pem|key)$/i.test(name) ||
+      /^id_rsa/i.test(name) ||
+      /^serviceAccount.*\.json$/i.test(name)
+    );
+  };
   const files = projectFiles.filter(
-    (file) => !ignoredPushPrefixes.some((prefix) => file.path.startsWith(prefix))
+    (file) =>
+      !ignoredPushPrefixes.some((prefix) => file.path.startsWith(prefix)) &&
+      !isSensitivePath(file.path)
   );
   const filesSkipped = projectFiles.length - files.length;
-  if (files.length === 0) throw new Error('This project has no files to push yet.');
+  if (files.length === 0) throw new Error('This project has no eligible source files to push.');
+
+  // Scan text files before making any GitHub write requests. Report only paths
+  // and pattern categories; never include matched secret values in the error.
+  const secretPatterns: Array<{ type: string; pattern: RegExp }> = [
+    { type: 'Google API key (AIza…)', pattern: /\bAIza[A-Za-z0-9_-]{35}\b/g },
+    { type: 'secret key (sk-…)', pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g },
+    { type: 'service_role credential marker', pattern: /service_role/gi },
+    { type: 'private-key header', pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/gi },
+    { type: 'GitHub classic token (ghp_…)', pattern: /\bghp_[A-Za-z0-9]{20,}\b/g },
+    { type: 'GitHub fine-grained token (github_pat_…)', pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g },
+  ];
+  const secretFindings = new Map<string, Set<string>>();
+  for (const file of files) {
+    const content = file.content ?? '';
+    if (content.startsWith('__KX_BINARY_BASE64__:')) continue;
+    for (const { type, pattern } of secretPatterns) {
+      pattern.lastIndex = 0;
+      if (pattern.test(content)) {
+        const types = secretFindings.get(file.path) ?? new Set<string>();
+        types.add(type);
+        secretFindings.set(file.path, types);
+      }
+    }
+  }
+  if (secretFindings.size > 0) {
+    const findings = [...secretFindings.entries()]
+      .map(([path, types]) => `- ${path}: ${[...types].join(', ')}`)
+      .join('\\n');
+    throw new Error(
+      `GitHub push blocked: possible secrets detected. Remove or replace these values before pushing; secret values are not shown:\\n${findings}`
+    );
+  }
 
   // 1. Resolve the branch's current commit — create the branch from the
   // repo's default branch if it doesn't exist yet.
