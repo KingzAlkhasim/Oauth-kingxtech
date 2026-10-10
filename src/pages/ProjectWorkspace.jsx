@@ -246,8 +246,8 @@ function TerminalTab({ projectId, publishedUrl }) {
     setIsPushing(true);
     setLines((l) => [...l, { type: 'cmd', text: `push to ${githubLink.repo_full_name} (${githubLink.branch})` }]);
     try {
-      const { commitUrl, filesChanged } = await pushProjectToGithub(projectId, commitMessage);
-      setLines((l) => [...l, { type: 'out', text: `Pushed ${filesChanged} file(s). ${commitUrl}` }]);
+      const { commitUrl, filesChanged, filesSkipped } = await pushProjectToGithub(projectId, commitMessage);
+      setLines((l) => [...l, { type: 'out', text: `Pushed ${filesChanged} file(s); skipped ${filesSkipped} generated/dependency file(s). ${commitUrl}` }]);
     } catch (err) {
       setLines((l) => [...l, { type: 'err', text: err.message }]);
     } finally {
