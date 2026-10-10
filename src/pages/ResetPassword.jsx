@@ -41,23 +41,29 @@ export default function ResetPassword() {
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
       return query.get('type') === 'recovery' || hash.get('type') === 'recovery' || query.has('code');
     };
+    const refreshRecoveryValidity = () => {
+      supabase.auth.getSession().then(({ data, error: sessionError }) => {
+        if (!active) return;
+        const hasRecoveryFlag = sessionStorage.getItem('kx_password_recovery') === '1';
+        setValidRecovery(!sessionError && Boolean(data.session) &&
+          (hasRecoveryFlag || recoveryEventSeen || hasRecoveryMarker()));
+        setCheckingRecovery(false);
+      }).catch(() => {
+        if (active) setCheckingRecovery(false);
+      });
+    };
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         recoveryEventSeen = true;
-        if (active) setValidRecovery(true);
+        refreshRecoveryValidity();
       }
     });
 
-    supabase.auth.getSession().then(({ data, error: sessionError }) => {
-      if (!active) return;
-      setValidRecovery(!sessionError && Boolean(data.session) && (recoveryEventSeen || hasRecoveryMarker()));
-      setCheckingRecovery(false);
-    }).catch(() => {
-      if (active) setCheckingRecovery(false);
-    });
+    refreshRecoveryValidity();
     return () => {
       active = false;
       listener.subscription.unsubscribe();
+      sessionStorage.removeItem('kx_password_recovery');
     };
   }, []);
 
@@ -76,6 +82,7 @@ export default function ResetPassword() {
         ({ error: updateError } = await supabase.auth.updateUser({ password: pw }));
       }
       if (updateError) { setError(updateError.message || 'We couldn’t update your password. Please try again.'); return; }
+      sessionStorage.removeItem('kx_password_recovery');
       await supabase.auth.signOut();
       navigate('/login', { replace: true, state: { notice: 'Password updated. Sign in with your new password.' } });
     } catch (err) {
