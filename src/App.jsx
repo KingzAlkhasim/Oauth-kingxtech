@@ -19,7 +19,7 @@ import Help from './pages/Help';
 function LegacySettingsRedirect() {
   const location = useLocation();
   const legacyTab = location.pathname.replace(/^\/settings\/?/, '').split('/')[0];
-  const tabMap = { profile: 'profile', security: 'security', sessions: 'sessions', activity: 'activity', logs: 'activity', api: 'activity' };
+  const tabMap = { profile: 'profile', security: 'security', sessions: 'sessions', activity: 'activity', logs: 'activity', api: 'profile' };
   return <Navigate to={`/account/${tabMap[legacyTab] || 'profile'}`} replace />;
 }
 
