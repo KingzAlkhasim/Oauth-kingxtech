@@ -7,7 +7,6 @@ import { supabase } from '../lib/supabase';
 import { Card, Button, Input, Badge, ExpandableList } from '../components/ui';
 import { listApiKeys, createApiKey, revokeApiKey, deleteApiKey } from '../lib/apiKeys';
 import { listWebhooks, createWebhook, toggleWebhook, deleteWebhook, WEBHOOK_EVENTS } from '../lib/webhooks';
-import { listTickets, createTicket, TICKET_CATEGORIES } from '../lib/tickets';
 import { getLinkedIdentities, findIdentity, linkProvider, unlinkProvider } from '../lib/identities';
 import { getCommunityStats } from '../lib/community';
 import { runReadonlyQuery, KNOWN_TABLES } from '../lib/database';
@@ -21,7 +20,7 @@ import {
 import { listEnvVars, upsertEnvVar, deleteEnvVar } from '../lib/envVars';
 import { logActivity } from '../lib/activity';
 import {
-  FlaskConical, Plug, LifeBuoy, Trophy, Cloud,
+  FlaskConical, Plug, Trophy, Cloud,
   Plus, Copy, Trash2, Check, X, Lock, Server, Database, Activity,
   TerminalSquare, Table2, Play, KeyRound,
 } from 'lucide-react';
@@ -35,7 +34,6 @@ function GithubIcon({ size = 16 }) {
 const TABS = [
   { id: 'ailab', label: 'AI Lab', icon: FlaskConical },
   { id: 'integrations', label: 'Credentials', icon: Plug },
-  { id: 'support', label: 'Support', icon: LifeBuoy },
   { id: 'community', label: 'Community', icon: Trophy },
   { id: 'cloud', label: 'KX Cloud', icon: Cloud },
 ];
@@ -67,7 +65,6 @@ export default function Console() {
       <div className="animate-fade-up">
         {tab === 'ailab' && <AiLabTab />}
         {tab === 'integrations' && <IntegrationsTab />}
-        {tab === 'support' && <SupportTab />}
         {tab === 'community' && <CommunityTab />}
         {tab === 'cloud' && <CloudConsoleTab />}
       </div>
@@ -75,13 +72,11 @@ export default function Console() {
   );
 }
 
-function Section({ title, desc, children, unavailable }) {
+function Section({ title, desc, children }) {
   return (
     <Card className="p-6 mb-5 rounded-[20px]">
       <div className="flex items-center gap-2.5 mb-1">
         <h2 className="font-display text-[16px] font-medium">{title}</h2>
-        {unavailable && <Badge>Not available yet</Badge>}
-      </div>
       {desc && <p className="text-[13px] text-kxmist mb-5">{desc}</p>}
       {children}
     </Card>
@@ -311,7 +306,7 @@ function UsageTab() {
 
   if (error === 'SETUP') {
     return (
-      <Section title="API key usage" unavailable>
+      <Section title="API key usage">
         <p className="text-[13px] text-kxmist">
           Run <code className="text-white font-mono">supabase/migrations/012_usage_log.sql</code> in your Supabase SQL Editor to enable this.
         </p>
@@ -382,7 +377,7 @@ function ApiKeyVault() {
 
   if (error === 'SETUP') {
     return (
-      <Section title="API Key Vault" unavailable>
+      <Section title="API Key Vault">
         <p className="text-[13px] text-kxmist">
           Run <code className="text-white font-mono">supabase/migrations/003_api_keys.sql</code> in your Supabase SQL Editor to enable this.
         </p>
@@ -502,12 +497,7 @@ function IntegrationsTab() {
       <OAuthLinkers />
       <GithubPushTab />
       <WebhookManager />
-      <Section title="IDE Sync" unavailable desc="Plugin authentication status for SynthCode IDE.">
-        <div className="flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.015] px-4 py-4 text-kxmist">
-          <Lock size={16} />
-          <p className="text-[13px]">SynthCode IDE isn't available yet, so there's no plugin to sync with.</p>
-        </div>
-      </Section>
+      
     </>
   );
 }
@@ -612,7 +602,7 @@ function WebhookManager() {
 
   if (error === 'SETUP') {
     return (
-      <Section title="Webhook Manager" unavailable>
+      <Section title="Webhook Manager">
         <p className="text-[13px] text-kxmist">
           Run <code className="text-white font-mono">supabase/migrations/004_webhooks.sql</code> in your Supabase SQL Editor to enable this.
         </p>
@@ -670,94 +660,6 @@ function WebhookManager() {
         <Button variant="subtle" onClick={() => setShowForm(true)}><Plus size={14} /> Add webhook</Button>
       )}
     </Section>
-  );
-}
-
-/* ================= Tab 3: Support & Tickets ================= */
-
-function SupportTab() {
-  const [tickets, setTickets] = useState(null);
-  const [error, setError] = useState('');
-  const [category, setCategory] = useState('Bug');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState('');
-
-  const needsSetup = (e) => /relation .*support_tickets.* does not exist/i.test(e.message || '');
-
-  const refresh = async () => {
-    const { data, error: listError } = await listTickets();
-    if (listError) { setError(needsSetup(listError) ? 'SETUP' : listError.message); return; }
-    setTickets(data);
-  };
-  useEffect(() => { refresh(); }, []);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setError(''); setNotice(''); setSaving(true);
-    const { error: createError } = await createTicket({ category, subject, message });
-    setSaving(false);
-    if (createError) { setError(createError.message); return; }
-    logActivity('Support ticket submitted', subject);
-    setSubject(''); setMessage('');
-    setNotice('Ticket submitted.');
-    refresh();
-  };
-
-  if (error === 'SETUP') {
-    return (
-      <Section title="Support & Tickets" unavailable>
-        <p className="text-[13px] text-kxmist">
-          Run <code className="text-white font-mono">supabase/migrations/005_support_tickets.sql</code> in your Supabase SQL Editor to enable this.
-        </p>
-      </Section>
-    );
-  }
-
-  return (
-    <>
-      <Section title="New ticket">
-        <Notice error={error && error !== 'SETUP' ? error : ''} notice={notice} />
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <label className="block">
-            <span className="block text-[13px] font-medium text-white/85 mb-1.5">Category</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue">
-              {TICKET_CATEGORIES.map((c) => <option key={c} value={c} className="bg-kxsurface">{c}</option>)}
-            </select>
-          </label>
-          <Input label="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} required />
-          <label className="block">
-            <span className="block text-[13px] font-medium text-white/85 mb-1.5">Message</span>
-            <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} required className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue resize-none" />
-          </label>
-          <Button type="submit" variant="glow" className="self-start" loading={saving}>Submit ticket</Button>
-        </form>
-      </Section>
-
-      <Section title="Your tickets">
-        {tickets === null && <p className="text-sm text-kxmist">Loading…</p>}
-        {tickets !== null && tickets.length === 0 && <p className="text-[13px] text-kxmist">No tickets yet.</p>}
-        <div className="flex flex-col gap-2.5">
-          {tickets?.map((t) => (
-            <div key={t.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3.5">
-              <div>
-                <p className="text-sm font-medium">{t.subject}</p>
-                <p className="text-[12px] text-kxmist">{t.category} · {new Date(t.created_at).toLocaleDateString()}</p>
-              </div>
-              <Badge tone={t.status === 'open' ? 'beta' : 'default'}>{t.status.replace('_', ' ')}</Badge>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Live transcript viewer" unavailable desc="Rendered history of resolved support chats.">
-        <div className="flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.015] px-4 py-4 text-kxmist">
-          <Lock size={16} />
-          <p className="text-[13px]">There's no live chat support system yet, so there's nothing to transcribe.</p>
-        </div>
-      </Section>
-    </>
   );
 }
 
@@ -842,55 +744,22 @@ function CommunityTab() {
 /* ================= Tab 5: KX Cloud ================= */
 
 function CloudConsoleTab() {
-  const [sub, setSub] = useState('compute');
+  const [sub, setSub] = useState('database');
   const SUBS = [
-    { id: 'compute', label: 'Compute', icon: Server },
-    { id: 'storage', label: 'Storage', icon: Database },
-    { id: 'traffic', label: 'Traffic', icon: Activity },
     { id: 'database', label: 'Database', icon: TerminalSquare },
     { id: 'env', label: 'Env Vars', icon: KeyRound },
   ];
-
   return (
     <>
       <div className="flex gap-2 mb-5 overflow-x-auto">
         {SUBS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setSub(id)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-full text-[12.5px] whitespace-nowrap border transition-colors ${
-              sub === id ? 'border-kxblue bg-kxblue/10 text-white' : 'border-white/12 text-kxmist hover:border-white/25'
-            }`}
-          >
+          <button key={id} onClick={() => setSub(id)} className={`flex items-center gap-2 px-3 py-2 rounded-full text-[12.5px] whitespace-nowrap border transition-colors ${
+            sub === id ? 'border-kxblue bg-kxblue/10 text-white' : 'border-white/12 text-kxmist hover:border-white/25'
+          }`}>
             <Icon size={13} /> {label}
           </button>
         ))}
       </div>
-
-      {sub === 'compute' && (
-        <Section title="Compute instances" unavailable desc="Developer nodes with start/stop/reboot controls and live telemetry.">
-          <div className="flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.015] px-4 py-6 text-kxmist justify-center flex-col text-center">
-            <Server size={22} />
-            <p className="text-[13px] max-w-sm">KX Cloud infrastructure isn't provisioned yet — this needs real backend + cloud-provider wiring before it can show anything live.</p>
-          </div>
-        </Section>
-      )}
-      {sub === 'storage' && (
-        <Section title="Storage & dataset buckets" unavailable desc="File manager for datasets and generated artifacts.">
-          <div className="flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.015] px-4 py-6 text-kxmist justify-center flex-col text-center">
-            <Database size={22} />
-            <p className="text-[13px] max-w-sm">No storage backend is provisioned yet.</p>
-          </div>
-        </Section>
-      )}
-      {sub === 'traffic' && (
-        <Section title="Traffic & API gateway analytics" unavailable desc="Request volume, success rate, and failures over time.">
-          <div className="flex items-center gap-3 rounded-lg border border-white/8 bg-white/[0.015] px-4 py-6 text-kxmist justify-center flex-col text-center">
-            <Activity size={22} />
-            <p className="text-[13px] max-w-sm">There's no API gateway in front of anything yet, so there's no traffic to measure.</p>
-          </div>
-        </Section>
-      )}
       {sub === 'database' && <DatabaseSubTab />}
       {sub === 'env' && <EnvVarsSubTab />}
     </>
@@ -930,7 +799,7 @@ function EnvVarsSubTab() {
 
   if (error === 'SETUP') {
     return (
-      <Section title="Environment variables" unavailable>
+      <Section title="Environment variables">
         <p className="text-[13px] text-kxmist">
           Run <code className="text-white font-mono">supabase/migrations/014_env_vars.sql</code> (and <code className="text-white font-mono">022_env_vars_public_flag.sql</code>) in your Supabase SQL Editor to enable this.
         </p>

@@ -4,18 +4,17 @@ import Logo from './Logo';
 import CommandPalette from './CommandPalette';
 import { supabase } from '../lib/supabase';
 import useCurrentUser, { initials } from '../lib/useCurrentUser';
-import { LayoutDashboard, FolderKanban, Settings, Monitor, LogOut, Menu, X, Search, TerminalSquare, Activity as ActivityIcon, Wallet, Globe } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Settings, LifeBuoy, LogOut, Menu, X, Search, TerminalSquare, Wallet, Globe } from 'lucide-react';
 import KXpertDrawer from './KXpertDrawer';
 
 const NAV = [
   { to: '/welcome', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
-  { to: '/console', label: 'Console', icon: TerminalSquare },
   { to: '/domains', label: 'Domains', icon: Globe },
-  { to: '/billing', label: 'Billing & Store', icon: Wallet },
-  { to: '/activity', label: 'Activity', icon: ActivityIcon },
-  { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/sessions', label: 'Sessions', icon: Monitor },
+  { to: '/console', label: 'Console', icon: TerminalSquare },
+  { to: '/billing', label: 'Billing', icon: Wallet },
+  { to: '/account/profile', label: 'Account', icon: Settings },
+  { to: '/help', label: 'Help', icon: LifeBuoy },
 ];
 
 export default function DashboardShell({ children, fullWidth = false }) {
@@ -45,7 +44,7 @@ export default function DashboardShell({ children, fullWidth = false }) {
 
       <nav className="flex-1 flex flex-col gap-1 px-3">
         {NAV.map(({ to, label, icon: Icon }) => {
-          const active = location.pathname === to;
+          const active = location.pathname === to || (to === '/account/profile' && location.pathname.startsWith('/account/'));
           return (
             <Link
               key={to}

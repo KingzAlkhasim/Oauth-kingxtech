@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { Button, Badge } from '../components/ui';
-import { ShieldCheck, KeyRound, Fingerprint } from 'lucide-react';
+import { ShieldCheck, KeyRound } from 'lucide-react';
 import useSeo from '../lib/useSeo';
 
 export default function Landing() {
@@ -37,7 +37,7 @@ export default function Landing() {
           {[
             { icon: ShieldCheck, title: 'SSO across products', desc: 'Authenticate once, move between K-XpertAI, SynthCode, and KX Cloud without logging in again.' },
             { icon: KeyRound, title: 'Modern security', desc: 'OAuth2, OpenID Connect, and two-factor authentication protect every account by default.' },
-            { icon: Fingerprint, title: 'Passkeys ready', desc: 'Sign in with a passkey or security key — passwords are optional, not required.' },
+            { icon: ShieldCheck, title: 'Secure sign-in', desc: 'Sign in with Google or email, with two-factor authentication available for added protection.' },
           ].map(({ icon: Icon, title, desc }) => (
             <div key={title} className="glass rounded-2xl p-6">
               <Icon size={20} className="text-kxblue mb-3" />
