@@ -14,7 +14,7 @@ import {
 import { getCredits } from '../lib/aiUsage';
 import { supabase } from '../lib/supabase';
 import { Card, Button, Badge, ExpandableList } from '../components/ui';
-import { Wallet, Zap, Server, Database as DatabaseIcon, Lock, ExternalLink } from 'lucide-react';
+import { Wallet, Zap, Database as DatabaseIcon, ExternalLink } from 'lucide-react';
 
 const TOPUP_PRESETS = [5, 10, 25, 50];
 const CONVERT_PRESETS = [1, 5, 10];
@@ -281,7 +281,7 @@ export default function Billing() {
       {/* Spend categories */}
       <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1">Spend your credits on</h2>
-        <p className="text-[13px] text-kxmist mb-5">What's real today, and what's coming to KX Cloud.</p>
+        <p className="text-[13px] text-kxmist mb-5">Current services you can pay for with your credits.</p>
         <div className="grid sm:grid-cols-2 gap-4">
           <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 min-w-0">
             <p className="text-[13.5px] font-medium mb-1 flex items-center gap-2"><Zap size={14} className="shrink-0" /> AI usage</p>
@@ -289,16 +289,10 @@ export default function Billing() {
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 min-w-0">
             <p className="text-[13.5px] font-medium mb-1 flex items-center gap-2"><DatabaseIcon size={14} className="shrink-0" /> Database &amp; Env Vars</p>
-            <p className="text-[12.5px] text-kxmist">Real, working today in Console → KX Cloud — usage limits tied to your plan are coming soon.</p>
+            <p className="text-[12.5px] text-kxmist">Database and environment-variable tools are available in Console → KX Cloud.</p>
           </div>
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 opacity-60 min-w-0">
-            <p className="text-[13.5px] font-medium mb-1 flex items-center gap-2"><Server size={14} className="shrink-0" /> Compute instances <Lock size={12} className="shrink-0" /></p>
-            <p className="text-[12.5px] text-kxmist">Coming soon — real backend + cloud-provider wiring isn't built yet.</p>
-          </div>
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 opacity-60 min-w-0">
-            <p className="text-[13.5px] font-medium mb-1 flex items-center gap-2"><Server size={14} className="shrink-0" /> Storage &amp; Traffic <Lock size={12} className="shrink-0" /></p>
-            <p className="text-[12.5px] text-kxmist">Coming soon — same as Compute, no backend behind these yet.</p>
-          </div>
+          
+          
         </div>
       </Card>
 

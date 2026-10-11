@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { Button, Badge } from '../components/ui';
-import { ShieldCheck, KeyRound, Fingerprint } from 'lucide-react';
+import { ShieldCheck, KeyRound } from 'lucide-react';
 import useSeo from '../lib/useSeo';
 
 export default function Landing() {
@@ -12,7 +12,7 @@ export default function Landing() {
       <div className="absolute w-[500px] h-[500px] rounded-full bg-kxpurple/25 blur-[120px] -top-40 left-1/4 pointer-events-none" />
       <div className="absolute w-[400px] h-[400px] rounded-full bg-kxblue/20 blur-[110px] top-20 right-0 pointer-events-none" />
 
-      <header className="relative z-10 max-w-6xl mx-auto flex items-center justify-between px-6 py-6">
+      <header className="relative z-10 max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-6">
         <Logo />
         <div className="flex items-center gap-3">
           <Link to="/login"><Button variant="ghost">Sign in</Button></Link>
@@ -37,7 +37,7 @@ export default function Landing() {
           {[
             { icon: ShieldCheck, title: 'SSO across products', desc: 'Authenticate once, move between K-XpertAI, SynthCode, and KX Cloud without logging in again.' },
             { icon: KeyRound, title: 'Modern security', desc: 'OAuth2, OpenID Connect, and two-factor authentication protect every account by default.' },
-            { icon: Fingerprint, title: 'Passkeys ready', desc: 'Sign in with a passkey or security key — passwords are optional, not required.' },
+            { icon: ShieldCheck, title: 'Secure sign-in', desc: 'Sign in with Google or email, with two-factor authentication available for added protection.' },
           ].map(({ icon: Icon, title, desc }) => (
             <div key={title} className="glass rounded-2xl p-6">
               <Icon size={20} className="text-kxblue mb-3" />

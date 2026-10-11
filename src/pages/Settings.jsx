@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
@@ -8,58 +8,51 @@ import { supabase } from '../lib/supabase';
 import { useEnsureAal2 } from '../lib/ensureAal2';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { logActivity, listActivity } from '../lib/activity';
-import { User, ShieldCheck, Monitor, KeyRound, ScrollText, Laptop, Plus, Lock } from 'lucide-react';
+import { User, ShieldCheck, Monitor, Laptop, Activity as ActivityIcon } from 'lucide-react';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'security', label: 'Security', icon: ShieldCheck },
   { id: 'sessions', label: 'Sessions', icon: Monitor },
-  { id: 'api', label: 'API keys', icon: KeyRound },
-  { id: 'logs', label: 'Security logs', icon: ScrollText },
+  { id: 'activity', label: 'Activity', icon: ActivityIcon },
 ];
 
 export default function Settings() {
-  useSeo({ title: 'Account settings — KingxTech', noindex: true });
+  useSeo({ title: 'Account — KingxTech', noindex: true });
   useRequireAuth();
-  const [tab, setTab] = useState('profile');
-
+  const location = useLocation();
+  const requestedTab = location.pathname.split('/')[2];
+  const tab = TABS.some((item) => item.id === requestedTab) ? requestedTab : 'profile';
   return (
     <DashboardShell>
-      <h1 className="font-display text-2xl font-semibold mb-8">Account settings</h1>
-
-      <div className="grid md:grid-cols-[220px_1fr] gap-8">
-        <nav className="flex md:flex-col gap-1 overflow-x-auto rounded-[20px] border border-white/8 bg-white/[0.015] p-2 h-fit">
+      <h1 className="font-display text-2xl font-semibold mb-2">Account</h1>
+      <p className="text-kxmist text-sm mb-6">Manage your profile, sign-in security, sessions, and account activity.</p>
+      <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-5 sm:gap-8 min-w-0">
+        <nav className="flex md:flex-col gap-1 overflow-x-auto rounded-[20px] border border-white/8 bg-white/[0.015] p-2 h-fit min-w-0">
           {TABS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-[13.5px] whitespace-nowrap text-left transition-colors ${
-                tab === id ? 'bg-white/8 text-white' : 'text-kxmist hover:text-white hover:bg-white/[0.03]'
-              }`}
-            >
+            <Link key={id} to={`/account/${id}`} className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-[13.5px] whitespace-nowrap text-left transition-colors ${
+              tab === id ? 'bg-white/8 text-white' : 'text-kxmist hover:text-white hover:bg-white/[0.03]'
+            }`}>
               <Icon size={15} /> {label}
-            </button>
+            </Link>
           ))}
         </nav>
-
-        <div className="animate-fade-up">
+        <div className="animate-fade-up min-w-0">
           {tab === 'profile' && <ProfileTab />}
           {tab === 'security' && <SecurityTab />}
           {tab === 'sessions' && <SessionsTab />}
-          {tab === 'api' && <ApiKeysTab />}
-          {tab === 'logs' && <LogsTab />}
+          {tab === 'activity' && <AccountActivityTab />}
         </div>
       </div>
     </DashboardShell>
   );
 }
 
-function Section({ title, desc, children, unavailable }) {
+function Section({ title, desc, children }) {
   return (
     <Card className="p-6 mb-5 rounded-[20px] relative">
       <div className="flex items-center gap-2.5 mb-1">
         <h2 className="font-display text-[16px] font-medium">{title}</h2>
-        {unavailable && <Badge>Not available yet</Badge>}
       </div>
       {desc && <p className="text-[13px] text-kxmist mb-5">{desc}</p>}
       {children}
@@ -235,12 +228,7 @@ function SecurityTab() {
     <>
       <PasswordSection />
       <MfaSection />
-      <Section title="Passkeys & WebAuthn" desc="Sign in without a password using a passkey or security key." unavailable>
-        <Button variant="subtle" disabled className="opacity-50 cursor-not-allowed">
-          <Plus size={14} /> Add a passkey
-        </Button>
-        <p className="text-[12px] text-kxmist mt-3">Passkey support isn't available yet — Supabase's client SDK doesn't currently expose WebAuthn enrollment.</p>
-      </Section>
+      
     </>
   );
 }
@@ -438,67 +426,36 @@ function SessionsTab() {
   );
 }
 
-/* ---------------- API keys (now live in Console → AI Lab) ---------------- */
+/* ---------------- Account activity ---------------- */
 
-function ApiKeysTab() {
-  return (
-    <Section title="API keys" desc="Generate and manage API keys.">
-      <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-4">
-        <p className="text-[13px] text-kxmist">API keys now live in Console → AI Lab, alongside model routing.</p>
-        <Link to="/console" className="text-[13px] text-kxblue hover:underline shrink-0">Open Console →</Link>
-      </div>
-    </Section>
-  );
-}
-
-/* ---------------- Security logs (real, from activity_log) ---------------- */
-
-const SECURITY_ACTIONS = ['Signed in', 'Password changed', '2FA enabled', '2FA disabled'];
-
-function LogsTab() {
+function AccountActivityTab() {
   const [entries, setEntries] = useState(null);
   const [error, setError] = useState('');
-
   useEffect(() => {
     listActivity(200).then(({ data, error: listError }) => {
       if (listError) {
         setError(/relation .*activity_log.* does not exist/i.test(listError.message) ? 'SETUP' : listError.message);
         return;
       }
-      setEntries(data.filter((e) => SECURITY_ACTIONS.includes(e.action)));
-    });
+      setEntries(data || []);
+    }).catch((err) => setError(err.message || 'Could not load account activity.'));
   }, []);
-
   if (error === 'SETUP') {
-    return (
-      <Section title="Security activity" unavailable desc="A record of security-relevant events on your account.">
-        <p className="text-[13px] text-kxmist">
-          Run <code className="text-white font-mono">supabase/migrations/007_activity_log.sql</code> in your Supabase SQL Editor to start recording these for real.
-        </p>
-      </Section>
-    );
+    return <Section title="Account activity"><p className="text-[13px] text-kxmist">Activity logging isn't configured yet. Run <code className="text-white font-mono">supabase/migrations/007_activity_log.sql</code> in your Supabase SQL Editor to record account events.</p></Section>;
   }
-
   return (
-    <Section title="Security activity" desc="Real events from your account — sign-ins, password changes, and 2FA toggles. Nothing here is sample data.">
-      {error && error !== 'SETUP' && <Notice error={error} />}
-      {entries === null && !error && <p className="text-sm text-kxmist">Loading…</p>}
-      {entries !== null && entries.length === 0 && (
-        <p className="text-[13px] text-kxmist">Nothing recorded yet — this fills in as you sign in, change your password, or toggle 2FA.</p>
-      )}
-      {entries !== null && entries.length > 0 && (
-        <div className="flex flex-col">
-          {entries.map((e, i) => (
-            <div key={e.id} className={`flex items-center justify-between py-3.5 ${i !== entries.length - 1 ? 'border-b border-white/8' : ''}`}>
-              <div>
-                <p className="text-sm font-medium">{e.action}</p>
-                {e.detail && <p className="text-[12.5px] text-kxmist">{e.detail}</p>}
-              </div>
-              <span className="text-[12px] font-mono text-kxmistdim">{new Date(e.created_at).toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
-      )}
+    <Section title="Account activity" desc="A chronological record of events recorded for your account.">
+      {error && <Notice error={error} />}
+      {entries === null && !error && <p className="text-sm text-kxmist">Loading activity…</p>}
+      {entries?.length === 0 && <p className="text-[13px] text-kxmist">No account activity has been recorded yet.</p>}
+      {entries?.length > 0 && <div className="flex flex-col min-w-0">
+        {entries.map((entry, index) => (
+          <div key={entry.id} className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 py-3.5 min-w-0 ${index !== entries.length - 1 ? 'border-b border-white/8' : ''}`}>
+            <div className="min-w-0"><p className="text-sm font-medium">{entry.action}</p>{entry.detail && <p className="text-[12.5px] text-kxmist break-words">{entry.detail}</p>}</div>
+            <span className="text-[11.5px] font-mono text-kxmistdim sm:text-right break-words">{new Date(entry.created_at).toLocaleString()}</span>
+          </div>
+        ))}
+      </div>}
     </Section>
   );
 }
