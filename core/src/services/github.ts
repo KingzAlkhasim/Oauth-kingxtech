@@ -186,13 +186,14 @@ export async function pushProjectToGithub(
   // and pattern categories; never include matched secret values in the error.
   const secretPatterns: Array<{ type: string; pattern: RegExp }> = [
     { type: 'Google API key (AIza…)', pattern: /\bAIza[A-Za-z0-9_-]{35}\b/g },
+    { type: 'Supabase secret key (sb_secret_…)', pattern: /\bsb_secret_[A-Za-z0-9_-]{20,}\b/g },
     { type: 'secret key (sk-…)', pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g },
     { type: 'private-key header', pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/gi },
     { type: 'GitHub classic token (ghp_…)', pattern: /\bghp_[A-Za-z0-9]{20,}\b/g },
     { type: 'GitHub fine-grained token (github_pat_…)', pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g },
   ];
   const serviceRoleJwtPattern = /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
-  const serviceRoleAssignmentPattern = /\bSERVICE_ROLE_KEY\s*=\s*(['"]?)([^\s"'#]+)\1/gi;
+  const serviceRoleAssignmentPattern = /SERVICE_ROLE_KEY\s*[=:]\s*(['"]?)([^\s"'#]+)\1/gi;
   const secretFindings = new Map<string, Set<string>>();
   for (const file of files) {
     const content = file.content ?? '';
