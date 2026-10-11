@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import { Button, Input, Checkbox, Divider, SocialButtons } from '../components/ui';
-import { KeyRound } from 'lucide-react';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
 import { redirectWithSession } from '../lib/ssoHandoff';
@@ -88,9 +87,6 @@ export default function SignIn() {
           <Link to="/forgot-password" className="text-[13px] text-kxblue hover:underline">Forgot password?</Link>
         </div>
         <Button type="submit" variant="glow" className="w-full mt-1" loading={loading}>Continue</Button>
-        <Button type="button" variant="subtle" className="w-full">
-          <KeyRound size={15} /> Sign in with a passkey
-        </Button>
       </form>
 
       <p className="text-center text-sm text-kxmist mt-7">
