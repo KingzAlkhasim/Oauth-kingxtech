@@ -1,3 +1,15 @@
+import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import DashboardShell from '../components/DashboardShell';
+import useSeo from '../lib/useSeo';
+import useRequireAuth from '../lib/useRequireAuth';
+import useCurrentUser, { initials } from '../lib/useCurrentUser';
+import { supabase } from '../lib/supabase';
+import { useEnsureAal2 } from '../lib/ensureAal2';
+import { Card, Button, Input, Badge } from '../components/ui';
+import { logActivity, listActivity } from '../lib/activity';
+import { User, ShieldCheck, Monitor, Laptop, Activity as ActivityIcon } from 'lucide-react';
+
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'security', label: 'Security', icon: ShieldCheck },
