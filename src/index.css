@@ -3,7 +3,8 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
+html, body, #root { height: 100%; max-width: 100%; }
+html, body { overflow-x: clip; }
 body {
   background: #09090B;
   color: #fff;
