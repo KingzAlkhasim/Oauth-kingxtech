@@ -12,7 +12,7 @@ export default function Landing() {
       <div className="absolute w-[500px] h-[500px] rounded-full bg-kxpurple/25 blur-[120px] -top-40 left-1/4 pointer-events-none" />
       <div className="absolute w-[400px] h-[400px] rounded-full bg-kxblue/20 blur-[110px] top-20 right-0 pointer-events-none" />
 
-      <header className="relative z-10 max-w-6xl mx-auto flex items-center justify-between px-6 py-6">
+      <header className="relative z-10 max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-6">
         <Logo />
         <div className="flex items-center gap-3">
           <Link to="/login"><Button variant="ghost">Sign in</Button></Link>
