@@ -46,7 +46,7 @@ export default function Console() {
   return (
     <DashboardShell>
       <h1 className="font-display text-2xl font-semibold mb-1">Console</h1>
-      <p className="text-kxmist text-sm mb-8">AI configuration, integrations, support, and cloud resources.</p>
+      <p className="text-kxmist text-sm mb-8">AI configuration, integrations, community, and cloud resources.</p>
 
       <div className="flex gap-2 mb-8 overflow-x-auto rounded-[20px] border border-white/8 bg-white/[0.015] p-2">
         {TABS.map(({ id, label, icon: Icon }) => (
