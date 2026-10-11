@@ -434,7 +434,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   if (!credit.ok) {
     res.status(402).json({
       success: false,
-      error: `You've used your 300 free credits for this month. They reset next month, or premium billing is not enabled yet.`,
+      error: `You've used your 300 free credits for this month. They reset next month, or premium billing is coming soon.`,
       creditsRemaining: credit.remaining,
     });
     return;
