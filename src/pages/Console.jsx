@@ -21,7 +21,7 @@ import { listEnvVars, upsertEnvVar, deleteEnvVar } from '../lib/envVars';
 import { logActivity } from '../lib/activity';
 import {
   FlaskConical, Plug, Trophy, Cloud,
-  Plus, Copy, Trash2, Check, X, Lock, Server, Database, Activity,
+  Plus, Copy, Trash2, Check, X, Lock, Database,
   TerminalSquare, Table2, Play, KeyRound,
 } from 'lucide-react';
 
@@ -77,6 +77,7 @@ function Section({ title, desc, children }) {
     <Card className="p-6 mb-5 rounded-[20px]">
       <div className="flex items-center gap-2.5 mb-1">
         <h2 className="font-display text-[16px] font-medium">{title}</h2>
+      </div>
       {desc && <p className="text-[13px] text-kxmist mb-5">{desc}</p>}
       {children}
     </Card>
