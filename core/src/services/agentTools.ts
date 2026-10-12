@@ -358,7 +358,7 @@ async function runToolInner(
           if (content.startsWith(BINARY_PREFIX)) {
             const encoded = content.slice(BINARY_PREFIX.length);
             const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
-            return { path: entry.path, type: extensionOf(entry.path), size: Math.max(0, encoded.length * 3 / 4 - padding), is_folder: entry.is_folder, updated_at: entry.updated_at };
+            return { path: entry.path, type: extensionOf(entry.path), size: Math.max(0, encoded.length * 3 / 4 - padding) };
           }
           if (extensionOf(entry.path) === 'svg') return { path: entry.path, type: 'svg', size: Buffer.byteLength(content, 'utf8'), is_folder: entry.is_folder, updated_at: entry.updated_at };
           return entry;
