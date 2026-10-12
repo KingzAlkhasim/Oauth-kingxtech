@@ -14,7 +14,10 @@ function toOpenAITool(t: ToolDef): OpenAI.Chat.ChatCompletionTool {
  */
 export function createOpenAICompatibleAgent(client: OpenAI) {
   return async function runAgent(opts: AgentOpts): Promise<AgentResult> {
-    const { modelId, history, prompt, tools, ctx, onStep } = opts;
+    const { modelId, history, prompt, tools, ctx, onStep, onUsage } = opts;
+    let inputTokens=0, outputTokens=0, cachedInputTokens=0;
+    const usageTotals=()=>({inputTokens,outputTokens,cachedInputTokens});
+    const stoppedNote='\n\nStopped to protect your usage. You can continue after your usage window resets.';
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: buildSystemInstruction(ctx.readOnly) },
@@ -31,7 +34,7 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
     const deadlineAt = Date.now() + AGENT_MAX_DURATION_MS;
 
     while (iterations < AGENT_MAX_TOOL_STEPS) {
-      if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps };
+      if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
       let completion: OpenAI.Chat.ChatCompletion;
       try {
         completion = await runProviderCall(
@@ -44,9 +47,12 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
           deadlineAt
         );
       } catch (error) {
-        if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps };
+        if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
         throw error;
       }
+      const usage=completion.usage; const input=usage?.prompt_tokens??0, output=usage?.completion_tokens??0;
+      const cached=(usage as any)?.prompt_tokens_details?.cached_tokens??0; inputTokens+=input; outputTokens+=output; cachedInputTokens+=cached;
+      if(onUsage?.({inputTokens:input,outputTokens:output,cachedInputTokens:cached})===false)return {text:buildAgentTimeoutSummary(steps)+stoppedNote,steps,...usageTotals()};
       const choice = completion.choices?.[0];
       if (!choice) {
         throw new Error('OpenAI-compatible provider returned no completion choice.');
@@ -54,7 +60,7 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
       const msg = choice.message;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        return { text: msg.content || 'No response generated.', steps };
+        return { text: msg.content || 'No response generated.', steps, ...usageTotals() };
       }
 
       messages.push({ role: 'assistant', content: msg.content, tool_calls: msg.tool_calls });
@@ -80,6 +86,6 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
       }
     }
 
-    return { text: buildAgentTimeoutSummary(steps), steps };
+    return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
   };
 }
