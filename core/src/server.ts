@@ -406,7 +406,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     }
   }
 
-  if (shouldEnforcePaidUsage(env.AI_USAGE_MODE, usageTier)) {
+  if (env.AI_USAGE_MODE === 'enforce' && usageTier !== 'free') {
     try {
       const limits=PLAN_LIMITS[usageTier],state=await getAiUsageState(userId),now=Date.now();
       const ss=state.sessionStart?new Date(state.sessionStart).getTime():now,ws=state.weekStart?new Date(state.weekStart).getTime():now;
@@ -473,7 +473,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   let finalAiText = '';
   const onProviderUsage = (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number}) => {
     usageSeen=true; usageTotals.inputTokens+=usage.inputTokens; usageTotals.outputTokens+=usage.outputTokens; usageTotals.cachedInputTokens+=usage.cachedInputTokens;
-    if(!shouldEnforcePaidUsage(env.AI_USAGE_MODE,usageTier))return;
+    if(!shouldEnforcePaidUsage(env.AI_USAGE_MODE,usageTier)||usageTier==='free')return;
     return computeCostUsd(model.code,usageTotals)<=PLAN_LIMITS[usageTier].maxRunCostUsd;
   };
   try {
