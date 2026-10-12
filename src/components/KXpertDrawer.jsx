@@ -202,6 +202,18 @@ export default function KXpertDrawer() {
     }
   }, [getAuthHeaders]);
 
+  const refreshUsage = useCallback(async () => {
+    try {
+      const headers = await getAuthHeaders();
+      if (!headers) return;
+      const response = await fetch(`${API_BASE}/api/ai/usage`, { headers });
+      const data = await response.json();
+      if (data.tier) setUsage(data);
+    } catch {
+      // Usage display is advisory; never block chat if it cannot refresh.
+    }
+  }, [getAuthHeaders]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -237,7 +249,7 @@ export default function KXpertDrawer() {
         setIsHistoryLoading(false);
       }
     })();
-  }, [open, sessionId, getAuthHeaders, refreshCredits]);
+  }, [open, sessionId, getAuthHeaders, refreshCredits, refreshUsage]);
 
   const send = async (e) => {
     e.preventDefault();
@@ -348,6 +360,7 @@ export default function KXpertDrawer() {
     } catch (err) {
       setHistory((h) => [...h, { role: 'system', text: 'Error: ' + err.message, type: 'text' }]);
     } finally {
+      refreshUsage();
       setIsLoading(false);
       setLiveSteps([]);
     }
