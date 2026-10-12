@@ -10,6 +10,7 @@ create index if not exists ai_usage_ledger_user_created_idx on public.ai_usage_l
 alter table public.ai_usage_ledger enable row level security;
 drop policy if exists ai_usage_ledger_select_own on public.ai_usage_ledger;
 create policy ai_usage_ledger_select_own on public.ai_usage_ledger for select to authenticated using((select auth.uid())=user_id);
+grant select on public.ai_usage_ledger to authenticated;
 revoke insert,update,delete on public.ai_usage_ledger from anon,authenticated;
 create table if not exists public.ai_usage_state (
  user_id uuid primary key, session_start timestamptz, session_spent_usd numeric(12,6) not null default 0 check(session_spent_usd>=0),
@@ -18,6 +19,7 @@ create table if not exists public.ai_usage_state (
 alter table public.ai_usage_state enable row level security;
 drop policy if exists ai_usage_state_select_own on public.ai_usage_state;
 create policy ai_usage_state_select_own on public.ai_usage_state for select to authenticated using((select auth.uid())=user_id);
+grant select on public.ai_usage_state to authenticated;
 revoke insert,update,delete on public.ai_usage_state from anon,authenticated;
 create or replace function public.ai_usage_record(p_user_id uuid,p_cost_usd numeric,p_session_hours integer,p_week_days integer)
 returns table(session_spent numeric,session_start timestamptz,week_spent numeric,week_start timestamptz)
