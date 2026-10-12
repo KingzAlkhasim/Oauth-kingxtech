@@ -333,10 +333,16 @@ const isEnvPath = (path: string) => path.split('/').some((segment: string) => se
 const isIgnoredImportPath = (path: string) => path.split('/').some((segment: string) => ['node_modules', '.git', 'dist', 'build', '.next', 'vendor', '.cache', '.kingxtech-dist', '.kx-verify-dist'].includes(segment));
 
 function looksBinary(buf: Buffer): boolean {
-  // Crude but effective: real text files essentially never contain a null
-  // byte in their first few KB; binary formats (images, fonts, archives) do.
+  // Detect null bytes, invalid UTF-8, and non-text control bytes. This prevents
+  // unsupported binary blobs (including formats without an early NUL) from
+  // being silently corrupted by UTF-8 decoding during repository import.
   const sampleLen = Math.min(buf.length, 8000);
-  for (let i = 0; i < sampleLen; i++) if (buf[i] === 0) return true;
+  for (let i = 0; i < sampleLen; i++) {
+    const value = buf[i];
+    if (value === 0 || (value < 0x20 && value !== 0x09 && value !== 0x0a && value !== 0x0c && value !== 0x0d)) return true;
+  }
+  try { new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return true; }
   return false;
 }
 

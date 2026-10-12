@@ -1246,7 +1246,7 @@ async function servePreview(res: express.Response, projectId: string, requestedP
       res.type(MIME_TYPES[ext] || 'application/octet-stream').send(binary);
       return;
     }
-    const ext = servedPath.split('.').pop() || '';
+    const ext = (servedPath.split('.').pop() || '').toLowerCase();
     applyPublishedSiteCache(res, servedPath);
     res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(content);
     return;

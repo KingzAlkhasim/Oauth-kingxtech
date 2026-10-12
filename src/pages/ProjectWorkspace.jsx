@@ -91,6 +91,16 @@ function mimeForPath(path) {
 }
 function isUnsafeSvg(text) { return /<script\b/i.test(text) || /\bon[a-z][a-z0-9_-]*\s*=/i.test(text) || /javascript\s*:/i.test(text); }
 function formatFileSize(bytes) { return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`; }
+function isProbablyBinary(buffer) {
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i += 1) {
+    const value = bytes[i];
+    if (value === 0) return true;
+    if (value < 0x20 && value !== 0x09 && value !== 0x0a && value !== 0x0c && value !== 0x0d) return true;
+  }
+  try { new TextDecoder('utf-8', { fatal: true }).decode(bytes); return false; }
+  catch { return true; }
+}
 
 /** Turns the flat [{path, is_folder}] list into a nested tree for rendering. */
 function buildTree(files) {
@@ -952,6 +962,8 @@ export default function ProjectWorkspace() {
         let text;
         if (BINARY_EXTS.has(ext)) text = BINARY_PREFIX + bytesToBase64(await file.arrayBuffer());
         else {
+          const raw = await file.arrayBuffer();
+          if (isProbablyBinary(raw)) throw new Error('Unsupported binary type; import only text files and supported image/font/PDF assets.');
           text = await file.text();
           if (ext === 'svg' && isUnsafeSvg(text)) throw new Error('SVG contains unsafe script or event code.');
         }
@@ -974,7 +986,7 @@ export default function ProjectWorkspace() {
   const selectedImageSrc = selectedExt === 'svg'
     ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`
     : `data:${mimeForPath(selectedPath || '')};base64,${content.startsWith(BINARY_PREFIX) ? content.slice(BINARY_PREFIX.length) : ''}`;
-  const selectedSize = selectedIsBinary ? Math.floor((content.length - BINARY_PREFIX.length) * 3 / 4) : selectedExt === 'svg' ? new Blob([content || '']).size : 0;
+  const selectedSize = selectedIsBinary ? (() => { const encoded = content.slice(BINARY_PREFIX.length); const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0; return Math.max(0, Math.floor(encoded.length * 3 / 4) - padding); })() : selectedExt === 'svg' ? new Blob([content || '']).size : 0;
   const downloadSelectedBinary = () => {
     if (!selectedPath || !selectedIsBinary) return;
     const raw = atob(content.slice(BINARY_PREFIX.length));
