@@ -163,12 +163,12 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: 'listProjectFiles',
-    description: 'List every file and folder currently in this project.',
+    description: 'List project paths and folders. Binary assets are listed as path, type, and byte size only; never expose their base64 payload.',
     parameters: { type: 'object', properties: {} },
   },
   {
     name: 'readProjectFile',
-    description: 'Read the contents of a file in this project, by path.',
+    description: 'Read a text file by project-relative path. Binary assets return only path, type, and byte size; reference their paths in code and do not try to edit binary data.',
     parameters: {
       type: 'object',
       properties: {
@@ -179,7 +179,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: 'writeProjectFile',
-    description: "Create a new file, or overwrite an existing file's full contents, at the given path.",
+    description: "Create or overwrite a text file. Do not create, paste, or overwrite binary payloads; ask the user to upload binary assets through the workspace.",
     parameters: {
       type: 'object',
       properties: {

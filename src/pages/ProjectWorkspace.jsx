@@ -896,6 +896,7 @@ export default function ProjectWorkspace() {
     setIsImporting(true);
     setError('');
     let imported = 0;
+    const importedPaths = [];
     const skipped = [];
     for (const file of selected) {
       const ext = extensionOf(file.name);
@@ -912,13 +913,11 @@ export default function ProjectWorkspace() {
         }
         await writeFile(projectId, file.name, content);
         imported += 1;
+        importedPaths.push(file.name);
       } catch (err) { skipped.push(`${file.name} (${err.message})`); }
     }
     await refreshFiles();
-    if (imported > 0) {
-      const last = selected.find((f) => ASSET_EXTS.has(extensionOf(f.name)) && f.size <= MAX_LOCAL_IMPORT_BYTES);
-      if (last) await openFile(last.name).catch(() => {});
-    }
+    if (importedPaths.length > 0) await openFile(importedPaths[importedPaths.length - 1]).catch(() => {});
     setIsImporting(false);
     if (skipped.length) setError(`Uploaded ${imported} file(s). ${skipped.length} file(s) were not uploaded: ${skipped.slice(0, 4).join('; ')}${skipped.length > 4 ? '; …' : ''}`);
   };
