@@ -7,8 +7,13 @@ export const MODEL_PRICING:Record<string,ModelPrice>={
  nemotron:{inputUsdPerMTok:0,outputUsdPerMTok:0,cachedInputUsdPerMTok:0,verified:true},
  deepseek:{inputUsdPerMTok:0,outputUsdPerMTok:0,cachedInputUsdPerMTok:0,verified:true},
  gemma:{inputUsdPerMTok:0,outputUsdPerMTok:0,cachedInputUsdPerMTok:0,verified:true},
- flash:{...HIGH_UNVERIFIED_PRICE},flash37:{...HIGH_UNVERIFIED_PRICE},flashlite:{...HIGH_UNVERIFIED_PRICE},
- // Official Google price confirmed for gemini-3.1-pro-preview; use highest published standard context rate.
+ // Official Google pricing: https://ai.google.dev/gemini-api/docs/pricing
+ // gemini-3.8-flash standard pricing through 2026-12-31; prices increase 2027-01-01.
+ flash:{inputUsdPerMTok:0.75,outputUsdPerMTok:3.75,cachedInputUsdPerMTok:0.075,verified:true},
+ flash37:{...HIGH_UNVERIFIED_PRICE},
+ // Official Gemini 3.5 Flash-Lite standard token pricing.
+ flashlite:{inputUsdPerMTok:0.30,outputUsdPerMTok:2.50,cachedInputUsdPerMTok:0.03,verified:true},
+ // Official Gemini 3.1 Pro Preview high-context standard rate (>200k prompt tokens).
  pro:{inputUsdPerMTok:4,outputUsdPerMTok:18,cachedInputUsdPerMTok:0.4,verified:true},
  sonnet:{...HIGH_UNVERIFIED_PRICE},opus:{...HIGH_UNVERIFIED_PRICE},haiku:{...HIGH_UNVERIFIED_PRICE},fable:{...HIGH_UNVERIFIED_PRICE},
  sonnet5:{...HIGH_UNVERIFIED_PRICE},opus5:{...HIGH_UNVERIFIED_PRICE},sol:{...HIGH_UNVERIFIED_PRICE},terra:{...HIGH_UNVERIFIED_PRICE},luna:{...HIGH_UNVERIFIED_PRICE},
