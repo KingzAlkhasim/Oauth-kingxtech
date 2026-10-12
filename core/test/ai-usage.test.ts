@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeCostUsd } from '../src/config/modelPricing';
 import { advanceWindow, clampPercent } from '../src/config/usageWindows';
-import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse } from '../src/services/usagePolicy';
+import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse, usageBudgetReached } from '../src/services/usagePolicy';
 test('computeCostUsd applies per-million input/output and cached pricing',()=>{
  assert.equal(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:1_000_000}),22);
  assert.equal(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:0,cachedInputTokens:500_000}),2.2);
@@ -21,6 +21,7 @@ test('tier gate denies Pro on Pro+ model and preserves free tier restrictions',(
 test('shadow mode does not enable new paid usage enforcement',()=>{
  assert.equal(shouldEnforcePaidUsage('shadow','pro'),false);assert.equal(shouldEnforcePaidUsage('shadow','pro_plus'),false);assert.equal(shouldEnforcePaidUsage('enforce','pro'),true);
 });
-test('enforce limit payload includes reset timestamp and clamps percent',()=>{
+test('enforce mode rejects at 100% and includes reset timestamp',()=>{
+ assert.equal(usageBudgetReached(0.9,0.9),true);assert.equal(usageBudgetReached(0.899,0.9),false);
  const reset='2026-10-12T17:00:00.000Z';assert.deepEqual(usageLimitResponse('session',120,reset),{code:'usage_limit',window:'session',usagePercent:100,resetsAt:reset,message:`You've reached your usage limit for now. It resets at ${reset}.`});
 });
