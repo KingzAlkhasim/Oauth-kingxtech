@@ -4,6 +4,8 @@ import { z } from 'zod';
 dotenv.config();
 
 const envSchema = z.object({
+  AI_USAGE_MODE: z.enum(['shadow','enforce']).default('shadow'),
+
   // --- Core service ---
   NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8080),
