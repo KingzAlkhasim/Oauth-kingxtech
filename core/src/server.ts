@@ -12,7 +12,11 @@ import type { AgentTurn } from './services/agentTools';
 import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './services/chatHistory';
 import { touchSession, listSessions, deleteSession } from './services/sessions';
 import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi } from './services/modelRegistry';
-import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
+import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, getUserTier, getAiUsageState, recordAiUsage, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
+import { computeCostUsd } from './config/modelPricing';
+import { PLAN_LIMITS } from './config/planLimits';
+import { clampPercent } from './config/usageWindows';
+import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse } from './services/usagePolicy';
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
 import { initializePaystackTransaction } from './services/paystackCheckout';
 import { runSecurityCheck, SECURITY_CHECK_CREDIT_COST } from './services/securityCheck';
@@ -242,12 +246,12 @@ app.post('/api/v1/chat/completions', requireAuth, rateLimit, async (req: AuthedR
     .map((message: any) => ({ role: message.role === 'assistant' ? 'model' : 'user', text: message.text }));
   const prompt = systemPrompt ? `${systemPrompt}\n\n${latestUser.text}` : latestUser.text;
 
-  if (selected.requiresPaidPlan) {
-    const plan = await getUserPlan(userId);
-    if (plan !== 'paid') {
-      res.status(402).json({ error: { message: `${selected.label} requires a paid KingxTech plan.`, type: 'billing_error' } });
-      return;
-    }
+  const selectedTier = await getUserTier(userId);
+  if (selected.minTier === 'pro_plus' && !modelTierAllowed(selectedTier, selected.minTier)) {
+    res.status(403).json({ error: { code: 'model_requires_pro_plus', message: `${selected.label} requires Pro+. Upgrade your plan to use this model.` } }); return;
+  }
+  if (selected.requiresPaidPlan && selectedTier === 'free') {
+    res.status(402).json({ error: { message: `${selected.label} requires a paid KingxTech plan.`, type: 'billing_error' } }); return;
   }
 
   if (selected.requestCap) {
@@ -375,15 +379,12 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   // Plan gate — free-plan users can only use the genuinely-free open-weights
   // models. Everything else (Gemini, Claude, GPT) needs a paid plan, since
   // it either costs KingxTech real money or is a premium third-party model.
-  if (model.requiresPaidPlan) {
-    const plan = await getUserPlan(userId);
-    if (plan !== 'paid') {
-      res.status(402).json({
-        success: false,
-        error: `${model.label} needs a paid plan. Try the free tier instead — no tag needed, or use :Q-qwen/ or :Q-llama/.`,
-      });
-      return;
-    }
+  const usageTier = await getUserTier(userId);
+  if (model.minTier === 'pro_plus' && !modelTierAllowed(usageTier, model.minTier)) {
+    res.status(403).json({ success: false, code: 'model_requires_pro_plus', error: `${model.label} requires Pro+. Upgrade your plan to use this model.` }); return;
+  }
+  if (model.requiresPaidPlan && usageTier === 'free') {
+    res.status(402).json({ success: false, error: `${model.label} needs a paid plan. Try the free tier instead — no tag needed, or use :Q-qwen/ or :Q-llama/.` }); return;
   }
 
   // Per-model request cap (e.g. Gemini Flash: 5/month) — checked before the
@@ -405,6 +406,19 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     }
   }
 
+  if (shouldEnforcePaidUsage(env.AI_USAGE_MODE, usageTier)) {
+    try {
+      const limits=PLAN_LIMITS[usageTier],state=await getAiUsageState(userId),now=Date.now();
+      const ss=state.sessionStart?new Date(state.sessionStart).getTime():now,ws=state.weekStart?new Date(state.weekStart).getTime():now;
+      const se=!state.sessionStart||ss+limits.sessionHours*3600000<=now,we=!state.weekStart||ws+limits.weekDays*86400000<=now;
+      const sessionSpent=se?0:state.sessionSpentUsd,weekSpent=we?0:state.weekSpentUsd;
+      const sessionReset=new Date(se?now+limits.sessionHours*3600000:ss+limits.sessionHours*3600000).toISOString();
+      const weekReset=new Date(we?now+limits.weekDays*86400000:ws+limits.weekDays*86400000).toISOString();
+      if(sessionSpent>=limits.sessionBudgetUsd){res.status(429).json(usageLimitResponse('session',clampPercent(sessionSpent,limits.sessionBudgetUsd),sessionReset));return}
+      if(weekSpent>=limits.weekBudgetUsd){res.status(429).json(usageLimitResponse('week',clampPercent(weekSpent,limits.weekBudgetUsd),weekReset));return}
+    }catch(error){await reportError(res,500,'Failed to check usage limit',error,'AI usage pre-check error:');return}
+  }
+
   // Credit gate happens BEFORE we switch to streaming mode, so failures here
   // are still plain JSON responses with normal status codes.
   //
@@ -424,6 +438,8 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
         return;
       }
       credit = { ok: true, remaining: 0 }; // not meaningful for API-key billing; kept for shared code below
+    } else if (shouldEnforcePaidUsage(env.AI_USAGE_MODE, usageTier)) {
+      credit = { ok: true, remaining: 0 };
     } else {
       credit = await consumeCredits(userId, model.creditCost);
     }
@@ -435,7 +451,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     res.status(402).json({
       success: false,
       error: `You've used your 300 free credits for this month. They reset next month, or premium billing is coming soon.`,
-      creditsRemaining: credit.remaining,
+      ...(shouldEnforcePaidUsage(env.AI_USAGE_MODE, usageTier) ? {} : { creditsRemaining: credit.remaining }),
     });
     return;
   }
@@ -452,6 +468,14 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   };
 
   const turnId = crypto.randomUUID();
+  const usageTotals = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
+  let usageSeen = false;
+  let finalAiText = '';
+  const onProviderUsage = (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number}) => {
+    usageSeen=true; usageTotals.inputTokens+=usage.inputTokens; usageTotals.outputTokens+=usage.outputTokens; usageTotals.cachedInputTokens+=usage.cachedInputTokens;
+    if(!shouldEnforcePaidUsage(env.AI_USAGE_MODE,usageTier))return;
+    return computeCostUsd(model.code,usageTotals)<=PLAN_LIMITS[usageTier].maxRunCostUsd;
+  };
   try {
     sendEvent({ type: 'status', label: 'Loading conversation context…' });
     const history = await getHistoryFromDb(userId, sessionId);
@@ -481,10 +505,12 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
           model.modelId,
           history,
           { userId, projectId: activeProjectId, turnId, readOnly: isPlanningMode },
-          (step) => sendEvent({ type: 'step', step })
+          (step) => sendEvent({ type: 'step', step }),
+          onProviderUsage
         )
     );
 
+    finalAiText = aiResponse.text;
     sendEvent({ type: 'status', label: isPlanningMode ? 'Writing the final plan…' : 'Finalizing changes…' });
     await touchSession(userId, sessionId, activeProjectId, cleanPrompt);
     await saveMessageToDb(userId, sessionId, { role: 'user', text: cleanPrompt });
@@ -517,6 +543,14 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
       error: formatAgentError(error),
     });
   } finally {
+    if(req.authMethod!=='api_key'){
+      try{
+        const estimated=!usageSeen||(usageTotals.inputTokens+usageTotals.outputTokens===0);
+        if(estimated){usageTotals.inputTokens=Math.max(1,Math.ceil(cleanPrompt.length/2));usageTotals.outputTokens=model.minTier==='free'?Math.ceil(finalAiText.length/2):Math.max(512,Math.ceil(finalAiText.length/2));usageTotals.cachedInputTokens=0;}
+        const costUsd=computeCostUsd(model.code,usageTotals),limits=usageTier==='free'?{sessionHours:5,weekDays:7}:PLAN_LIMITS[usageTier];
+        await recordAiUsage({userId,projectId:activeProjectId,source:activeProjectId?'agent':'chat',provider:model.provider,modelCode:model.code,inputTokens:usageTotals.inputTokens,outputTokens:usageTotals.outputTokens,cachedInputTokens:usageTotals.cachedInputTokens,costUsd,tier:usageTier,estimated,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
+      }catch(ledgerError){console.error('[ai-usage-ledger] Failed to record usage; request response is preserved:',ledgerError)}
+    }
     // Cloud Run can scale an instance down between requests, and Sentry
     // sends events asynchronously in the background — without an explicit
     // flush here, a scaled-down instance can silently drop events that
@@ -604,14 +638,17 @@ app.get('/api/ai/credits', requireAuth, async (req: AuthedRequest, res) => {
 });
 
 app.get('/api/ai/usage', requireAuth, async (req: AuthedRequest, res) => {
-  const limitParam = parseInt(req.query.limit as string, 10);
-  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : 50;
-  try {
-    const log = await getUsageLog(req.user!.id, limit);
-    res.json({ success: true, log });
-  } catch (error) {
-    await reportError(res, 500, 'Failed to fetch usage', error, 'Usage fetch error:');
+ try{
+  const userId=req.user!.id,tier=await getUserTier(userId),state=await getAiUsageState(userId),now=Date.now(),enforced=shouldEnforcePaidUsage(env.AI_USAGE_MODE,tier);
+  if(tier==='free'){
+   const credits=await getCreditsRemaining(userId),percent=clampPercent(300-Math.min(300,credits.remaining),300);
+   const d=new Date(),reset=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1)).toISOString();
+   res.json({tier,sessionPercent:percent,sessionResetsAt:reset,weekPercent:percent,weekResetsAt:reset,enforced:false});return;
   }
+  const limits=PLAN_LIMITS[tier],ss=state.sessionStart?new Date(state.sessionStart).getTime():now,ws=state.weekStart?new Date(state.weekStart).getTime():now;
+  const se=!state.sessionStart||ss+limits.sessionHours*3600000<=now,we=!state.weekStart||ws+limits.weekDays*86400000<=now;
+  res.json({tier,sessionPercent:clampPercent(se?0:state.sessionSpentUsd,limits.sessionBudgetUsd),sessionResetsAt:new Date(se?now+limits.sessionHours*3600000:ss+limits.sessionHours*3600000).toISOString(),weekPercent:clampPercent(we?0:state.weekSpentUsd,limits.weekBudgetUsd),weekResetsAt:new Date(we?now+limits.weekDays*86400000:ws+limits.weekDays*86400000).toISOString(),enforced});
+ }catch(error){await reportError(res,500,'Failed to fetch usage meter',error,'Usage meter error:')}
 });
 
 // --- Turn accept/reject + per-file undo ------------------------------------
@@ -824,30 +861,41 @@ app.delete('/api/ai/history', requireAuth, async (req: AuthedRequest, res) => {
 
 // --- SecureCheck ----------------------------------------------------------
 app.post('/api/projects/:projectId/security-check', requireAuth, async (req: AuthedRequest, res) => {
+  let secureTier: 'free'|'pro'|'pro_plus' = 'free';
+  let secureCheckStarted = false;
   try {
     await assertProjectOwnership(req.user!.id, req.params.projectId);
-    const plan = await getUserPlan(req.user!.id);
-    if (plan !== 'paid') {
+    secureTier = await getUserTier(req.user!.id);
+    if (secureTier === 'free') {
       res.status(402).json({ success: false, error: 'SecureCheck requires the Pro plan.', requiresPro: true });
       return;
     }
-
-    const credit = await consumeCredits(req.user!.id, SECURITY_CHECK_CREDIT_COST);
+    if (shouldEnforcePaidUsage(env.AI_USAGE_MODE,secureTier)) {
+      const limits=PLAN_LIMITS[secureTier],state=await getAiUsageState(req.user!.id),now=Date.now();
+      const ss=state.sessionStart?new Date(state.sessionStart).getTime():now,ws=state.weekStart?new Date(state.weekStart).getTime():now;
+      const se=!state.sessionStart||ss+limits.sessionHours*3600000<=now,we=!state.weekStart||ws+limits.weekDays*86400000<=now;
+      const sessionSpent=se?0:state.sessionSpentUsd,weekSpent=we?0:state.weekSpentUsd;
+      if(sessionSpent>=limits.sessionBudgetUsd){const reset=new Date(se?now+limits.sessionHours*3600000:ss+limits.sessionHours*3600000).toISOString();res.status(429).json(usageLimitResponse('session',clampPercent(sessionSpent,limits.sessionBudgetUsd),reset));return}
+      if(weekSpent>=limits.weekBudgetUsd){const reset=new Date(we?now+limits.weekDays*86400000:ws+limits.weekDays*86400000).toISOString();res.status(429).json(usageLimitResponse('week',clampPercent(weekSpent,limits.weekBudgetUsd),reset));return}
+    }
+    const credit = shouldEnforcePaidUsage(env.AI_USAGE_MODE,secureTier) ? {ok:true,remaining:0} : await consumeCredits(req.user!.id, SECURITY_CHECK_CREDIT_COST);
     if (!credit.ok) {
-      res.status(402).json({
-        success: false,
-        error: `Insufficient credits — SecureCheck requires ${SECURITY_CHECK_CREDIT_COST} credits.`,
-        requiresCredits: true,
-        creditsRemaining: credit.remaining,
-      });
+      res.status(402).json({ success: false, error: 'SecureCheck usage limit reached.', requiresCredits: true });
       return;
     }
-
+    secureCheckStarted = true;
     const result = await runSecurityCheck(req.user!.id, req.params.projectId);
     await logUsage(req.user!.id, 'security', 'securecheck', SECURITY_CHECK_CREDIT_COST, req.params.projectId);
-    res.json({ success: true, ...result, creditsRemaining: credit.remaining });
+    res.json({ success: true, ...result, ...(shouldEnforcePaidUsage(env.AI_USAGE_MODE,secureTier)?{}:{creditsRemaining:credit.remaining}) });
   } catch (error) {
     await reportError(res, 500, 'SecureCheck failed to run', error, 'SecureCheck error:');
+  } finally {
+    if(secureCheckStarted){
+      try{
+        const limits=PLAN_LIMITS[secureTier];
+        await recordAiUsage({userId:req.user!.id,projectId:req.params.projectId,source:'securecheck',provider:'security',modelCode:'securecheck',inputTokens:4096,outputTokens:2048,cachedInputTokens:0,costUsd:computeCostUsd('securecheck',{inputTokens:4096,outputTokens:2048}),tier:secureTier,estimated:true,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
+      }catch(ledgerError){console.error('[ai-usage-ledger] SecureCheck ledger write failed:',ledgerError)}
+    }
   }
 });
 
