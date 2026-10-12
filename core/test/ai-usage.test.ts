@@ -15,6 +15,14 @@ test('windows start, accrue, and reset after expiry',()=>{
  assert.equal(advanceWindow(first,new Date(now.getTime()+5*3600000),5*3600000,0.2).spentUsd,0.2);
  assert.equal(clampPercent(2,1),100);
 });
+test('simultaneous spend calls retain both updates under a serialized row-lock model',async()=>{
+ const now=new Date('2026-10-12T12:00:00Z'),duration=5*3600000;
+ let state:ReturnType<typeof advanceWindow>|null=null;
+ let lock=Promise.resolve();
+ const record=(cost:number)=>{const next=lock.then(()=>{state=advanceWindow(state,now,duration,cost)});lock=next;return next};
+ await Promise.all([record(0.1),record(0.2)]);
+ assert.equal(state?.spentUsd,0.3);
+});
 test('tier gate denies Pro on Pro+ model and preserves free tier restrictions',()=>{
  assert.equal(modelTierAllowed('pro','pro_plus'),false);assert.equal(modelTierAllowed('pro_plus','pro_plus'),true);assert.equal(modelTierAllowed('free','pro'),false);
 });
