@@ -974,7 +974,7 @@ export default function ProjectWorkspace() {
   const selectedImageSrc = selectedExt === 'svg'
     ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`
     : `data:${mimeForPath(selectedPath || '')};base64,${content.startsWith(BINARY_PREFIX) ? content.slice(BINARY_PREFIX.length) : ''}`;
-  const selectedSize = selectedIsBinary ? Math.floor((content.length - BINARY_PREFIX.length) * 3 / 4) : new Blob([content || '']).size;
+  const selectedSize = selectedIsBinary ? Math.floor((content.length - BINARY_PREFIX.length) * 3 / 4) : selectedExt === 'svg' ? new Blob([content || '']).size : 0;
   const downloadSelectedBinary = () => {
     if (!selectedPath || !selectedIsBinary) return;
     const raw = atob(content.slice(BINARY_PREFIX.length));
