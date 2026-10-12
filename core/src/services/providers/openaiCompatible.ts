@@ -52,7 +52,7 @@ export function createOpenAICompatibleAgent(client: OpenAI) {
       }
       const usage=completion.usage; const input=usage?.prompt_tokens??0, output=usage?.completion_tokens??0;
       const cached=(usage as any)?.prompt_tokens_details?.cached_tokens??0; inputTokens+=input; outputTokens+=output; cachedInputTokens+=cached;
-      if(onUsage?.({inputTokens:input,outputTokens:output,cachedInputTokens:cached})===false)return {text:buildAgentTimeoutSummary(steps)+stoppedNote,steps,...usageTotals()};
+      if(onUsage?.({inputTokens:input,outputTokens:output,cachedInputTokens:cached})===false)return {text:((completion.choices?.[0]?.message?.content)||buildAgentTimeoutSummary(steps))+stoppedNote,steps,...usageTotals()};
       const choice = completion.choices?.[0];
       if (!choice) {
         throw new Error('OpenAI-compatible provider returned no completion choice.');
