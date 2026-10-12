@@ -58,7 +58,7 @@ app.use(helmet());
 // Keep credentials disabled so reflecting arbitrary origins cannot authorize
 // ambient browser credentials.
 app.use(cors({ origin: true, credentials: false }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' }));
 function applyPublishedSiteSecurity(req: express.Request, res: express.Response) {
   res.removeHeader('X-Frame-Options');
   res.setHeader(
@@ -1064,8 +1064,8 @@ app.post('/api/projects/:projectId/terminal', requireAuth, rateLimit, async (req
 // practically unguessable. /site/:slug/ is the same thing under a
 // human-friendly published name. Both render straight from project_files
 // on every request — there is no separate "build" step, so a project is
-// live the instant the AI (or you) saves a file. Binary assets aren't
-// supported yet — the virtual filesystem only stores text content.
+// live the instant the AI (or you) saves a file. Binary assets use a
+// base64 marker in storage and are decoded before being sent to browsers.
 function applyPublishedSiteCache(res: express.Response, filePath: string) {
   const normalizedPath = filePath.replace(/^\/+/, '');
   const isHashedAsset =
@@ -1096,6 +1096,9 @@ const MIME_TYPES: Record<string, string> = {
   avif: 'image/avif',
   woff: 'font/woff',
   woff2: 'font/woff2',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  pdf: 'application/pdf',
   txt: 'text/plain; charset=utf-8',
 };
 
@@ -1238,12 +1241,12 @@ async function servePreview(res: express.Response, projectId: string, requestedP
     if (extIsHtml(servedPath, content)) content = await injectPwaHtml(projectId, content);
     if (content.startsWith('__KX_BINARY_BASE64__:')) {
       const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
-      const ext = servedPath.split('.').pop() || '';
+      const ext = (servedPath.split('.').pop() || '').toLowerCase();
       applyPublishedSiteCache(res, servedPath);
       res.type(MIME_TYPES[ext] || 'application/octet-stream').send(binary);
       return;
     }
-    const ext = servedPath.split('.').pop() || '';
+    const ext = (servedPath.split('.').pop() || '').toLowerCase();
     applyPublishedSiteCache(res, servedPath);
     res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(content);
     return;
@@ -1265,7 +1268,12 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   applyPublishedSiteCache(res, servedPath);
   let content = file.content ?? '';
   if (extIsHtml(servedPath, content)) content = await injectPwaHtml(projectId, content);
-  res.type(MIME_TYPES[ext] || 'text/plain; charset=utf-8').send(content);
+  if (content.startsWith('__KX_BINARY_BASE64__:')) {
+    const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
+    res.type(MIME_TYPES[ext.toLowerCase()] || 'application/octet-stream').send(binary);
+    return;
+  }
+  res.type(MIME_TYPES[ext.toLowerCase()] || 'text/plain; charset=utf-8').send(content);
 }
 
 // Custom domain management. Vercel registration/verification stays server-side so the

@@ -2,12 +2,14 @@ import { executeTerminalCommand } from './commandExecutor';
 import { verifyProject } from './projectRuntime';
 import {
   listProjectFiles,
+  listProjectFilesWithContent,
   readProjectFile,
   writeProjectFile,
   createProjectFolder,
   deleteProjectFile,
 } from './projectFs';
 import { snapshotBeforeChange } from './versioning';
+import { BINARY_PREFIX, extensionOf } from './binaryFiles';
 import { Sentry } from '../lib/sentry';
 
 // --- Generic (provider-agnostic) tool schema --------------------------------
@@ -161,12 +163,12 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: 'listProjectFiles',
-    description: 'List every file and folder currently in this project.',
+    description: 'List project paths and folders. Binary assets are listed as path, type, and byte size only; never expose their base64 payload.',
     parameters: { type: 'object', properties: {} },
   },
   {
     name: 'readProjectFile',
-    description: 'Read the contents of a file in this project, by path.',
+    description: 'Read a text file by project-relative path. Binary assets return only path, type, and byte size; reference their paths in code and do not try to edit binary data.',
     parameters: {
       type: 'object',
       properties: {
@@ -177,7 +179,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: 'writeProjectFile',
-    description: "Create a new file, or overwrite an existing file's full contents, at the given path.",
+    description: "Create or overwrite a text file. Do not create, paste, or overwrite binary payloads; ask the user to upload binary assets through the workspace.",
     parameters: {
       type: 'object',
       properties: {
@@ -347,18 +349,40 @@ async function runToolInner(
         break;
       }
       case 'listProjectFiles': {
-        result = await listProjectFiles(ctx.userId, ctx.projectId!);
-        summary = 'Listed project files.';
+        const entries = await listProjectFiles(ctx.userId, ctx.projectId!);
+        const withContent = await listProjectFilesWithContent(ctx.userId, ctx.projectId!);
+        const byPath = new Map<string, string | null>();
+        for (const file of withContent) byPath.set(file.path, file.content);
+        result = entries.map((entry) => {
+          const content = byPath.get(entry.path);
+          if (typeof content !== 'string') return entry;
+          if (content.startsWith(BINARY_PREFIX)) {
+            const encoded = content.slice(BINARY_PREFIX.length);
+            const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+            return { path: entry.path, type: extensionOf(entry.path), size: Math.max(0, encoded.length * 3 / 4 - padding) };
+          }
+          if (extensionOf(entry.path) === 'svg') return { path: entry.path, type: 'svg', size: Buffer.byteLength(content, 'utf8'), is_folder: entry.is_folder, updated_at: entry.updated_at };
+          return entry;
+        });
+        summary = 'Listed project files (binary assets are shown as metadata only).';
         break;
       }
       case 'readProjectFile': {
         const a = args as { path: string };
-        result = await readProjectFile(ctx.userId, ctx.projectId!, a.path);
-        summary = `Read ${a.path}`;
+        const file = await readProjectFile(ctx.userId, ctx.projectId!, a.path);
+        if (typeof file.content === 'string' && file.content.startsWith(BINARY_PREFIX)) {
+          const encoded = file.content.slice(BINARY_PREFIX.length);
+          const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+          result = { path: file.path, type: extensionOf(file.path), size: Math.max(0, encoded.length * 3 / 4 - padding) };
+          summary = `Read binary file metadata for ${a.path}`;
+        } else { result = file; summary = `Read ${a.path}`; }
         break;
       }
       case 'writeProjectFile': {
         const a = args as { path: string; content: string };
+        if (a.content.startsWith(BINARY_PREFIX)) throw new Error('K-XpertAI cannot write binary file contents. Upload the file in the workspace and reference its path from code.');
+        const current = await readProjectFile(ctx.userId, ctx.projectId!, a.path).catch(() => null);
+        if (typeof current?.content === 'string' && current.content.startsWith(BINARY_PREFIX)) throw new Error('K-XpertAI cannot overwrite binary file contents. Upload a replacement file from the workspace.');
         await writeProjectFile(ctx.userId, ctx.projectId!, a.path, a.content);
         result = { ok: true, path: a.path };
         summary = `Wrote ${a.path}`;

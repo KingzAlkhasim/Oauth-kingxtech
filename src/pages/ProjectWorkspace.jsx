@@ -22,6 +22,7 @@ import { javascript } from '@codemirror/lang-javascript';
 import { vscodeDark } from '@uiw/codemirror-theme-vscode';
 import {
   File as FileIcon,
+  FileImage,
   Folder,
   FolderPlus,
   FilePlus,
@@ -36,6 +37,7 @@ import {
   Rocket,
   TerminalSquare,
   Upload,
+  Download,
   Maximize2,
   Minimize2,
   FolderInput,
@@ -69,9 +71,36 @@ function languageForPath(path) {
   return null;
 }
 
-const BINARY_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'woff', 'woff2', 'ttf', 'eot', 'mp4', 'mp3', 'pdf', 'zip', 'webp']);
+const BINARY_PREFIX = '__KX_BINARY_BASE64__:';
+const BINARY_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'woff', 'woff2', 'ttf', 'otf', 'pdf']);
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'svg']);
+const ASSET_EXTS = new Set([...BINARY_EXTS, 'svg']);
+const UNSUPPORTED_BINARY_EXTS = new Set(['eot', 'mp4', 'mp3', 'zip', 'wasm']);
 const MAX_LOCAL_IMPORT_FILES = 300;
-const MAX_LOCAL_IMPORT_BYTES = 300_000;
+const MAX_LOCAL_IMPORT_BYTES = 5 * 1024 * 1024;
+function extensionOf(path) { return path.split('/').pop()?.split('.').pop()?.toLowerCase() || ''; }
+function bytesToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+function mimeForPath(path) {
+  const ext = extensionOf(path);
+  return ({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif', ico: 'image/x-icon', svg: 'image/svg+xml', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', pdf: 'application/pdf' })[ext] || 'application/octet-stream';
+}
+function isUnsafeSvg(text) { return /<script\b/i.test(text) || /\bon[a-z][a-z0-9_-]*\s*=/i.test(text) || /javascript\s*:/i.test(text); }
+function formatFileSize(bytes) { return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`; }
+function isProbablyBinary(buffer) {
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.length; i += 1) {
+    const value = bytes[i];
+    if (value === 0) return true;
+    if (value < 0x20 && value !== 0x09 && value !== 0x0a && value !== 0x0c && value !== 0x0d) return true;
+  }
+  try { new TextDecoder('utf-8', { fatal: true }).decode(bytes); return false; }
+  catch { return true; }
+}
 
 /** Turns the flat [{path, is_folder}] list into a nested tree for rendering. */
 function buildTree(files) {
@@ -125,7 +154,7 @@ function TreeNode({ node, depth, selectedPath, onSelect, onDelete, collapsed, on
                   <span className="w-3 shrink-0" />
                 )}
                 <span className="flex items-center gap-1.5 truncate">
-                  {child.isFolder ? <Folder size={13} className="shrink-0" /> : <FileIcon size={13} className="shrink-0" />}
+                  {child.isFolder ? <Folder size={13} className="shrink-0" /> : (ASSET_EXTS.has(extensionOf(child.name)) ? <FileImage size={13} className="shrink-0 text-kxpurple" /> : <FileIcon size={13} className="shrink-0" />)}
                   <span className="truncate">{child.name}</span>
                 </span>
               </span>
@@ -653,6 +682,7 @@ export default function ProjectWorkspace() {
   const [collapsedFolders, setCollapsedFolders] = useState(() => new Set());
   const [mobileView, setMobileView] = useState('workspace'); // 'files' | 'workspace' — mobile only, both shown side-by-side on desktop
   const folderInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
 
   const toggleFolder = (path) => {
     setCollapsedFolders((prev) => {
@@ -870,6 +900,44 @@ export default function ProjectWorkspace() {
 
   const importLocalFolder = () => folderInputRef.current?.click();
 
+  const handleAssetUploads = async (inputFiles) => {
+    const selected = Array.from(inputFiles || []);
+    if (!selected.length) return;
+    setIsImporting(true);
+    setError('');
+    let imported = 0;
+    const importedPaths = [];
+    const skipped = [];
+    for (const file of selected) {
+      const ext = extensionOf(file.name);
+      if (!ASSET_EXTS.has(ext)) { skipped.push(`${file.name} (unsupported type; use PNG, JPG/JPEG, GIF, WebP, AVIF, ICO, SVG, WOFF/WOFF2, TTF, OTF, or PDF)`); continue; }
+      if (file.size > MAX_LOCAL_IMPORT_BYTES) { skipped.push(`${file.name} (over 5 MB; choose a smaller file)`); continue; }
+      try {
+        let content;
+        if (ext === 'svg') {
+          content = await file.text();
+          if (isUnsafeSvg(content)) throw new Error('SVG contains script, an on* event handler, or a javascript: URL.');
+          if (!/<svg(?:\s|>)/i.test(content)) throw new Error('This .svg file does not contain an SVG image.');
+        } else {
+          content = BINARY_PREFIX + bytesToBase64(await file.arrayBuffer());
+        }
+        await writeFile(projectId, file.name, content);
+        imported += 1;
+        importedPaths.push(file.name);
+      } catch (err) { skipped.push(`${file.name} (${err.message})`); }
+    }
+    await refreshFiles();
+    if (importedPaths.length > 0) await openFile(importedPaths[importedPaths.length - 1]).catch(() => {});
+    setIsImporting(false);
+    if (skipped.length) setError(`Uploaded ${imported} file(s). ${skipped.length} file(s) were not uploaded: ${skipped.slice(0, 4).join('; ')}${skipped.length > 4 ? '; …' : ''}`);
+  };
+
+  const handleUploadInputChange = async (e) => {
+    const selected = Array.from(e.target.files || []);
+    e.target.value = '';
+    await handleAssetUploads(selected);
+  };
+
   const handleLocalFolderSelected = async (e) => {
     const fileList = Array.from(e.target.files || []);
     e.target.value = ''; // allow re-selecting the same folder later
@@ -882,15 +950,23 @@ export default function ProjectWorkspace() {
 
     for (const file of fileList) {
       const relPath = file.webkitRelativePath.split('/').slice(1).join('/') || file.name;
+      if (relPath.split('/').some((part) => part === '.env' || part.startsWith('.env.'))) { skipped.push(`${relPath} (environment files are not imported)`); continue; }
       if (relPath.includes('node_modules/') || relPath.includes('.git/')) continue;
 
       if (imported >= MAX_LOCAL_IMPORT_FILES) { skipped.push(`${relPath} (file limit reached)`); continue; }
-      const ext = relPath.split('.').pop()?.toLowerCase();
-      if (BINARY_EXTS.has(ext)) { skipped.push(`${relPath} (binary, not supported yet)`); continue; }
-      if (file.size > MAX_LOCAL_IMPORT_BYTES) { skipped.push(`${relPath} (too large)`); continue; }
+      const ext = extensionOf(relPath);
+      if (file.size > MAX_LOCAL_IMPORT_BYTES) { skipped.push(`${relPath} (over 5 MB)`); continue; }
+      if (UNSUPPORTED_BINARY_EXTS.has(ext)) { skipped.push(`${relPath} (unsupported binary type)`); continue; }
 
       try {
-        const text = await file.text();
+        let text;
+        if (BINARY_EXTS.has(ext)) text = BINARY_PREFIX + bytesToBase64(await file.arrayBuffer());
+        else {
+          const raw = await file.arrayBuffer();
+          if (isProbablyBinary(raw)) throw new Error('Unsupported binary type; import only text files and supported image/font/PDF assets.');
+          text = await file.text();
+          if (ext === 'svg' && isUnsafeSvg(text)) throw new Error('SVG contains unsafe script or event code.');
+        }
         await writeFile(projectId, relPath, text);
         imported += 1;
       } catch (err) {
@@ -901,6 +977,27 @@ export default function ProjectWorkspace() {
     setIsImporting(false);
     await refreshFiles();
     alert(`Imported ${imported} file(s).${skipped.length ? `\n\nSkipped ${skipped.length}:\n${skipped.slice(0, 10).join('\n')}${skipped.length > 10 ? '\n…' : ''}` : ''}`);
+  };
+
+  const selectedExt = selectedPath ? extensionOf(selectedPath) : '';
+  const selectedIsBinary = typeof content === 'string' && content.startsWith(BINARY_PREFIX);
+  const selectedIsImage = Boolean(selectedPath && IMAGE_EXTS.has(selectedExt));
+  const selectedIsAssetPreview = selectedIsImage || selectedIsBinary;
+  const selectedImageSrc = selectedExt === 'svg'
+    ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`
+    : `data:${mimeForPath(selectedPath || '')};base64,${content.startsWith(BINARY_PREFIX) ? content.slice(BINARY_PREFIX.length) : ''}`;
+  const selectedSize = selectedIsBinary ? (() => { const encoded = content.slice(BINARY_PREFIX.length); const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0; return Math.max(0, Math.floor(encoded.length * 3 / 4) - padding); })() : selectedExt === 'svg' ? new Blob([content || '']).size : 0;
+  const downloadSelectedBinary = () => {
+    if (!selectedPath || !selectedIsBinary) return;
+    const raw = atob(content.slice(BINARY_PREFIX.length));
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeForPath(selectedPath) }));
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = selectedPath.split('/').pop() || 'download';
+    anchor.click();
+    URL.revokeObjectURL(objectUrl);
   };
 
   return (
@@ -963,6 +1060,7 @@ export default function ProjectWorkspace() {
         </Card>
       )}
 
+      <input ref={uploadInputRef} type="file" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.avif,.ico,.svg,.woff,.woff2,.ttf,.otf,.pdf" style={{ display: 'none' }} onChange={handleUploadInputChange} />
       <input
         ref={folderInputRef}
         type="file"
@@ -978,7 +1076,7 @@ export default function ProjectWorkspace() {
         : 'flex flex-col md:grid md:grid-cols-[260px_1fr] gap-3 md:gap-4'
       }>
         {/* File tree — full panel on mobile (toggled via the Files button), always-visible sidebar on desktop */}
-        <Card className={`${mobileView === 'files' ? 'flex' : 'hidden'} md:flex flex-col rounded-[20px] p-3 shadow-lg shadow-black/10 overflow-y-auto ${isFullscreen ? 'flex-1 min-h-0 md:h-full' : 'h-[65vh] md:h-[60vh]'}`}>
+        <Card className={`${mobileView === 'files' ? 'flex' : 'hidden'} md:flex flex-col rounded-[20px] p-3 shadow-lg shadow-black/10 overflow-y-auto ${isFullscreen ? 'flex-1 min-h-0 md:h-full' : 'h-[65vh] md:h-[60vh]'}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleAssetUploads(e.dataTransfer.files); }}>
           <div className="flex items-center justify-between mb-2 px-1 shrink-0">
             <span className="text-[11px] font-mono uppercase tracking-wider text-kxmist">Files</span>
             <div className="flex items-center gap-2.5">
@@ -987,6 +1085,9 @@ export default function ProjectWorkspace() {
               </button>
               <button onClick={newFolder} title="New folder" className="text-kxmist hover:text-white p-0.5">
                 <FolderPlus size={14} />
+              </button>
+              <button onClick={() => uploadInputRef.current?.click()} disabled={isImporting} title="Upload images and binary files (max 5 MB each)" className="text-kxmist hover:text-white disabled:opacity-50 p-0.5">
+                <Upload size={14} />
               </button>
               <button onClick={importFromGithub} disabled={isImporting} title="Import from GitHub repo" className="text-kxmist hover:text-white disabled:opacity-50 p-0.5">
                 <Github size={14} />
@@ -1083,30 +1184,42 @@ export default function ProjectWorkspace() {
           {tab === 'editor' && (selectedPath ? (
             <>
               <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                <span className="text-[12.5px] md:text-[13px] font-mono text-kxmist truncate min-w-0">{selectedPath}</span>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button onClick={undoFile} disabled={isUndoing} variant="ghost" className="flex items-center gap-1.5">
-                    <Undo2 size={14} /> <span className="hidden sm:inline">{isUndoing ? 'Undoing…' : 'Undo'}</span>
-                  </Button>
-                  <Button onClick={save} disabled={!dirty || isSaving} className="flex items-center gap-1.5">
-                    <Save size={14} /> <span className="hidden sm:inline">{isSaving ? 'Saving…' : 'Save'}</span>
-                  </Button>
+                <div className="min-w-0">
+                  <span className="block text-[12.5px] md:text-[13px] font-mono text-kxmist truncate">{selectedPath}</span>
+                  {selectedIsAssetPreview && <span className="text-[11px] text-kxmist">{mimeForPath(selectedPath)} · {formatFileSize(selectedSize)}</span>}
                 </div>
+                {!selectedIsAssetPreview && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button onClick={undoFile} disabled={isUndoing} variant="ghost" className="flex items-center gap-1.5">
+                      <Undo2 size={14} /> <span className="hidden sm:inline">{isUndoing ? 'Undoing…' : 'Undo'}</span>
+                    </Button>
+                    <Button onClick={save} disabled={!dirty || isSaving} className="flex items-center gap-1.5">
+                      <Save size={14} /> <span className="hidden sm:inline">{isSaving ? 'Saving…' : 'Save'}</span>
+                    </Button>
+                  </div>
+                )}
               </div>
-              <div className="flex-1 min-h-0 overflow-hidden rounded-lg border border-white/10">
-                <CodeMirror
-                  value={content}
-                  height="100%"
-                  theme={vscodeDark}
-                  extensions={languageForPath(selectedPath) ? [languageForPath(selectedPath)] : []}
-                  onChange={(value) => {
-                    setContent(value);
-                    setDirty(true);
-                  }}
-                  basicSetup={{ foldGutter: true, highlightActiveLine: true }}
-                  style={{ height: '100%', fontSize: '13px' }}
-                />
-              </div>
+              {selectedIsImage ? (
+                <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-white/10 bg-black/10 p-4 flex flex-col items-center justify-center gap-3">
+                  <img src={selectedImageSrc} alt={selectedPath.split('/').pop()} className="max-w-full max-h-full object-contain" />
+                  <div className="text-[12px] text-kxmist">{selectedPath.split('/').pop()} · {mimeForPath(selectedPath)} · {formatFileSize(selectedSize)}</div>
+                  {selectedIsBinary && <Button onClick={downloadSelectedBinary} variant="ghost">Download image</Button>}
+                </div>
+              ) : selectedIsBinary ? (
+                <div className="flex-1 min-h-0 rounded-lg border border-white/10 p-5 flex flex-col items-center justify-center gap-3 text-center">
+                  <FileImage size={30} className="text-kxpurple" />
+                  <p className="text-sm text-white">Binary file, {formatFileSize(selectedSize)}</p>
+                  <p className="text-xs text-kxmist">{selectedPath.split('/').pop()} · {mimeForPath(selectedPath)}</p>
+                  <div className="flex gap-2">
+                    <Button onClick={downloadSelectedBinary} className="flex items-center gap-1.5"><Download size={14} /> Download</Button>
+                    <Button onClick={() => removePath(selectedPath)} variant="ghost" className="flex items-center gap-1.5"><Trash2 size={14} /> Delete</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-hidden rounded-lg border border-white/10">
+                  <CodeMirror value={content} height="100%" theme={vscodeDark} extensions={languageForPath(selectedPath) ? [languageForPath(selectedPath)] : []} onChange={(value) => { setContent(value); setDirty(true); }} basicSetup={{ foldGutter: true, highlightActiveLine: true }} style={{ height: '100%', fontSize: '13px' }} />
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-[13px] text-kxmist">

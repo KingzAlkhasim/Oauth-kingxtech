@@ -1,6 +1,7 @@
 import type { Sandbox } from '@vercel/sandbox' with { "resolution-mode": "import" };
 import { listProjectFilesWithContent, assertProjectOwnership, replacePublishedBuild, type PublishedBuildFile } from './projectFs';
 import { getProjectEnvVarsForRuntime } from './projectEnvVars';
+import { BINARY_PREFIX } from './binaryFiles';
 
 const PROJECT_ROOT = '/vercel/sandbox/project';
 const SANDBOX_TIMEOUT_MS = 45 * 60 * 1000;
@@ -98,10 +99,11 @@ async function syncFiles(userId: string, projectId: string, sandbox: Sandbox): P
   const files = await listProjectFilesWithContent(userId, projectId);
   const payload = files
     .filter((file) => typeof file.content === 'string')
-    .map((file) => ({
-      path: `${PROJECT_ROOT}/${file.path}`,
-      content: Buffer.from(file.content ?? '', 'utf8'),
-    }));
+    .map((file) => {
+      const content = file.content ?? '';
+      const encoded = content.startsWith(BINARY_PREFIX) ? content.slice(BINARY_PREFIX.length) : null;
+      return { path: `${PROJECT_ROOT}/${file.path}`, content: encoded !== null ? Buffer.from(encoded, 'base64') : Buffer.from(content, 'utf8') };
+    });
 
   if (payload.length > 0) {
     await sandbox.writeFiles(payload);
@@ -282,7 +284,7 @@ export async function buildProjectForPublish(userId: string, projectId: string):
     const path = relative.startsWith(distPrefix) ? relative.slice(distPrefix.length) : relative;
     const buffer = await sandbox.readFileToBuffer({ path: `${PROJECT_ROOT}/${relative}` });
     if (!buffer) continue;
-    const isBinary = /\.(png|jpe?g|gif|webp|ico|avif|woff2?|ttf|otf|mp3|mp4|webm|wasm)$/i.test(path);
+    const isBinary = /\.(png|jpe?g|gif|webp|ico|avif|woff2?|ttf|otf|pdf|mp3|mp4|webm|wasm)$/i.test(path);
     builtFiles.push({
       path,
       content: isBinary ? buffer.toString('base64') : buffer.toString('utf8'),

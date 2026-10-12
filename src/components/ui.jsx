@@ -107,8 +107,8 @@ export function Input({ label, type = 'text', hint, error, className = '', conta
   );
 }
 
-export function Card({ children, className = '' }) {
-  return <div className={`glass rounded-2xl ${className}`}>{children}</div>;
+export function Card({ children, className = '', ...props }) {
+  return <div {...props} className={`glass rounded-2xl ${className}`}>{children}</div>;
 }
 
 export function Badge({ children, tone = 'default' }) {
