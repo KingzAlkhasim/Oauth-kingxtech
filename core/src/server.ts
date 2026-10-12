@@ -16,7 +16,7 @@ import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelR
 import { computeCostUsd } from './config/modelPricing';
 import { PLAN_LIMITS } from './config/planLimits';
 import { clampPercent } from './config/usageWindows';
-import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse } from './services/usagePolicy';
+import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse, usageBudgetReached } from './services/usagePolicy';
 import { getTurnChanges, revertTurn, revertFileToPreviousVersion } from './services/versioning';
 import { initializePaystackTransaction } from './services/paystackCheckout';
 import { runSecurityCheck, SECURITY_CHECK_CREDIT_COST } from './services/securityCheck';
@@ -414,8 +414,8 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
       const sessionSpent=se?0:state.sessionSpentUsd,weekSpent=we?0:state.weekSpentUsd;
       const sessionReset=new Date(se?now+limits.sessionHours*3600000:ss+limits.sessionHours*3600000).toISOString();
       const weekReset=new Date(we?now+limits.weekDays*86400000:ws+limits.weekDays*86400000).toISOString();
-      if(sessionSpent>=limits.sessionBudgetUsd){res.status(429).json(usageLimitResponse('session',clampPercent(sessionSpent,limits.sessionBudgetUsd),sessionReset));return}
-      if(weekSpent>=limits.weekBudgetUsd){res.status(429).json(usageLimitResponse('week',clampPercent(weekSpent,limits.weekBudgetUsd),weekReset));return}
+      if(usageBudgetReached(sessionSpent,limits.sessionBudgetUsd)){res.status(429).json(usageLimitResponse('session',clampPercent(sessionSpent,limits.sessionBudgetUsd),sessionReset));return}
+      if(usageBudgetReached(weekSpent,limits.weekBudgetUsd)){res.status(429).json(usageLimitResponse('week',clampPercent(weekSpent,limits.weekBudgetUsd),weekReset));return}
     }catch(error){await reportError(res,500,'Failed to check usage limit',error,'AI usage pre-check error:');return}
   }
 
