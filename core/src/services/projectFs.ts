@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { BINARY_PREFIX, MAX_BINARY_FILE_BYTES, MAX_PROJECT_BINARY_BYTES, SUPPORTED_BINARY_EXTENSIONS, extensionOf, decodeBinaryContent, validateBinaryBytes, validateSvgText } from './binaryFiles';
 
 export class ProjectAccessError extends Error {}
 
@@ -19,7 +20,11 @@ export interface ProjectFileContent extends ProjectFileEntry {
  * no leading/trailing slashes, no "..", no empty segments, reasonable length.
  */
 function normalizePath(rawPath: string): string {
-  const trimmed = rawPath.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+  const input = rawPath.trim();
+  if (input.startsWith('/') || input.startsWith('\\') || /^[a-z]:[\\/]/i.test(input)) {
+    throw new ProjectAccessError('Absolute paths are not allowed. Use a path relative to the project root.');
+  }
+  const trimmed = input.replace(/\/+$/, '');
 
   if (!trimmed || trimmed.length > 500) {
     throw new ProjectAccessError('Invalid path.');
@@ -269,15 +274,28 @@ export async function writeProjectFile(
 ): Promise<void> {
   await assertProjectOwnership(userId, projectId);
   const path = normalizePath(rawPath);
+  const ext = extensionOf(path);
+  const binaryBytes = decodeBinaryContent(content);
+  if (binaryBytes) validateBinaryBytes(path, binaryBytes);
+  else if (SUPPORTED_BINARY_EXTENSIONS.has(ext)) throw new Error('This file type must be uploaded as a binary file. Use the file upload control instead of pasting text into it.');
+  validateSvgText(path, content);
+  if (binaryBytes && binaryBytes.length > MAX_BINARY_FILE_BYTES) throw new Error('This file is larger than 5 MB. Choose a smaller file.');
+  if (binaryBytes || ext === 'svg') {
+    const { data: existingFiles, error: totalErr } = await supabaseAdmin.from('project_files').select('path, content, is_folder').eq('project_id', projectId).eq('user_id', userId).eq('is_folder', false);
+    if (totalErr) throw new Error(`Could not check project asset storage: ${totalErr.message}`);
+    let totalBytes = 0;
+    for (const existing of existingFiles ?? []) {
+      if (existing.path === path || typeof existing.content !== 'string') continue;
+      const oldBinary = decodeBinaryContent(existing.content);
+      if (oldBinary) totalBytes += oldBinary.length;
+      else if (extensionOf(existing.path) === 'svg') totalBytes += Buffer.byteLength(existing.content, 'utf8');
+    }
+    totalBytes += binaryBytes ? binaryBytes.length : Buffer.byteLength(content, 'utf8');
+    if (totalBytes > MAX_PROJECT_BINARY_BYTES) throw new Error('This project has reached its 25 MB total asset limit. Delete an existing image or binary file before adding another.');
+  }
 
   const { error } = await supabaseAdmin.from('project_files').upsert(
-    {
-      project_id: projectId,
-      user_id: userId,
-      path,
-      is_folder: false,
-      content,
-    },
+    { project_id: projectId, user_id: userId, path, is_folder: false, content },
     { onConflict: 'project_id,path' }
   );
 

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { listProjectFilesWithContent, writeProjectFile, assertProjectOwnership } from './projectFs';
+import { BINARY_PREFIX, MAX_BINARY_FILE_BYTES, SUPPORTED_BINARY_EXTENSIONS, extensionOf, validateBinaryBytes } from './binaryFiles';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -327,7 +328,8 @@ export async function pushProjectToGithub(
 
 const IGNORE_PATH_PREFIXES = ['node_modules/', '.git/', 'dist/', 'build/', '.next/', 'vendor/', '.cache/'];
 const MAX_IMPORT_FILES = 300;
-const MAX_IMPORT_FILE_BYTES = 300_000; // 300KB per file — keeps this fast and Postgres-row-friendly
+const MAX_IMPORT_FILE_BYTES = MAX_BINARY_FILE_BYTES;
+const isEnvPath = (path: string) => path.split('/').some((segment: string) => segment === '.env' || segment.startsWith('.env.'));
 
 function looksBinary(buf: Buffer): boolean {
   // Crude but effective: real text files essentially never contain a null
@@ -343,11 +345,9 @@ export interface ImportResult {
 }
 
 /**
- * Pulls an existing GitHub repo's files INTO a project's virtual
- * filesystem — the inverse of pushProjectToGithub. Binary files (images,
- * fonts, etc.) are skipped since the virtual filesystem only stores text
- * content; so are common heavy/irrelevant directories (node_modules, .git,
- * build output) and anything past a sane file-count/size safety cap.
+ * Pulls a GitHub repository into the project filesystem. Supported binary
+ * assets are validated and stored as base64 markers; environment files and
+ * generated/dependency directories are never imported.
  */
 export async function importRepoIntoProject(
   userId: string,
@@ -379,27 +379,30 @@ export async function importRepoIntoProject(
   const skipped: string[] = [];
 
   for (const entry of blobs) {
-    if (IGNORE_PATH_PREFIXES.some((p) => entry.path.startsWith(p))) continue;
+    if (IGNORE_PATH_PREFIXES.some((p) => entry.path.startsWith(p))) { skipped.push(`${entry.path} (ignored dependency/build directory)`); continue; }
+    if (isEnvPath(entry.path)) { skipped.push(`${entry.path} (environment files are never imported)`); continue; }
+    if (entry.path.startsWith('/') || entry.path.split('/').some((part: string) => part === '..' || part === '.')) { skipped.push(`${entry.path} (unsafe path rejected)`); continue; }
 
     if (imported >= MAX_IMPORT_FILES) {
       skipped.push(`${entry.path} (import file limit reached — ${MAX_IMPORT_FILES} max)`);
       continue;
     }
-    if (entry.size && entry.size > MAX_IMPORT_FILE_BYTES) {
-      skipped.push(`${entry.path} (too large — over 300KB)`);
-      continue;
-    }
-
+    if (entry.size && entry.size > MAX_IMPORT_FILE_BYTES) { skipped.push(`${entry.path} (over 5 MB — file skipped)`); continue; }
     const blob = await gh(token, `/repos/${owner}/${repo}/git/blobs/${entry.sha}`);
     const raw = Buffer.from(blob.content, 'base64');
-
-    if (looksBinary(raw)) {
-      skipped.push(`${entry.path} (binary file — not supported yet)`);
+    if (raw.length > MAX_IMPORT_FILE_BYTES) { skipped.push(`${entry.path} (over 5 MB — file skipped)`); continue; }
+    const ext = extensionOf(entry.path);
+    if (SUPPORTED_BINARY_EXTENSIONS.has(ext)) {
+      try { validateBinaryBytes(entry.path, raw); await writeProjectFile(userId, projectId, entry.path, BINARY_PREFIX + raw.toString('base64')); imported += 1; }
+      catch (error) { skipped.push(`${entry.path} (${(error as Error).message})`); }
       continue;
     }
-
-    await writeProjectFile(userId, projectId, entry.path, raw.toString('utf-8'));
-    imported += 1;
+    if (ext === 'svg' || !looksBinary(raw)) {
+      try { await writeProjectFile(userId, projectId, entry.path, raw.toString('utf-8')); imported += 1; }
+      catch (error) { skipped.push(`${entry.path} (${(error as Error).message})`); }
+      continue;
+    }
+    skipped.push(`${entry.path} (unsupported binary type — skipped)`);
   }
 
   return { filesImported: imported, skipped };

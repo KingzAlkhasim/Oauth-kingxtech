@@ -8,6 +8,7 @@ import {
   deleteProjectFile,
 } from './projectFs';
 import { snapshotBeforeChange } from './versioning';
+import { BINARY_PREFIX, extensionOf } from './binaryFiles';
 import { Sentry } from '../lib/sentry';
 
 // --- Generic (provider-agnostic) tool schema --------------------------------
@@ -353,12 +354,19 @@ async function runToolInner(
       }
       case 'readProjectFile': {
         const a = args as { path: string };
-        result = await readProjectFile(ctx.userId, ctx.projectId!, a.path);
-        summary = `Read ${a.path}`;
+        const file = await readProjectFile(ctx.userId, ctx.projectId!, a.path);
+        if (typeof file.content === 'string' && file.content.startsWith(BINARY_PREFIX)) {
+          const encoded = file.content.slice(BINARY_PREFIX.length);
+          result = { path: file.path, type: extensionOf(file.path), size: Math.floor(encoded.length * 3 / 4) };
+          summary = `Read binary file metadata for ${a.path}`;
+        } else { result = file; summary = `Read ${a.path}`; }
         break;
       }
       case 'writeProjectFile': {
         const a = args as { path: string; content: string };
+        if (a.content.startsWith(BINARY_PREFIX)) throw new Error('K-XpertAI cannot write binary file contents. Upload the file in the workspace and reference its path from code.');
+        const current = await readProjectFile(ctx.userId, ctx.projectId!, a.path).catch(() => null);
+        if (typeof current?.content === 'string' && current.content.startsWith(BINARY_PREFIX)) throw new Error('K-XpertAI cannot overwrite binary file contents. Upload a replacement file from the workspace.');
         await writeProjectFile(ctx.userId, ctx.projectId!, a.path, a.content);
         result = { ok: true, path: a.path };
         summary = `Wrote ${a.path}`;
