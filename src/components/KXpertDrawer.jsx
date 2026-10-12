@@ -7,7 +7,7 @@ import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
-  FileEdit, FolderPlus, FileX, Check, Undo2, Info, Gift,
+  FileEdit, FolderPlus, FileX, Check, Undo2, Info,
 } from 'lucide-react';
 
 const VIEW_LABELS = {
