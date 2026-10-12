@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "lint": "eslint \"src/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/ai-usage.test.ts"
   },
   "engines": {
     "node": ">=20.9.0"
