@@ -59,7 +59,7 @@ export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI) {
     }
 
     const trackUsage=()=>{const u=result.response.usageMetadata;const input=u?.promptTokenCount??0,output=u?.candidatesTokenCount??0,cached=u?.cachedContentTokenCount??0;inputTokens+=input;outputTokens+=output;cachedInputTokens+=cached;return onUsage?.({inputTokens:input,outputTokens:output,cachedInputTokens:cached});};
-    if(trackUsage()===false)return {text:((result.response.candidates?.[0]?.content?.parts?.map((part)=>part.text??'').filter(Boolean).join('\n'))||buildAgentTimeoutSummary(steps))+stoppedNote,steps,...usageTotals()};
+    if(trackUsage()===false)return {text:((result.response.candidates?.[0]?.content?.parts?.map((part)=>('text' in part ? part.text : '')??'').filter(Boolean).join('\n'))||buildAgentTimeoutSummary(steps))+stoppedNote,steps,...usageTotals()};
     let call = result.response.functionCalls()?.[0];
     let iterations = 0;
 
