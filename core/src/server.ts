@@ -247,7 +247,7 @@ app.post('/api/v1/chat/completions', requireAuth, rateLimit, async (req: AuthedR
   const prompt = systemPrompt ? `${systemPrompt}\n\n${latestUser.text}` : latestUser.text;
 
   const selectedTier = await getUserTier(userId);
-  if (selected.minTier === 'pro_plus' && !modelTierAllowed(selectedTier, selected.minTier)) {
+  if (selected.minTier === 'pro_plus' && selectedTier !== 'free' && !modelTierAllowed(selectedTier, selected.minTier)) {
     res.status(403).json({ error: { code: 'model_requires_pro_plus', message: `${selected.label} requires Pro+. Upgrade your plan to use this model.` } }); return;
   }
   if (selected.requiresPaidPlan && selectedTier === 'free') {
@@ -380,7 +380,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   // models. Everything else (Gemini, Claude, GPT) needs a paid plan, since
   // it either costs KingxTech real money or is a premium third-party model.
   const usageTier = await getUserTier(userId);
-  if (model.minTier === 'pro_plus' && !modelTierAllowed(usageTier, model.minTier)) {
+  if (model.minTier === 'pro_plus' && usageTier !== 'free' && !modelTierAllowed(usageTier, model.minTier)) {
     res.status(403).json({ success: false, code: 'model_requires_pro_plus', error: `${model.label} requires Pro+. Upgrade your plan to use this model.` }); return;
   }
   if (model.requiresPaidPlan && usageTier === 'free') {
