@@ -2,6 +2,7 @@ import { executeTerminalCommand } from './commandExecutor';
 import { verifyProject } from './projectRuntime';
 import {
   listProjectFiles,
+  listProjectFilesWithContent,
   readProjectFile,
   writeProjectFile,
   createProjectFolder,
@@ -348,8 +349,21 @@ async function runToolInner(
         break;
       }
       case 'listProjectFiles': {
-        result = await listProjectFiles(ctx.userId, ctx.projectId!);
-        summary = 'Listed project files.';
+        const entries = await listProjectFiles(ctx.userId, ctx.projectId!);
+        const withContent = await listProjectFilesWithContent(ctx.userId, ctx.projectId!);
+        const byPath = new Map(withContent.map((file) => [file.path, file.content]));
+        result = entries.map((entry) => {
+          const content = byPath.get(entry.path);
+          if (typeof content !== 'string') return entry;
+          if (content.startsWith(BINARY_PREFIX)) {
+            const encoded = content.slice(BINARY_PREFIX.length);
+            const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+            return { path: entry.path, type: extensionOf(entry.path), size: Math.max(0, encoded.length * 3 / 4 - padding), is_folder: entry.is_folder, updated_at: entry.updated_at };
+          }
+          if (extensionOf(entry.path) === 'svg') return { path: entry.path, type: 'svg', size: Buffer.byteLength(content, 'utf8'), is_folder: entry.is_folder, updated_at: entry.updated_at };
+          return entry;
+        });
+        summary = 'Listed project files (binary assets are shown as metadata only).';
         break;
       }
       case 'readProjectFile': {
@@ -357,7 +371,8 @@ async function runToolInner(
         const file = await readProjectFile(ctx.userId, ctx.projectId!, a.path);
         if (typeof file.content === 'string' && file.content.startsWith(BINARY_PREFIX)) {
           const encoded = file.content.slice(BINARY_PREFIX.length);
-          result = { path: file.path, type: extensionOf(file.path), size: Math.floor(encoded.length * 3 / 4) };
+          const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+          result = { path: file.path, type: extensionOf(file.path), size: Math.max(0, encoded.length * 3 / 4 - padding) };
           summary = `Read binary file metadata for ${a.path}`;
         } else { result = file; summary = `Read ${a.path}`; }
         break;

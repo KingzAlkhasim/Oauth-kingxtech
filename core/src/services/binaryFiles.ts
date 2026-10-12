@@ -14,7 +14,9 @@ export function decodeBinaryContent(content: string): Buffer | null {
 }
 export function validateSvgText(path: string, content: string): void {
  if(extensionOf(path)!=='svg') return;
- if(/<script\b/i.test(content)||/\bon[a-z][a-z0-9_-]*\s*=/i.test(content)||/javascript\s*:/i.test(content)) throw new Error('This SVG contains script or unsafe event code. Remove scripts, on* handlers, and javascript: URLs before uploading.');
+ if(Buffer.byteLength(content, 'utf8') > MAX_BINARY_FILE_BYTES) throw new Error('This file is larger than 5 MB. Choose a smaller file.');
+ if(!/<svg(?:\\s|>)/i.test(content)) throw new Error('This .svg file does not contain a valid SVG image.');
+ if(/<script\\b/i.test(content)||/\\bon[a-z][a-z0-9_-]*\\s*=/i.test(content)||/javascript\\s*:/i.test(content)) throw new Error('This SVG contains script or unsafe event code. Remove scripts, on* handlers, and javascript: URLs before uploading.');
 }
 export function validateBinaryBytes(path: string, bytes: Buffer): void {
  const ext=extensionOf(path);

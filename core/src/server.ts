@@ -1241,7 +1241,7 @@ async function servePreview(res: express.Response, projectId: string, requestedP
     if (extIsHtml(servedPath, content)) content = await injectPwaHtml(projectId, content);
     if (content.startsWith('__KX_BINARY_BASE64__:')) {
       const binary = Buffer.from(content.slice('__KX_BINARY_BASE64__:'.length), 'base64');
-      const ext = servedPath.split('.').pop() || '';
+      const ext = (servedPath.split('.').pop() || '').toLowerCase();
       applyPublishedSiteCache(res, servedPath);
       res.type(MIME_TYPES[ext] || 'application/octet-stream').send(binary);
       return;

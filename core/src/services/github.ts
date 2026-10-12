@@ -330,6 +330,7 @@ const IGNORE_PATH_PREFIXES = ['node_modules/', '.git/', 'dist/', 'build/', '.nex
 const MAX_IMPORT_FILES = 300;
 const MAX_IMPORT_FILE_BYTES = MAX_BINARY_FILE_BYTES;
 const isEnvPath = (path: string) => path.split('/').some((segment: string) => segment === '.env' || segment.startsWith('.env.'));
+const isIgnoredImportPath = (path: string) => path.split('/').some((segment: string) => ['node_modules', '.git', 'dist', 'build', '.next', 'vendor', '.cache'].includes(segment));
 
 function looksBinary(buf: Buffer): boolean {
   // Crude but effective: real text files essentially never contain a null
@@ -379,7 +380,7 @@ export async function importRepoIntoProject(
   const skipped: string[] = [];
 
   for (const entry of blobs) {
-    if (IGNORE_PATH_PREFIXES.some((p) => entry.path.startsWith(p))) { skipped.push(`${entry.path} (ignored dependency/build directory)`); continue; }
+    if (isIgnoredImportPath(entry.path) || IGNORE_PATH_PREFIXES.some((p) => entry.path.startsWith(p))) { skipped.push(`${entry.path} (ignored dependency/build directory)`); continue; }
     if (isEnvPath(entry.path)) { skipped.push(`${entry.path} (environment files are never imported)`); continue; }
     if (entry.path.startsWith('/') || entry.path.split('/').some((part: string) => part === '..' || part === '.')) { skipped.push(`${entry.path} (unsafe path rejected)`); continue; }
 
