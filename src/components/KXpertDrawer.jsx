@@ -146,7 +146,6 @@ function UsageBar({label,percent,resetsAt}){const value=Math.max(0,Math.min(100,
 export default function KXpertDrawer() {
   const [open, setOpen] = useState(false);
   const [balance, setBalance] = useState(null);
-  const [credits, setCredits] = useState(null);
   const [message, setMessage] = useState('');
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -190,18 +189,6 @@ export default function KXpertDrawer() {
     };
   }, []);
 
-  const refreshCredits = useCallback(async () => {
-    try {
-      const headers = await getAuthHeaders();
-      if (!headers) return;
-      const res = await fetch(`${API_BASE}/api/ai/credits`, { headers });
-      const data = await res.json();
-      if (data.success) setCredits({ remaining: data.remaining, allowance: data.allowance });
-    } catch {
-      // Non-critical — the badge just won't show if this fails.
-    }
-  }, [getAuthHeaders]);
-
   const refreshUsage = useCallback(async () => {
     try {
       const headers = await getAuthHeaders();
@@ -218,7 +205,6 @@ export default function KXpertDrawer() {
     if (!open) return;
 
     getBillingProfile().then(({ data }) => setBalance(data?.credit_balance ?? null));
-    refreshCredits();
 
     getAuthHeaders().then((headers) => {
       if (!headers) return;
@@ -249,7 +235,7 @@ export default function KXpertDrawer() {
         setIsHistoryLoading(false);
       }
     })();
-  }, [open, sessionId, getAuthHeaders, refreshCredits, refreshUsage]);
+  }, [open, sessionId, getAuthHeaders, refreshUsage]);
 
   const send = async (e) => {
     e.preventDefault();
@@ -288,7 +274,7 @@ export default function KXpertDrawer() {
       if (response.status === 429) throw new Error("You're sending messages too fast — give it a minute and try again.");
       if (response.status === 402) {
         const data = await response.json();
-        throw new Error(data.error || "You're out of free credits this month.");
+        throw new Error(data.error || "You've reached your free usage limit for this month.");
       }
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({}));
@@ -345,9 +331,6 @@ export default function KXpertDrawer() {
           reviewState: finalPayload.changes?.length ? 'pending' : null,
         },
       ]);
-      if (typeof finalPayload.creditsRemaining === 'number') {
-        setCredits((c) => ({ remaining: finalPayload.creditsRemaining, allowance: c?.allowance ?? 200 }));
-      }
       if (finalPayload.model?.tag) {
         setActiveTag(finalPayload.model.tag);
         sessionStorage.setItem(`kxpert_active_tag_${sessionId}`, finalPayload.model.tag);
@@ -459,11 +442,6 @@ export default function KXpertDrawer() {
               </div>
               <span className="text-kxmist">Viewing: <span className="text-white">{viewLabel}</span></span>
               <div className="flex items-center gap-3">
-                {credits && (
-                  <span className="flex items-center gap-1.5 text-kxmist" title="Free credits reset monthly">
-                    <Gift size={13} /> {credits.remaining}/{credits.allowance}
-                  </span>
-                )}
                 <span className="flex items-center gap-1.5 text-kxmist">
                   <Wallet size={13} />
                   {balance === null ? '—' : `$${balance.toFixed(2)}`}
