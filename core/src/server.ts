@@ -892,7 +892,7 @@ app.post('/api/projects/:projectId/security-check', requireAuth, async (req: Aut
   } finally {
     if(secureCheckStarted){
       try{
-        const limits=PLAN_LIMITS[secureTier];
+        const limits=secureTier==='free'?{sessionHours:5,weekDays:7}:PLAN_LIMITS[secureTier];
         await recordAiUsage({userId:req.user!.id,projectId:req.params.projectId,source:'securecheck',provider:'security',modelCode:'securecheck',inputTokens:4096,outputTokens:2048,cachedInputTokens:0,costUsd:computeCostUsd('securecheck',{inputTokens:4096,outputTokens:2048}),tier:secureTier,estimated:true,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
       }catch(ledgerError){console.error('[ai-usage-ledger] SecureCheck ledger write failed:',ledgerError)}
     }
