@@ -140,6 +140,9 @@ function MarkdownMessage({ text }) {
   );
 }
 
+function resetLabel(value){if(!value)return 'reset time unavailable';const ms=new Date(value).getTime()-Date.now();if(ms<=0)return 'resetting soon';if(ms<86400000){const mins=Math.floor(ms/60000);return `resets in ${Math.floor(mins/60)}h ${mins%60}m`;}return `resets ${new Date(value).toLocaleDateString()}`;}
+function UsageBar({label,percent,resetsAt}){const value=Math.max(0,Math.min(100,Number(percent)||0));return <div className="min-w-0"><div className="flex items-center justify-between gap-2 text-[11px] mb-1"><span className="text-kxmist">{label}</span><span className="text-white tabular-nums">{value}%</span></div><div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden"><div className={`h-full rounded-full ${value>=80?'bg-amber-400':'bg-kxblue'}`} style={{width:`${value}%`}}/></div><p className="text-[10px] text-kxmist/80 mt-1">{resetLabel(resetsAt)}</p></div>}
+
 export default function KXpertDrawer() {
   const [open, setOpen] = useState(false);
   const [balance, setBalance] = useState(null);
@@ -151,6 +154,8 @@ export default function KXpertDrawer() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [showModelHint, setShowModelHint] = useState(false);
   const [models, setModels] = useState([]);
+  const [usage, setUsage] = useState(null);
+  const [upgradePrompt, setUpgradePrompt] = useState('');
   const [mode, setMode] = useState('build');
   const [selectedTag, setSelectedTag] = useState('');
   const [sessionId, setSessionId] = useState(
@@ -205,10 +210,8 @@ export default function KXpertDrawer() {
 
     getAuthHeaders().then((headers) => {
       if (!headers) return;
-      fetch(`${API_BASE}/api/ai/models`, { headers })
-        .then((r) => r.json())
-        .then((d) => d.success && setModels(d.models))
-        .catch(() => {});
+      fetch(`${API_BASE}/api/ai/models`,{headers}).then((r)=>r.json()).then((data)=>data.success&&setModels(data.models)).catch(()=>{});
+      fetch(`${API_BASE}/api/ai/usage`,{headers}).then((r)=>r.json()).then((data)=>data.tier&&setUsage(data)).catch(()=>{});
     });
 
     // Only hydrate from the server once per session. Reopening the drawer
@@ -238,7 +241,7 @@ export default function KXpertDrawer() {
 
   const send = async (e) => {
     e.preventDefault();
-    if (!message.trim() || isLoading) return;
+    if (!message.trim() || isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))) return;
     const userText = message;
     const explicitTag = userText.match(/^:([A-Za-z]+)-([^/]+)\/\s*/);
     const tagToUse = explicitTag ? '' : (selectedTag || activeTag || '');
@@ -459,12 +462,14 @@ export default function KXpertDrawer() {
               <label className="block text-[10px] font-mono uppercase tracking-wider text-kxmist mb-1.5">Model</label>
               <select
                 value={selectedTag}
-                onChange={(e) => setSelectedTag(e.target.value)}
-                className="w-full bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-kxblue"
+                onChange={(e)=>{const next=models.find((m)=>m.tag===e.target.value),tier=usage?.tier||'free';const locked=next&&((next.minTier==='pro'&&tier==='free')||(next.minTier==='pro_plus'&&tier!=='pro_plus'));if(locked){setUpgradePrompt(next.minTier==='pro_plus'?'Pro+ is required for this model.':'Pro is required for this model.');return;}setUpgradePrompt('');setSelectedTag(e.target.value);}}
+                className="w-full min-w-0 bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-kxblue"
               >
                 <option value="">Auto / Free</option>
-                {models.map((m) => <option key={m.tag} value={m.tag}>{m.label}{m.tier === 'free' ? ' · free' : ` · ${m.creditCost} credits`}</option>)}
+                {models.map((m)=>{const tier=usage?.tier||'free',locked=(m.minTier==='pro'&&tier==='free')||(m.minTier==='pro_plus'&&tier!=='pro_plus');const label=m.minTier==='pro_plus'?'🔒 Pro+':m.minTier==='pro'?(locked?'🔒 Pro':'Pro'):'Free';return <option key={m.tag} value={m.tag}>{m.label} · {label}</option>;})}
               </select>
+              {usage&&<div className="mt-3 space-y-3"><div className="grid grid-cols-2 gap-3"><UsageBar label="Session usage" percent={usage.sessionPercent} resetsAt={usage.sessionResetsAt}/><UsageBar label="Weekly usage" percent={usage.weekPercent} resetsAt={usage.weekResetsAt}/></div>{(usage.sessionPercent>=80||usage.weekPercent>=80)&&<p className="text-[11px] text-amber-300">You're close to your limit.</p>}{(usage.sessionPercent>=100||usage.weekPercent>=100)&&<p className="text-[11px] text-red-300">Usage limit reached. Resets at {new Date(usage.sessionPercent>=100?usage.sessionResetsAt:usage.weekResetsAt).toLocaleString()}.</p>}</div>}
+              {upgradePrompt&&<div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-[11.5px] text-amber-200 flex items-center justify-between gap-2"><span className="min-w-0">{upgradePrompt}</span><a href="/billing" className="shrink-0 underline">Upgrade</a></div>}
             </div>
 
             {showModelHint && (
@@ -476,7 +481,7 @@ export default function KXpertDrawer() {
                   {models.map((m) => (
                     <div key={m.tag} className="flex items-center justify-between text-[11.5px]">
                       <code className="text-kxpurple">{m.tag}</code>
-                      <span className="text-kxmist">{m.label}{m.tier === 'free' ? ' · free' : ` · ${m.creditCost} credits`}</span>
+                      <span className="text-kxmist">{m.label}{m.minTier === 'pro_plus' ? ' · 🔒 Pro+' : m.minTier === 'pro' ? ' · 🔒 Pro' : ' · Free'}</span>
                     </div>
                   ))}
                   {!models.length && <p className="text-[11.5px] text-kxmist">Open the drawer while signed in to load the list.</p>}
@@ -597,10 +602,10 @@ export default function KXpertDrawer() {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder={isLoading ? 'Working...' : mode === 'plan' ? 'Describe what you want to plan…' : 'Ask K-XpertAI to build…'}
-                disabled={isLoading}
+                disabled={isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))}
                 className="flex-1 bg-white/[0.02] border border-white/12 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-kxblue"
               />
-              <button type="submit" disabled={isLoading} className="w-10 h-10 rounded-lg bg-kx-gradient flex items-center justify-center shrink-0">
+              <button type="submit" disabled={isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))} className="w-10 h-10 rounded-lg bg-kx-gradient flex items-center justify-center shrink-0">
                 <Send size={15} />
               </button>
             </form>
