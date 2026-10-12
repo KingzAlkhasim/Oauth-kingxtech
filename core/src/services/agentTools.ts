@@ -351,7 +351,8 @@ async function runToolInner(
       case 'listProjectFiles': {
         const entries = await listProjectFiles(ctx.userId, ctx.projectId!);
         const withContent = await listProjectFilesWithContent(ctx.userId, ctx.projectId!);
-        const byPath = new Map(withContent.map((file) => [file.path, file.content]));
+        const byPath = new Map<string, string | null>();
+        for (const file of withContent) byPath.set(file.path, file.content);
         result = entries.map((entry) => {
           const content = byPath.get(entry.path);
           if (typeof content !== 'string') return entry;

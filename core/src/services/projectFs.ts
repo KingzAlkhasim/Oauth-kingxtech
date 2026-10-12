@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
-import { BINARY_PREFIX, MAX_BINARY_FILE_BYTES, MAX_PROJECT_BINARY_BYTES, SUPPORTED_BINARY_EXTENSIONS, extensionOf, decodeBinaryContent, validateBinaryBytes, validateSvgText } from './binaryFiles';
+import { MAX_BINARY_FILE_BYTES, MAX_PROJECT_BINARY_BYTES, SUPPORTED_BINARY_EXTENSIONS, extensionOf, decodeBinaryContent, validateBinaryBytes, validateSvgText } from './binaryFiles';
 
 export class ProjectAccessError extends Error {}
 
