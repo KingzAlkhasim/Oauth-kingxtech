@@ -285,7 +285,7 @@ export async function writeProjectFile(
     if (totalErr) throw new Error(`Could not check project asset storage: ${totalErr.message}`);
     let totalBytes = 0;
     for (const existing of existingFiles ?? []) {
-      if (existing.path === path || typeof existing.content !== 'string') continue;
+      if (existing.path === path || existing.path.startsWith('.kingxtech-dist/') || existing.path.startsWith('.kx-verify-dist/') || typeof existing.content !== 'string') continue;
       const oldBinary = decodeBinaryContent(existing.content);
       if (oldBinary) totalBytes += oldBinary.length;
       else if (extensionOf(existing.path) === 'svg') totalBytes += Buffer.byteLength(existing.content, 'utf8');

@@ -330,7 +330,7 @@ const IGNORE_PATH_PREFIXES = ['node_modules/', '.git/', 'dist/', 'build/', '.nex
 const MAX_IMPORT_FILES = 300;
 const MAX_IMPORT_FILE_BYTES = MAX_BINARY_FILE_BYTES;
 const isEnvPath = (path: string) => path.split('/').some((segment: string) => segment === '.env' || segment.startsWith('.env.'));
-const isIgnoredImportPath = (path: string) => path.split('/').some((segment: string) => ['node_modules', '.git', 'dist', 'build', '.next', 'vendor', '.cache'].includes(segment));
+const isIgnoredImportPath = (path: string) => path.split('/').some((segment: string) => ['node_modules', '.git', 'dist', 'build', '.next', 'vendor', '.cache', '.kingxtech-dist', '.kx-verify-dist'].includes(segment));
 
 function looksBinary(buf: Buffer): boolean {
   // Crude but effective: real text files essentially never contain a null
