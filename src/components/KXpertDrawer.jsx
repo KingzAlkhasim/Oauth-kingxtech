@@ -209,7 +209,7 @@ export default function KXpertDrawer() {
     getAuthHeaders().then((headers) => {
       if (!headers) return;
       fetch(`${API_BASE}/api/ai/models`,{headers}).then((r)=>r.json()).then((data)=>data.success&&setModels(data.models)).catch(()=>{});
-      fetch(`${API_BASE}/api/ai/usage`,{headers}).then((r)=>r.json()).then((data)=>data.tier&&setUsage(data)).catch(()=>{});
+      refreshUsage();
     });
 
     // Only hydrate from the server once per session. Reopening the drawer
