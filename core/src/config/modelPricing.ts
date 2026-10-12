@@ -18,6 +18,8 @@ export const MODEL_PRICING:Record<string,ModelPrice>={
  sonnet:{...HIGH_UNVERIFIED_PRICE},opus:{...HIGH_UNVERIFIED_PRICE},haiku:{...HIGH_UNVERIFIED_PRICE},fable:{...HIGH_UNVERIFIED_PRICE},
  sonnet5:{...HIGH_UNVERIFIED_PRICE},opus5:{...HIGH_UNVERIFIED_PRICE},sol:{...HIGH_UNVERIFIED_PRICE},terra:{...HIGH_UNVERIFIED_PRICE},luna:{...HIGH_UNVERIFIED_PRICE},
  gpt6sol:{...HIGH_UNVERIFIED_PRICE},gpt6luna:{...HIGH_UNVERIFIED_PRICE},gpt55:{...HIGH_UNVERIFIED_PRICE},gpt54:{...HIGH_UNVERIFIED_PRICE},gpt54mini:{...HIGH_UNVERIFIED_PRICE},gpt53codex:{...HIGH_UNVERIFIED_PRICE},
+ // Synthetic ledger code for SecureCheck; estimate conservatively until its internal model is exposed.
+ securecheck:{...HIGH_UNVERIFIED_PRICE},
 };
 export function computeCostUsd(modelCode:string,usage:TokenUsage):number{
  const p=MODEL_PRICING[modelCode]??HIGH_UNVERIFIED_PRICE;
