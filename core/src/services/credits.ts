@@ -1,13 +1,22 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 
-export async function getUserPlan(userId: string): Promise<'free' | 'paid'> {
-  const { data, error } = await supabaseAdmin
-    .from('billing_profile')
-    .select('is_pro_member')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (error || !data) return 'free';
-  return data.is_pro_member ? 'paid' : 'free';
+export type UserTier='free'|'pro'|'pro_plus';
+export async function getUserTier(userId:string):Promise<UserTier>{
+ const {data,error}=await supabaseAdmin.from('billing_profile').select('plan,is_pro_member').eq('user_id',userId).maybeSingle();
+ if(error||!data)return 'free'; if(data.plan==='pro_plus')return 'pro_plus';
+ if(data.plan==='pro'||data.plan==='paid'||data.is_pro_member)return 'pro'; return 'free';
+}
+export async function getUserPlan(userId:string):Promise<'free'|'paid'>{return (await getUserTier(userId))==='free'?'free':'paid'}
+export async function getAiUsageState(userId:string):Promise<{sessionStart:string|null;sessionSpentUsd:number;weekStart:string|null;weekSpentUsd:number}>{
+ const {data,error}=await supabaseAdmin.from('ai_usage_state').select('session_start,session_spent_usd,week_start,week_spent_usd').eq('user_id',userId).maybeSingle();
+ if(error)throw new Error(`getAiUsageState failed: ${error.message}`);
+ return {sessionStart:data?.session_start??null,sessionSpentUsd:Number(data?.session_spent_usd??0),weekStart:data?.week_start??null,weekSpentUsd:Number(data?.week_spent_usd??0)};
+}
+export async function recordAiUsage(input:{userId:string;projectId?:string;source:'chat'|'agent'|'securecheck';provider:string;modelCode:string;inputTokens:number;outputTokens:number;cachedInputTokens:number;costUsd:number;tier:UserTier;estimated:boolean;sessionHours:number;weekDays:number}):Promise<void>{
+ const {error:rpcError}=await supabaseAdmin.rpc('ai_usage_record',{p_user_id:input.userId,p_cost_usd:input.costUsd,p_session_hours:input.sessionHours,p_week_days:input.weekDays});
+ if(rpcError)throw new Error(`ai_usage_record failed: ${rpcError.message}`);
+ const {error}=await supabaseAdmin.from('ai_usage_ledger').insert({user_id:input.userId,project_id:input.projectId??null,source:input.source,provider:input.provider,model_code:input.modelCode,input_tokens:input.inputTokens,output_tokens:input.outputTokens,cached_input_tokens:input.cachedInputTokens,cost_usd:input.costUsd,tier_at_time:input.tier,usage_estimated:input.estimated});
+ if(error)throw new Error(`ai_usage_ledger insert failed: ${error.message}`);
 }
 
 export interface CreditResult {
