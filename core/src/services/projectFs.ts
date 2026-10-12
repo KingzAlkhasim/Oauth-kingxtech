@@ -21,7 +21,7 @@ export interface ProjectFileContent extends ProjectFileEntry {
  */
 function normalizePath(rawPath: string): string {
   const input = rawPath.trim();
-  if (input.startsWith('/') || input.startsWith('\\') || /^[a-z]:[\\/]/i.test(input)) {
+  if (input.startsWith('/') || input.includes('\\') || /^[a-z]:[\\/]/i.test(input)) {
     throw new ProjectAccessError('Absolute paths are not allowed. Use a path relative to the project root.');
   }
   const trimmed = input.replace(/\/+$/, '');
