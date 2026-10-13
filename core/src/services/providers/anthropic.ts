@@ -46,7 +46,7 @@ export async function runAnthropicAgent(opts: AgentOpts): Promise<AgentResult> {
     const usage=response.usage as Anthropic.Usage & { cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null };
     const cached=usage.cache_read_input_tokens??0, cacheWrite=usage.cache_creation_input_tokens??0;
     const currentInput=(usage.input_tokens??0)+cached+cacheWrite;
-    inputTokens+=currentInput; outputTokens+=usage.output_tokens??0; cachedInputTokens+=cached; cacheCreationInputTokens+=cacheWrite;
+    inputTokens+=currentInput; outputTokens+=(usage.output_tokens??0); cachedInputTokens+=cached; cacheCreationInputTokens+=cacheWrite;
     if(onUsage?.({inputTokens:currentInput,outputTokens:usage.output_tokens??0,cachedInputTokens:cached,cacheCreationInputTokens:cacheWrite})===false)return {text:((response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text)||buildAgentTimeoutSummary(steps))+stoppedNote,steps,...usageTotals()};
     const toolUseBlocks = response.content.filter(
       (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
