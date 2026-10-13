@@ -11,7 +11,8 @@ import { generateContent } from './services/aiRouter';
 import type { AgentTurn } from './services/agentTools';
 import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './services/chatHistory';
 import { touchSession, listSessions, deleteSession } from './services/sessions';
-import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi } from './services/modelRegistry';
+import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi, REGISTRY } from './services/modelRegistry';
+import { resolveDefaultModelForTier } from './services/modelDefaults';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, getUserTier, getAiUsageState, recordAiUsage, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { computeCostUsd } from './config/modelPricing';
 import { PLAN_LIMITS } from './config/planLimits';
@@ -356,7 +357,8 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     return;
   }
 
-  const { model, cleanPrompt, unknownTag } = parseModelTag(rawPrompt);
+  const parsedRequest = parseModelTag(rawPrompt);
+  let { model, cleanPrompt, unknownTag } = parsedRequest;
 
   let activeProjectId: string | undefined;
   if (projectId) {
@@ -380,6 +382,7 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   // models. Everything else (Gemini, Claude, GPT) needs a paid plan, since
   // it either costs KingxTech real money or is a premium third-party model.
   const usageTier = await getUserTier(userId);
+  if (!parsedRequest.explicitTag) model = resolveDefaultModelForTier(usageTier, REGISTRY);
   if (model.minTier === 'pro_plus' && usageTier !== 'free' && !modelTierAllowed(usageTier, model.minTier)) {
     res.status(403).json({ success: false, code: 'model_requires_pro_plus', error: `${model.label} requires Pro+. Upgrade your plan to use this model.` }); return;
   }
@@ -571,9 +574,7 @@ app.get('/api/ai/models', requireAuth, (_req, res) => {
 // The webhook that actually credits the payment (and flips is_pro_member)
 // already exists as a Supabase Edge Function — see
 // supabase/functions/billing-webhook/index.ts. This route only starts a
-// transaction with real user_id metadata attached, since Paystack's hosted
-// Payment Page links don't reliably carry custom metadata through the way
-// LemonSqueezy's do.
+// transaction with real user_id metadata attached, because Paystack initialization attaches explicit user metadata.
 app.post('/api/billing/paystack/initialize', requireAuth, async (req: AuthedRequest, res) => {
   const email = req.user!.email;
   if (!email) {

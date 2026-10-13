@@ -66,6 +66,8 @@ export interface AgentOpts {
   /** Called immediately after each tool call finishes, for live progress streaming. */
   onStep?: (step: ToolStep) => void;
   onUsage?: (usage: AgentUsage) => boolean | void;
+  /** Gemma compatibility fallback: instruction embedded in a user turn without tools/systemInstruction. */
+  chatOnly?: boolean;
 }
 
 export interface AgentResult extends AgentUsage {

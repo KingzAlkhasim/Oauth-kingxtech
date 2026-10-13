@@ -282,8 +282,8 @@ export default function KXpertDrawer() {
       if (response.status === 401) throw new Error('Your session expired — please sign in again.');
       if (response.status === 429) throw new Error("You're sending messages too fast — give it a minute and try again.");
       if (response.status === 402) {
-        const data = await response.json();
-        throw new Error(data.error || "You've reached your free usage limit for this month.");
+        // Keep legacy backend credit-limit wording out of the UI until the later enforcement migration.
+        throw new Error('This AI request is unavailable right now. Please try again later or check your plan.');
       }
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({}));
@@ -413,6 +413,7 @@ export default function KXpertDrawer() {
   const usageAtLimit = Number(usage?.sessionPercent) >= 100 || Number(usage?.weekPercent) >= 100;
   const usageResetAt = Number(usage?.sessionPercent) >= 100 ? usage?.sessionResetsAt : usage?.weekResetsAt;
   const modelLocked = (m) => (m.minTier === 'pro' && (usage?.tier || 'free') === 'free') || (m.minTier === 'pro_plus' && (usage?.tier || 'free') !== 'pro_plus');
+  const resolvedAutoModel = (usage?.tier || 'free') === 'free' ? models.find((m) => m.tag.toLowerCase().includes('qwen')) : models.find((m) => m.tag.toLowerCase().includes('gemma'));
   const chooseModel = (tag) => {
     const next = models.find((m) => m.tag === tag);
     if (next && modelLocked(next)) {
@@ -459,8 +460,8 @@ export default function KXpertDrawer() {
               {showOverflow && (
                 <div className="kxpert-overflow absolute right-3 top-12 z-50 rounded-xl border border-white/10 bg-kxsurface2 shadow-xl p-1.5 min-w-[210px]">
                   <div className="px-3 py-2 text-[12px] text-kxmist">Viewing: <span className="text-white">{viewLabel}</span></div>
-                  <div className="px-3 py-2 text-[12px] text-kxmist flex items-center gap-2"><Wallet size={14} /> Wallet: <span className="text-white">{balance === null ? '—' : '$' + Math.max(0, Number(balance) || 0).toFixed(2)}</span></div>
-                  <a href="/billing" className="kxpert-menu-item">Billing &amp; credits</a>
+                  <div className="px-3 py-2 text-[12px] text-kxmist flex items-center gap-2"><Wallet size={14} /> Wallet balance · compute/storage: <span className="text-white">{balance === null ? '—' : '$' + Math.max(0, Number(balance) || 0).toFixed(2)}</span></div>
+                  <a href="/billing" className="kxpert-menu-item">Billing &amp; wallet</a>
                   <button type="button" onClick={() => { setShowModelHint((s) => !s); setShowOverflow(false); setShowModelSheet(true); }} className="kxpert-menu-item"><Info size={14} /> Model information</button>
                   <button type="button" onClick={() => { startNewChat(); setShowOverflow(false); }} disabled={isLoading} className="kxpert-menu-item"><RotateCcw size={14} /> New chat</button>
                   <button type="button" onClick={() => { clearChat(); setShowOverflow(false); }} disabled={isLoading} className="kxpert-menu-item text-red-300"><Trash2 size={14} /> Clear conversation</button>
@@ -470,7 +471,7 @@ export default function KXpertDrawer() {
 
             <div className="kxpert-context-row flex items-center justify-between gap-2 px-3 shrink-0">
               <button type="button" onClick={() => setShowModelSheet(true)} className="kxpert-chip min-w-0" aria-label="Choose AI model">
-                <span className="truncate">{models.find((m) => m.tag === selectedTag)?.label || (activeTag ? models.find((m) => m.tag === activeTag)?.label || activeTag : 'Auto / Free')}</span>
+                <span className="truncate">{models.find((m) => m.tag === selectedTag)?.label || (activeTag ? models.find((m) => m.tag === activeTag)?.label || activeTag : 'Auto')}</span>
                 <ChevronDown size={13} className="shrink-0 opacity-70" />
               </button>
               <button type="button" onClick={() => setShowUsageSheet(true)} className={"kxpert-usage-pill " + (usagePercent >= 100 ? 'is-limit' : usagePercent >= 80 ? 'is-warn' : '')} aria-label="View usage details">
@@ -494,7 +495,7 @@ export default function KXpertDrawer() {
                   <div className="kxpert-sheet-handle" />
                   <div className="flex items-center justify-between mb-2"><h2 className="text-[14px] font-semibold">Choose a model</h2><button type="button" className="kxpert-icon-btn" aria-label="Close model list" onClick={() => setShowModelSheet(false)}><X size={18}/></button></div>
                   <div className="kxpert-sheet-list">
-                    <button type="button" className={"kxpert-model-option " + (!selectedTag ? 'is-selected' : '')} onClick={() => chooseModel('')}><span><strong>Auto / Free</strong><small>Automatically select a model</small></span>{!selectedTag && <Check size={16}/>}</button>
+                    <button type="button" className={"kxpert-model-option " + (!selectedTag ? 'is-selected' : '')} onClick={() => chooseModel('')}><span><strong>Auto</strong><small>Default for your plan: {resolvedAutoModel?.label || ((usage?.tier || 'free') === 'free' ? 'Qwen3 Coder (free)' : 'Gemma 4 31B (free, Google)')}</small></span>{!selectedTag && <Check size={16}/>}</button>
                     {models.map((m) => (
                       <button type="button" key={m.tag} className={"kxpert-model-option " + (selectedTag === m.tag ? 'is-selected' : '')} onClick={() => chooseModel(m.tag)}>
                         <span className="min-w-0"><strong className="block truncate">{m.label}</strong><small>{m.tag}</small></span>
@@ -512,7 +513,7 @@ export default function KXpertDrawer() {
                 <section className="kxpert-sheet" role="dialog" aria-modal="true" aria-label="Usage details" onClick={(e) => e.stopPropagation()}>
                   <div className="kxpert-sheet-handle" />
                   <div className="flex items-center justify-between mb-4"><h2 className="text-[14px] font-semibold">Usage</h2><button type="button" className="kxpert-icon-btn" aria-label="Close usage details" onClick={() => setShowUsageSheet(false)}><X size={18}/></button></div>
-                  {usage ? <div className="space-y-5"><UsageBar label="Session usage" percent={usage.sessionPercent} resetsAt={usage.sessionResetsAt}/><UsageBar label="Weekly usage" percent={usage.weekPercent} resetsAt={usage.weekResetsAt}/></div> : <p className="text-[12px] text-kxmist">Usage details are loading.</p>}
+                  {usage ? <div className="space-y-5"><UsageBar label="Session usage" percent={usage.sessionPercent} resetsAt={usage.sessionResetsAt}/><UsageBar label="Weekly usage" percent={usage.weekPercent} resetsAt={usage.weekResetsAt}/>{usage.tier === 'free' && <a href="/billing" className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-4 text-[12.5px] font-medium bg-kx-gradient text-white">Upgrade to Pro</a>}</div> : <p className="text-[12px] text-kxmist">Usage details are loading.</p>}
                 </section>
               </div>
             )}

@@ -31,20 +31,28 @@ function toGeminiTool(t: ToolDef): FunctionDeclaration {
  * way, just a different bound client. Returns a ready-to-use runAgent
  * function bound to one client.
  */
-export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI) {
+export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI, options: { chatOnly?: boolean } = {}) {
   return async function runAgent(opts: AgentOpts): Promise<AgentResult> {
     const { modelId, history, prompt, tools, ctx, onStep, onUsage } = opts;
+    const chatOnly = options.chatOnly === true || opts.chatOnly === true;
     let inputTokens=0, outputTokens=0, cachedInputTokens=0;
     const usageTotals=()=>({inputTokens,outputTokens,cachedInputTokens});
     const stoppedNote='\n\nStopped to protect your usage. You can continue after your usage window resets.';
-    const geminiTools: GeminiTool[] = [{ functionDeclarations: tools.map(toGeminiTool) }];
+    const geminiTools: GeminiTool[] = chatOnly ? [] : [{ functionDeclarations: tools.map(toGeminiTool) }];
 
-    const model = genAI.getGenerativeModel({ model: modelId, tools: geminiTools, systemInstruction: buildSystemInstruction(ctx.readOnly) });
+    const model = genAI.getGenerativeModel({
+      model: modelId,
+      ...(chatOnly ? {} : { tools: geminiTools, systemInstruction: buildSystemInstruction(ctx.readOnly) }),
+    });
     const geminiHistory: Content[] = history.map((h) => ({ role: h.role, parts: [{ text: h.text }] }));
-    const contents: Content[] = [
-      ...geminiHistory,
-      { role: 'user', parts: [{ text: prompt }] },
-    ];
+    const chatOnlyText = [
+      buildSystemInstruction(ctx.readOnly),
+      history.length ? 'Conversation history:\n' + history.map((turn) => (turn.role === 'model' ? 'Assistant: ' : 'User: ') + turn.text).join('\n') : '',
+      'User request:\n' + prompt,
+    ].filter(Boolean).join('\n\n');
+    const contents: Content[] = chatOnly
+      ? [{ role: 'user', parts: [{ text: chatOnlyText }] }]
+      : [...geminiHistory, { role: 'user', parts: [{ text: prompt }] }];
 
     const steps: ToolStep[] = [];
     const deadlineAt = Date.now() + AGENT_MAX_DURATION_MS;
