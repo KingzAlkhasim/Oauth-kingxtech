@@ -7,7 +7,7 @@ import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
-  FileEdit, FolderPlus, FileX, Check, Undo2, Info,
+  FileEdit, FolderPlus, FileX, Check, Undo2, Info, MoreHorizontal, ChevronDown,
 } from 'lucide-react';
 
 const VIEW_LABELS = {
@@ -152,6 +152,10 @@ export default function KXpertDrawer() {
   const [liveSteps, setLiveSteps] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [showModelHint, setShowModelHint] = useState(false);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const [showModelSheet, setShowModelSheet] = useState(false);
+  const [showUsageSheet, setShowUsageSheet] = useState(false);
+  const [tipDismissed, setTipDismissed] = useState(false);
   const [models, setModels] = useState([]);
   const [usage, setUsage] = useState(null);
   const [upgradePrompt, setUpgradePrompt] = useState('');
@@ -400,6 +404,21 @@ export default function KXpertDrawer() {
       ? liveSteps[liveSteps.length - 1].summary
       : PHASE_LABELS[liveSteps[liveSteps.length - 1]?.tool] || 'Working…';
 
+  const usagePercent = Math.max(0, Math.min(100, Number(usage?.sessionPercent) || 0), Math.max(0, Math.min(100, Number(usage?.weekPercent) || 0)));
+  const usageAtLimit = Number(usage?.sessionPercent) >= 100 || Number(usage?.weekPercent) >= 100;
+  const usageResetAt = Number(usage?.sessionPercent) >= 100 ? usage?.sessionResetsAt : usage?.weekResetsAt;
+  const modelLocked = (m) => (m.minTier === 'pro' && (usage?.tier || 'free') === 'free') || (m.minTier === 'pro_plus' && (usage?.tier || 'free') !== 'pro_plus');
+  const chooseModel = (tag) => {
+    const next = models.find((m) => m.tag === tag);
+    if (next && modelLocked(next)) {
+      setUpgradePrompt(next.minTier === 'pro_plus' ? 'Pro+ is required for this model.' : 'Pro is required for this model.');
+      return;
+    }
+    setUpgradePrompt('');
+    setSelectedTag(tag);
+    setShowModelSheet(false);
+  };
+
   return (
     <>
       <button
@@ -411,94 +430,114 @@ export default function KXpertDrawer() {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-40 flex justify-end">
+        <div className="kxpert-overlay fixed inset-0 z-40 flex justify-end">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-          <div className="relative w-full max-w-sm h-full bg-kxsurface border-l border-white/10 flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/8">
-              <div className="flex items-center gap-2">
-                <Sparkles size={16} className="text-kxpurple" />
-                <span className="font-display font-medium text-[15px]">K-XpertAI</span>
+          <section className="kxpert-drawer relative w-full max-w-sm h-[100dvh] bg-kxsurface border-l border-white/10 flex flex-col min-w-0" aria-label="K-XpertAI chat">
+            <header className="kxpert-header flex items-center justify-between gap-2 px-3 border-b border-white/8 shrink-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Sparkles size={16} className="text-kxpurple shrink-0" />
+                <span className="font-display font-medium text-[14px] whitespace-nowrap">K-XpertAI</span>
               </div>
-              <div className="flex items-center gap-3">
-                <button onClick={() => setShowModelHint((s) => !s)} title="Available models" className="text-kxmist hover:text-white">
-                  <Info size={15} />
-                </button>
-                <button onClick={startNewChat} title="Start a new chat" className="text-kxmist hover:text-white">
-                  <RotateCcw size={15} />
-                </button>
-                <button onClick={clearChat} title="Clear this conversation" className="text-kxmist hover:text-white">
-                  <Trash2 size={15} />
-                </button>
-                <button onClick={() => setOpen(false)} className="text-kxmist hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/8 text-[12.5px]">
-              <div className="flex items-center gap-1 rounded-lg bg-white/[0.03] border border-white/10 p-1">
-                <button type="button" onClick={() => setMode('plan')} className={`px-2.5 py-1 rounded-md text-[11px] ${mode === 'plan' ? 'bg-kxpurple/20 text-kxpurple' : 'text-kxmist hover:text-white'}`}>🧠 Plan</button>
-                <button type="button" onClick={() => setMode('build')} className={`px-2.5 py-1 rounded-md text-[11px] ${mode === 'build' ? 'bg-green-500/15 text-green-400' : 'text-kxmist hover:text-white'}`}>🔨 Build</button>
-              </div>
-              <span className="text-kxmist">Viewing: <span className="text-white">{viewLabel}</span></span>
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1.5 text-kxmist">
-                  <Wallet size={13} />
-                  {balance === null ? '—' : `$${balance.toFixed(2)}`}
-                </span>
-              </div>
-            </div>
-
-            <div className="px-5 pt-3">
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-kxmist mb-1.5">Model</label>
-              <select
-                value={selectedTag}
-                onChange={(e)=>{const next=models.find((m)=>m.tag===e.target.value),tier=usage?.tier||'free';const locked=next&&((next.minTier==='pro'&&tier==='free')||(next.minTier==='pro_plus'&&tier!=='pro_plus'));if(locked){setUpgradePrompt(next.minTier==='pro_plus'?'Pro+ is required for this model.':'Pro is required for this model.');return;}setUpgradePrompt('');setSelectedTag(e.target.value);}}
-                className="w-full min-w-0 bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-[12px] outline-none focus:border-kxblue"
-              >
-                <option value="">Auto / Free</option>
-                {models.map((m)=>{const tier=usage?.tier||'free',locked=(m.minTier==='pro'&&tier==='free')||(m.minTier==='pro_plus'&&tier!=='pro_plus');const label=m.minTier==='pro_plus'?'🔒 Pro+':m.minTier==='pro'?(locked?'🔒 Pro':'Pro'):'Free';return <option key={m.tag} value={m.tag}>{m.label} · {label}</option>;})}
-              </select>
-              {usage&&<div className="mt-3 space-y-3"><div className="grid grid-cols-2 gap-3"><UsageBar label="Session usage" percent={usage.sessionPercent} resetsAt={usage.sessionResetsAt}/><UsageBar label="Weekly usage" percent={usage.weekPercent} resetsAt={usage.weekResetsAt}/></div>{(usage.sessionPercent>=80||usage.weekPercent>=80)&&<p className="text-[11px] text-amber-300">You're close to your limit.</p>}{(usage.sessionPercent>=100||usage.weekPercent>=100)&&<p className="text-[11px] text-red-300">Usage limit reached. Resets at {new Date(usage.sessionPercent>=100?usage.sessionResetsAt:usage.weekResetsAt).toLocaleString()}.</p>}</div>}
-              {upgradePrompt&&<div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-[11.5px] text-amber-200 flex items-center justify-between gap-2"><span className="min-w-0">{upgradePrompt}</span><a href="/billing" className="shrink-0 underline">Upgrade</a></div>}
-            </div>
-
-            {showModelHint && (
-              <div className="mx-5 mt-4 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2.5">
-                <p className="text-[11px] font-mono uppercase tracking-wider text-kxmist mb-1.5">
-                  Type a tag before your message to switch models
-                </p>
-                <div className="space-y-1">
-                  {models.map((m) => (
-                    <div key={m.tag} className="flex items-center justify-between text-[11.5px]">
-                      <code className="text-kxpurple">{m.tag}</code>
-                      <span className="text-kxmist">{m.label}{m.minTier === 'pro_plus' ? ' · 🔒 Pro+' : m.minTier === 'pro' ? ' · 🔒 Pro' : ' · Free'}</span>
-                    </div>
-                  ))}
-                  {!models.length && <p className="text-[11.5px] text-kxmist">Open the drawer while signed in to load the list.</p>}
+              <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center rounded-lg bg-white/[0.03] border border-white/10 p-0.5" role="group" aria-label="Chat mode">
+                  <button type="button" onClick={() => setMode('plan')} className={"kxpert-mode-btn " + (mode === 'plan' ? 'is-plan' : '')}>Plan</button>
+                  <button type="button" onClick={() => setMode('build')} className={"kxpert-mode-btn " + (mode === 'build' ? 'is-build' : '')}>Build</button>
                 </div>
+                <button type="button" onClick={() => setShowOverflow((s) => !s)} className="kxpert-icon-btn" aria-label="More chat options" aria-expanded={showOverflow}><MoreHorizontal size={19} /></button>
+                <button type="button" onClick={() => setOpen(false)} className="kxpert-icon-btn" aria-label="Close K-XpertAI"><X size={18} /></button>
               </div>
+              {showOverflow && (
+                <div className="kxpert-overflow absolute right-3 top-12 z-50 rounded-xl border border-white/10 bg-kxsurface2 shadow-xl p-1.5 min-w-[210px]">
+                  <div className="px-3 py-2 text-[12px] text-kxmist">Viewing: <span className="text-white">{viewLabel}</span></div>
+                  <div className="px-3 py-2 text-[12px] text-kxmist flex items-center gap-2"><Wallet size={14} /> Wallet: <span className="text-white">{balance === null ? '—' : '$' + Math.max(0, Number(balance) || 0).toFixed(2)}</span></div>
+                  <a href="/billing" className="kxpert-menu-item">Billing &amp; credits</a>
+                  <button type="button" onClick={() => { setShowModelHint((s) => !s); setShowOverflow(false); setShowModelSheet(true); }} className="kxpert-menu-item"><Info size={14} /> Model information</button>
+                  <button type="button" onClick={() => { startNewChat(); setShowOverflow(false); }} disabled={isLoading} className="kxpert-menu-item"><RotateCcw size={14} /> New chat</button>
+                  <button type="button" onClick={() => { clearChat(); setShowOverflow(false); }} disabled={isLoading} className="kxpert-menu-item text-red-300"><Trash2 size={14} /> Clear conversation</button>
+                </div>
+              )}
+            </header>
+
+            <div className="kxpert-context-row flex items-center justify-between gap-2 px-3 shrink-0">
+              <button type="button" onClick={() => setShowModelSheet(true)} className="kxpert-chip min-w-0" aria-label="Choose AI model">
+                <span className="truncate">{models.find((m) => m.tag === selectedTag)?.label || (activeTag ? models.find((m) => m.tag === activeTag)?.label || activeTag : 'Auto / Free')}</span>
+                <ChevronDown size={13} className="shrink-0 opacity-70" />
+              </button>
+              <button type="button" onClick={() => setShowUsageSheet(true)} className={"kxpert-usage-pill " + (usagePercent >= 100 ? 'is-limit' : usagePercent >= 80 ? 'is-warn' : '')} aria-label="View usage details">
+                <span className="kxpert-usage-dot" /> Usage {usagePercent}%
+              </button>
+            </div>
+
+            {usageAtLimit && (usage?.tier === 'free' || usage?.enforced) && (
+              <p className="kxpert-limit-notice shrink-0" role="status">Usage limit reached · resets {resetLabel(usageResetAt)}</p>
+            )}
+            {upgradePrompt && (
+              <div className="mx-3 mt-1 rounded-lg border border-amber-400/20 bg-amber-400/5 p-2.5 text-[12px] text-amber-200 flex items-center justify-between gap-2 shrink-0">
+                <span className="min-w-0">{upgradePrompt}</span><a href="/billing" className="shrink-0 underline min-h-[44px] inline-flex items-center">Upgrade</a>
+                <button type="button" className="kxpert-icon-btn" aria-label="Dismiss upgrade message" onClick={() => setUpgradePrompt('')}><X size={14}/></button>
+              </div>
+            )}
+
+            {showModelSheet && (
+              <div className="kxpert-sheet-backdrop" onClick={() => setShowModelSheet(false)}>
+                <section className="kxpert-sheet" role="dialog" aria-modal="true" aria-label="Choose model" onClick={(e) => e.stopPropagation()}>
+                  <div className="kxpert-sheet-handle" />
+                  <div className="flex items-center justify-between mb-2"><h2 className="text-[14px] font-semibold">Choose a model</h2><button type="button" className="kxpert-icon-btn" aria-label="Close model list" onClick={() => setShowModelSheet(false)}><X size={18}/></button></div>
+                  <div className="kxpert-sheet-list">
+                    <button type="button" className={"kxpert-model-option " + (!selectedTag ? 'is-selected' : '')} onClick={() => chooseModel('')}><span><strong>Auto / Free</strong><small>Automatically select a model</small></span>{!selectedTag && <Check size={16}/>}</button>
+                    {models.map((m) => (
+                      <button type="button" key={m.tag} className={"kxpert-model-option " + (selectedTag === m.tag ? 'is-selected' : '')} onClick={() => chooseModel(m.tag)}>
+                        <span className="min-w-0"><strong className="block truncate">{m.label}</strong><small>{m.tag}</small></span>
+                        <span className="kxpert-model-tier">{modelLocked(m) ? (m.minTier === 'pro_plus' ? 'Pro+' : 'Pro') : (m.minTier === 'pro_plus' ? 'Pro+' : m.minTier === 'pro' ? 'Pro' : 'Free')}</span>
+                      </button>
+                    ))}
+                    {!models.length && <p className="text-[12px] text-kxmist px-3 py-4">Loading models…</p>}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {showUsageSheet && (
+              <div className="kxpert-sheet-backdrop" onClick={() => setShowUsageSheet(false)}>
+                <section className="kxpert-sheet" role="dialog" aria-modal="true" aria-label="Usage details" onClick={(e) => e.stopPropagation()}>
+                  <div className="kxpert-sheet-handle" />
+                  <div className="flex items-center justify-between mb-4"><h2 className="text-[14px] font-semibold">Usage</h2><button type="button" className="kxpert-icon-btn" aria-label="Close usage details" onClick={() => setShowUsageSheet(false)}><X size={18}/></button></div>
+                  {usage ? <div className="space-y-5"><UsageBar label="Session usage" percent={usage.sessionPercent} resetsAt={usage.sessionResetsAt}/><UsageBar label="Weekly usage" percent={usage.weekPercent} resetsAt={usage.weekResetsAt}/></div> : <p className="text-[12px] text-kxmist">Usage details are loading.</p>}
+                </section>
+              </div>
+            )}
+
+            {showModelHint && showModelSheet && (
+              <div className="sr-only">Model tags are available in the model list.</div>
             )}
 
             {activeProjectId && (
-              <div className={`mx-5 mt-4 rounded-lg border px-3.5 py-2.5 ${mode === 'plan' ? 'border-kxpurple/25 bg-kxpurple/8' : 'border-green-500/25 bg-green-500/8'}`}>
-                <p className={`text-[11px] font-mono uppercase tracking-wider ${mode === 'plan' ? 'text-kxpurple' : 'text-green-400'}`}>
-                  {mode === 'plan' ? 'Planning mode — no project files will be changed.' : 'Project workspace active — I can read, create, edit, and delete files here.'}
-                </p>
+              <div className={"kxpert-project-context shrink-0 " + (mode === 'plan' ? 'is-plan' : 'is-build')}>
+                {mode === 'plan' ? 'Planning mode — project files will not be changed.' : 'Workspace active'}
               </div>
             )}
 
-            {tip && (
-              <div className="mx-5 mt-4 rounded-lg border border-kxpurple/25 bg-kxpurple/8 px-3.5 py-2.5">
-                <p className="text-[11px] font-mono uppercase tracking-wider text-kxpurple mb-1">Quick tip</p>
-                <p className="text-[12.5px] text-kxmist leading-relaxed">{tip}</p>
-              </div>
-            )}
-
-            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+            <div className="kxpert-messages flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-3" aria-live="polite">
               {isHistoryLoading && <p className="text-[13px] text-kxmist italic">Loading conversation...</p>}
               {!isHistoryLoading && history.length === 0 && (
-                <p className="text-[13px] text-kxmist">Ask something — K-XpertAI is live!</p>
+                <div className="kxpert-empty-state">
+                  <div className="kxpert-empty-icon"><Sparkles size={21}/></div>
+                  <p className="text-[14px] font-medium text-white">Hey! What are we working on?</p>
+                  <p className="text-[12px] text-kxmist mt-1">Ask a question or pick a starting point.</p>
+                  {tip && !tipDismissed && (
+                    <div className="kxpert-empty-tip">
+                      <button type="button" className="kxpert-tip-dismiss" aria-label="Dismiss tip" onClick={() => setTipDismissed(true)}><X size={13}/></button>
+                      <span className="block text-[10px] uppercase tracking-wider text-kxpurple mb-1">Quick tip</span>{tip}
+                    </div>
+                  )}
+                  <div className="kxpert-suggestions">
+                    {[
+                      'Explain this page to me',
+                      activeProjectId ? 'Review my project structure' : 'Help me plan a project',
+                      mode === 'plan' ? 'Make an implementation plan' : 'Help me fix a bug',
+                    ].map((suggestion) => <button key={suggestion} type="button" onClick={() => setMessage(suggestion)}>{suggestion}</button>)}
+                  </div>
+                </div>
               )}
               {history.map((m, i) => (
                 <div
@@ -559,50 +598,29 @@ export default function KXpertDrawer() {
 
               {isLoading && (
                 <div className="self-start max-w-[90%] rounded-xl px-3.5 py-2.5 text-[13px] border border-white/10 bg-white/[0.02] text-kxmist">
-                  <p className="text-[11px] font-mono uppercase tracking-wider mb-1.5 bg-gradient-to-r from-kxpurple via-white to-kxpurple bg-[length:200%_100%] bg-clip-text text-transparent animate-shimmer">
-                    {currentPhase}
-                  </p>
-                  {liveSteps.length > 0 && (
-                    <div className="space-y-1">
-                      {liveSteps.map((s, i) => <StepLine key={i} step={s} />)}
-                    </div>
-                  )}
+                  <p className="text-[11px] font-mono uppercase tracking-wider mb-1.5 bg-gradient-to-r from-kxpurple via-white to-kxpurple bg-[length:200%_100%] bg-clip-text text-transparent animate-shimmer">{currentPhase}</p>
+                  {liveSteps.length > 0 && <div className="space-y-1">{liveSteps.map((s, i) => <StepLine key={i} step={s} />)}</div>}
                 </div>
               )}
             </div>
 
-            {activeTag && (
-              <div className="flex items-center justify-between px-4 py-2 border-t border-white/8 bg-white/[0.015]">
-                <span className="text-[11.5px] text-kxmist">
-                  Using <span className="text-kxpurple font-mono">{models.find((m) => m.tag === activeTag)?.label || activeTag}</span> for this conversation
-                </span>
-                <button
-                  onClick={() => {
-                    setActiveTag(null);
-                    sessionStorage.removeItem(`kxpert_active_tag_${sessionId}`);
-                  }}
-                  className="text-[11.5px] text-kxmist hover:text-white"
-                >
-                  Reset to free
-                </button>
-              </div>
-            )}
-
-            <form onSubmit={send} className="flex items-center gap-2 px-4 py-4 border-t border-white/8">
+            <form onSubmit={send} className="kxpert-composer shrink-0 flex items-end gap-2 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+              {activeTag && <span className="kxpert-active-tag" title="Model selected for this conversation">{models.find((m) => m.tag === activeTag)?.label || activeTag}</span>}
               <input
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder={isLoading ? 'Working...' : mode === 'plan' ? 'Describe what you want to plan…' : 'Ask K-XpertAI to build…'}
                 disabled={isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))}
-                className="flex-1 bg-white/[0.02] border border-white/12 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-kxblue"
+                className="kxpert-message-input flex-1 min-w-0 bg-white/[0.02] border border-white/12 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-kxblue"
               />
-              <button type="submit" disabled={isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))} className="w-10 h-10 rounded-lg bg-kx-gradient flex items-center justify-center shrink-0">
+              <button type="submit" disabled={isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))} className="w-11 h-11 rounded-lg bg-kx-gradient flex items-center justify-center shrink-0 disabled:opacity-40" aria-label="Send message">
                 <Send size={15} />
               </button>
             </form>
-          </div>
+          </section>
         </div>
       )}
     </>
   );
+}
 }
