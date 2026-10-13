@@ -74,6 +74,12 @@ export default function Billing() {
     );
   }
 
+  const totalCredits = Math.max(0, Number(credits?.remaining) || 0);
+  const allowanceCredits = Math.max(0, Number(credits?.allowance) || 300);
+  const purchasedCredits = Math.max(0, Number(credits?.purchased) || 0);
+  const freeRemaining = Math.max(0, Math.min(allowanceCredits, totalCredits - purchasedCredits));
+  const freeUsed = Math.max(0, Math.min(allowanceCredits, allowanceCredits - freeRemaining));
+  const numberFormat = new Intl.NumberFormat('en-US');
   const lemonUrl = checkoutUrlWithUser(CHECKOUT_LINKS.lemonsqueezy, user?.id, user?.email);
 
   const payWithPaystack = async () => {
@@ -139,13 +145,25 @@ export default function Billing() {
             <div className="min-w-0">
               <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">AI credits</p>
               {credits ? (
-                <p className="font-display text-2xl font-semibold truncate">
-                  {credits.remaining} <span className="text-kxmist text-base font-normal">/ {credits.allowance} free + {credits.purchased} bought</span>
-                </p>
-              ) : <p className="text-sm text-kxmist">Loading…</p>}
+                <p className="font-display text-3xl font-semibold tabular-nums break-words">{numberFormat.format(totalCredits)}</p>
+              ) : <p className="text-sm text-kxmist">Loading…</p>
             </div>
           </div>
         </div>
+        {credits && (
+          <div className="mt-5 pt-4 border-t border-white/10 space-y-3">
+            <div>
+              <div className="flex items-center justify-between gap-3 text-[12.5px] mb-1.5">
+                <span className="text-kxmist">Free allowance</span>
+                <span className="text-white tabular-nums">{numberFormat.format(freeUsed)} / {numberFormat.format(allowanceCredits)} used this month</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden" role="progressbar" aria-label="Free credits used this month" aria-valuemin="0" aria-valuemax={allowanceCredits} aria-valuenow={freeUsed}>
+                <div className="h-full rounded-full bg-kxblue" style={{ width: (allowanceCredits ? Math.min(100, (freeUsed / allowanceCredits) * 100) : 0) + '%' }} />
+              </div>
+            </div>
+            <p className="text-[12.5px] text-kxmist">{numberFormat.format(purchasedCredits)} purchased credits (never expire)</p>
+          </div>
+        )}
         {profile && (
           <div className="mt-4">
             <Badge tone={profile.is_pro_member ? 'live' : 'default'}>{profile.is_pro_member ? 'Pro member' : 'Free plan'}</Badge>
