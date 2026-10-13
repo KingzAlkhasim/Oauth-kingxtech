@@ -173,7 +173,7 @@ export default function Billing() {
                   <span className="text-kxmist"> · {t.raw_type}</span>
                 </div>
                 <div className="sm:text-right shrink-0">
-                  <p className="font-mono">${Number(t.amount_usd ?? 0).toFixed(2)}</p>
+                  <p className="font-mono">${Math.max(0, Number(t.amount_usd ?? 0) || 0).toFixed(2)}</p>
                   <p className="text-[11px] text-kxmistdim">{new Date(t.processed_at).toLocaleString()}</p>
                 </div>
               </div>
