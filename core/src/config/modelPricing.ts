@@ -55,8 +55,8 @@ export function computeCostUsd(modelCode: string, usage: TokenUsage): number {
   const cached = Math.min(input, Math.max(0, usage.cachedInputTokens || 0));
   const cacheWrite = Math.min(Math.max(0, input - cached), Math.max(0, usage.cacheCreationInputTokens || 0));
   const normalInput = Math.max(0, input - cached - cacheWrite);
-  // If a model has cache-write usage but no explicit write rate, bill it at normal input price.
-  const cacheWriteRate = p.cacheWriteUsdPerMTok ?? p.inputUsdPerMTok;
+  // Missing cache-write pricing is treated conservatively as 2x normal input pricing.
+  const cacheWriteRate = p.cacheWriteUsdPerMTok ?? p.inputUsdPerMTok * 2;
   const value = (
     normalInput * p.inputUsdPerMTok +
     cached * (p.cachedInputUsdPerMTok ?? p.inputUsdPerMTok) +
