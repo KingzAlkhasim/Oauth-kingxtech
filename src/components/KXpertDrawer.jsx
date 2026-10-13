@@ -417,10 +417,15 @@ export default function KXpertDrawer() {
     const next = models.find((m) => m.tag === tag);
     if (next && modelLocked(next)) {
       setUpgradePrompt(next.minTier === 'pro_plus' ? 'Pro+ is required for this model.' : 'Pro is required for this model.');
+      setShowModelSheet(false);
       return;
     }
     setUpgradePrompt('');
     setSelectedTag(tag);
+    if (!tag) {
+      setActiveTag(null);
+      sessionStorage.removeItem(`kxpert_active_tag_${sessionId}`);
+    }
     setShowModelSheet(false);
   };
 
@@ -473,7 +478,7 @@ export default function KXpertDrawer() {
               </button>
             </div>
 
-            {usageAtLimit && (usage?.tier === 'free' || usage?.enforced) && (
+            {usageAtLimit && (
               <p className="kxpert-limit-notice shrink-0" role="status">Usage limit reached · resets {resetLabel(usageResetAt)}</p>
             )}
             {upgradePrompt && (
@@ -493,7 +498,7 @@ export default function KXpertDrawer() {
                     {models.map((m) => (
                       <button type="button" key={m.tag} className={"kxpert-model-option " + (selectedTag === m.tag ? 'is-selected' : '')} onClick={() => chooseModel(m.tag)}>
                         <span className="min-w-0"><strong className="block truncate">{m.label}</strong><small>{m.tag}</small></span>
-                        <span className="kxpert-model-tier">{modelLocked(m) ? (m.minTier === 'pro_plus' ? 'Pro+' : 'Pro') : (m.minTier === 'pro_plus' ? 'Pro+' : m.minTier === 'pro' ? 'Pro' : 'Free')}</span>
+                        <span className="kxpert-model-tier">{modelLocked(m) ? (m.minTier === 'pro_plus' ? '🔒 Pro+' : '🔒 Pro') : (m.minTier === 'pro_plus' ? 'Pro+' : m.minTier === 'pro' ? 'Pro' : 'Free')}</span>
                       </button>
                     ))}
                     {!models.length && <p className="text-[12px] text-kxmist px-3 py-4">Loading models…</p>}
