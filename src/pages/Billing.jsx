@@ -146,7 +146,7 @@ export default function Billing() {
               <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">AI credits</p>
               {credits ? (
                 <p className="font-display text-3xl font-semibold tabular-nums break-words">{numberFormat.format(totalCredits)}</p>
-              ) : <p className="text-sm text-kxmist">Loading…</p>
+              ) : <p className="text-sm text-kxmist">Loading…</p>}
             </div>
           </div>
         </div>
