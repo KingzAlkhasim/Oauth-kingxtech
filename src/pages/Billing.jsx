@@ -107,11 +107,11 @@ export default function Billing() {
 
       {/* Go Pro — styled as a highlighted price pill to match the preset-button
           look used elsewhere on this page, since $20/mo is a fixed price, not
-          an arbitrary amount like the top-up/convert sections above. */}
+          an arbitrary amount like the wallet top-up below. */}
       {profile && !profile.is_pro_member && (
         <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
           <h2 className="font-display text-[16px] font-medium mb-1">Go Pro</h2>
-          <p className="text-[13px] text-kxmist mb-4">Unlocks premium models (Claude Opus, GPT-5.6, Gemini Pro) and SecureCheck. Credited the moment a real payment confirms via webhook.</p>
+          <p className="text-[13px] text-kxmist mb-4">Unlocks premium models and SecureCheck. Pro activates after Paystack confirms your payment.</p>
 
           <div className="flex flex-wrap gap-2 mb-4">
             <span className="px-4 py-2 rounded-lg text-[13.5px] border border-kxblue bg-kxblue/10 text-kxblue font-medium">
