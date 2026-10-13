@@ -65,11 +65,13 @@ export const generateContent = async (
     }
     if (!succeeded) throw lastErr;
   } else if (provider === 'gemma-google') {
+    let gemmaToolStepSeen = false;
+    const gemmaOpts = { ...opts, onStep: (step: ToolStep) => { gemmaToolStepSeen = true; onStep?.(step); } };
     try {
-      result = await runGemmaGoogleAgent(opts);
+      result = await runGemmaGoogleAgent(gemmaOpts);
     } catch (error) {
       console.error('[aiRouter] Gemma unavailable; attempting a free-model fallback.', error);
-      if (!shouldFallbackToFreeModel(provider, true)) throw new Error(sanitizeGemmaError(error));
+      if (!shouldFallbackToFreeModel(provider, true, gemmaToolStepSeen)) throw new Error(sanitizeGemmaError(error));
       const fallback = resolveDefaultModelForTier('free', REGISTRY);
       try {
         result = await generateContent(prompt, fallback.provider, fallback.modelId, history, ctx, onStep, onUsage);
