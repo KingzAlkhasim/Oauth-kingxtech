@@ -468,11 +468,11 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   };
 
   const turnId = crypto.randomUUID();
-  const usageTotals = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
+  const usageTotals = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheCreationInputTokens: 0 };
   let usageSeen = false;
   let finalAiText = '';
-  const onProviderUsage = (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number}) => {
-    usageSeen=true; usageTotals.inputTokens+=usage.inputTokens; usageTotals.outputTokens+=usage.outputTokens; usageTotals.cachedInputTokens+=usage.cachedInputTokens;
+  const onProviderUsage = (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number;cacheCreationInputTokens?:number}) => {
+    usageSeen=true; usageTotals.inputTokens+=usage.inputTokens; usageTotals.outputTokens+=usage.outputTokens; usageTotals.cachedInputTokens+=usage.cachedInputTokens; usageTotals.cacheCreationInputTokens+=usage.cacheCreationInputTokens??0;
     if(!shouldEnforcePaidUsage(env.AI_USAGE_MODE,usageTier)||usageTier==='free')return;
     return computeCostUsd(model.code,usageTotals)<=PLAN_LIMITS[usageTier].maxRunCostUsd;
   };
@@ -546,9 +546,9 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     if(req.authMethod!=='api_key'){
       try{
         const estimated=!usageSeen||(usageTotals.inputTokens+usageTotals.outputTokens===0);
-        if(estimated){usageTotals.inputTokens=Math.max(1,Math.ceil(cleanPrompt.length/2));usageTotals.outputTokens=model.minTier==='free'?Math.ceil(finalAiText.length/2):Math.max(512,Math.ceil(finalAiText.length/2));usageTotals.cachedInputTokens=0;}
+        if(estimated){usageTotals.inputTokens=Math.max(1,Math.ceil(cleanPrompt.length/2));usageTotals.outputTokens=model.minTier==='free'?Math.ceil(finalAiText.length/2):Math.max(512,Math.ceil(finalAiText.length/2));usageTotals.cachedInputTokens=0;usageTotals.cacheCreationInputTokens=0;}
         const costUsd=computeCostUsd(model.code,usageTotals),limits=usageTier==='free'?{sessionHours:5,weekDays:7}:PLAN_LIMITS[usageTier];
-        await recordAiUsage({userId,projectId:activeProjectId,source:activeProjectId?'agent':'chat',provider:model.provider,modelCode:model.code,inputTokens:usageTotals.inputTokens,outputTokens:usageTotals.outputTokens,cachedInputTokens:usageTotals.cachedInputTokens,costUsd,tier:usageTier,estimated,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
+        await recordAiUsage({userId,projectId:activeProjectId,source:activeProjectId?'agent':'chat',provider:model.provider,modelCode:model.code,inputTokens:usageTotals.inputTokens,outputTokens:usageTotals.outputTokens,cachedInputTokens:usageTotals.cachedInputTokens,cacheCreationInputTokens:usageTotals.cacheCreationInputTokens,costUsd,tier:usageTier,estimated,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
       }catch(ledgerError){console.error('[ai-usage-ledger] Failed to record usage; request response is preserved:',ledgerError)}
     }
     // Cloud Run can scale an instance down between requests, and Sentry
