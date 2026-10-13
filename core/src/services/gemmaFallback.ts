@@ -1,5 +1,5 @@
-export function shouldFallbackToFreeModel(provider: string, gemmaFailed: boolean): boolean {
-  return provider === 'gemma-google' && gemmaFailed;
+export function shouldFallbackToFreeModel(provider: string, gemmaFailed: boolean, toolSideEffectsOccurred = false): boolean {
+  return provider === 'gemma-google' && gemmaFailed && !toolSideEffectsOccurred;
 }
 
 /** Google provider internals and request URLs are never suitable for client-facing errors. */
