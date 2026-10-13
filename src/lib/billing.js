@@ -41,3 +41,7 @@ export async function initializePaystackTopup(amountUsd) {
 export async function chargeUser(cost) {
   return supabase.rpc('charge_user', { cost });
 }
+
+export const CHECKOUT_LINKS = {
+  paystack: import.meta.env.VITE_PAYSTACK_CHECKOUT_URL || null,
+};
