@@ -12,10 +12,10 @@ export async function getAiUsageState(userId:string):Promise<{sessionStart:strin
  if(error)throw new Error(`getAiUsageState failed: ${error.message}`);
  return {sessionStart:data?.session_start??null,sessionSpentUsd:Number(data?.session_spent_usd??0),weekStart:data?.week_start??null,weekSpentUsd:Number(data?.week_spent_usd??0)};
 }
-export async function recordAiUsage(input:{userId:string;projectId?:string;source:'chat'|'agent'|'securecheck';provider:string;modelCode:string;inputTokens:number;outputTokens:number;cachedInputTokens:number;costUsd:number;tier:UserTier;estimated:boolean;sessionHours:number;weekDays:number}):Promise<void>{
+export async function recordAiUsage(input:{userId:string;projectId?:string;source:'chat'|'agent'|'securecheck';provider:string;modelCode:string;inputTokens:number;outputTokens:number;cachedInputTokens:number;cacheCreationInputTokens?:number;costUsd:number;tier:UserTier;estimated:boolean;sessionHours:number;weekDays:number}):Promise<void>{
  const {error:rpcError}=await supabaseAdmin.rpc('ai_usage_record',{p_user_id:input.userId,p_cost_usd:input.costUsd,p_session_hours:input.sessionHours,p_week_days:input.weekDays});
  if(rpcError)throw new Error(`ai_usage_record failed: ${rpcError.message}`);
- const {error}=await supabaseAdmin.from('ai_usage_ledger').insert({user_id:input.userId,project_id:input.projectId??null,source:input.source,provider:input.provider,model_code:input.modelCode,input_tokens:input.inputTokens,output_tokens:input.outputTokens,cached_input_tokens:input.cachedInputTokens,cost_usd:input.costUsd,tier_at_time:input.tier,usage_estimated:input.estimated});
+ const {error}=await supabaseAdmin.from('ai_usage_ledger').insert({user_id:input.userId,project_id:input.projectId??null,source:input.source,provider:input.provider,model_code:input.modelCode,input_tokens:input.inputTokens,output_tokens:input.outputTokens,cached_input_tokens:input.cachedInputTokens,cache_creation_input_tokens:input.cacheCreationInputTokens??0,cost_usd:input.costUsd,tier_at_time:input.tier,usage_estimated:input.estimated});
  if(error)throw new Error(`ai_usage_ledger insert failed: ${error.message}`);
 }
 
