@@ -7,7 +7,8 @@ export interface ModelOption {
   provider: Provider;
   modelId: string;
   tier: 'free' | 'limited' | 'premium';
-  /** Credits deducted from the monthly pool per message, until real billing exists. */
+  minTier: 'free' | 'pro' | 'pro_plus';
+  /** Legacy credits cost retained for shadow-mode compatibility. */
   creditCost: number;
   /** Hard cap on requests/month for this specific model, independent of the credit pool. */
   requestCap?: number;
@@ -26,36 +27,38 @@ export const REGISTRY: ModelOption[] = [
   // these cost KingxTech nothing per request, unlike everything below. Free
   // (unpaid) users can ONLY use these. Still costs a few credits per
   // message so a single user can't monopolize the shared OpenRouter quota.
-  { code: 'qwen', provider: 'openweights', modelId: env.QWEN_MODEL_ID, tier: 'free', creditCost: 2, requiresPaidPlan: false, label: 'Qwen3 Coder (free)' },
-  { code: 'llama', provider: 'openweights', modelId: env.LLAMA_MODEL_ID, tier: 'free', creditCost: 2, requiresPaidPlan: false, label: 'Llama 3.3 (free)' },
-  { code: 'nemotron', provider: 'openweights', modelId: env.NEMOTRON_MODEL_ID, tier: 'free', creditCost: 2, requiresPaidPlan: false, label: 'Nemotron 3 Nano (free)' },
-  { code: 'deepseek', provider: 'openweights', modelId: env.DEEPSEEK_MODEL_ID, tier: 'free', creditCost: 2, requiresPaidPlan: false, label: 'DeepSeek (free)' },
+  { code: 'qwen', provider: 'openweights', modelId: env.QWEN_MODEL_ID, tier: 'free', creditCost: 2, minTier: 'free', requiresPaidPlan: false, label: 'Qwen3 Coder (free)' },
+  { code: 'llama', provider: 'openweights', modelId: env.LLAMA_MODEL_ID, tier: 'free', creditCost: 2, minTier: 'free', requiresPaidPlan: false, label: 'Llama 3.3 (free)' },
+  { code: 'nemotron', provider: 'openweights', modelId: env.NEMOTRON_MODEL_ID, tier: 'free', creditCost: 2, minTier: 'free', requiresPaidPlan: false, label: 'Nemotron 3 Nano (free)' },
+  { code: 'deepseek', provider: 'openweights', modelId: env.DEEPSEEK_MODEL_ID, tier: 'free', creditCost: 2, minTier: 'free', requiresPaidPlan: false, label: 'DeepSeek (free)' },
   // Routed through Google's own Gemini API (not OpenRouter) using a
   // separate free-tier key — see providers/gemmaGoogle.ts.
-  { code: 'gemma', provider: 'gemma-google', modelId: env.GEMMA_MODEL_ID, tier: 'free', creditCost: 2, requiresPaidPlan: false, label: 'Gemma 4 31B (free, Google)' },
+  { code: 'gemma', provider: 'gemma-google', modelId: env.GEMMA_MODEL_ID, tier: 'free', creditCost: 2, minTier: 'free', requiresPaidPlan: false, label: 'Gemma 4 31B (free, Google)' },
 
   // Everything below requires a paid plan — either it costs KingxTech real
   // money per call (Gemini), or it's a premium third-party model.
-  { code: 'flash', provider: 'gemini', modelId: 'gemini-3.8-flash', tier: 'limited', creditCost: 5, requestCap: 5, requiresPaidPlan: true, label: 'Gemini 3.8 Flash' },
-  { code: 'flash37', provider: 'gemini', modelId: 'gemini-3.7-flash', tier: 'limited', creditCost: 5, requestCap: 5, requiresPaidPlan: true, label: 'Gemini 3.7 Flash' },
-  { code: 'flashlite', provider: 'gemini', modelId: 'gemini-3.5-flash-lite', tier: 'limited', creditCost: 3, requestCap: 10, requiresPaidPlan: true, label: 'Gemini 3.5 Flash-Lite' },
-  { code: 'pro', provider: 'gemini', modelId: 'gemini-3.1-pro-preview', tier: 'premium', creditCost: 13, requiresPaidPlan: true, label: 'Gemini 3.1 Pro' },
-  { code: 'sonnet', provider: 'anthropic', modelId: 'claude-sonnet-5-5', tier: 'premium', creditCost: 17, requiresPaidPlan: true, label: 'Claude Sonnet 5.5' },
-  { code: 'opus', provider: 'anthropic', modelId: 'claude-opus-5-5', tier: 'premium', creditCost: 25, requiresPaidPlan: true, label: 'Claude Opus 5.5' },
-  { code: 'haiku', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', tier: 'premium', creditCost: 3, requiresPaidPlan: true, label: 'Claude Haiku 4.5' },
-  { code: 'fable', provider: 'anthropic', modelId: 'claude-fable-5-1', tier: 'premium', creditCost: 40, requiresPaidPlan: true, label: 'Claude Fable 5.1' },
-  { code: 'sonnet5', provider: 'anthropic', modelId: 'claude-sonnet-5', tier: 'premium', creditCost: 17, requiresPaidPlan: true, label: 'Claude Sonnet 5' },
-  { code: 'opus5', provider: 'anthropic', modelId: 'claude-opus-5', tier: 'premium', creditCost: 22, requiresPaidPlan: true, label: 'Claude Opus 5' },
-  { code: 'sol', provider: 'openai', modelId: 'gpt-5.6-sol', tier: 'premium', creditCost: 25, requiresPaidPlan: true, label: 'GPT-5.6 Sol' },
-  { code: 'terra', provider: 'openai', modelId: 'gpt-5.6-terra', tier: 'premium', creditCost: 15, requiresPaidPlan: true, label: 'GPT-5.6 Terra' },
-  { code: 'luna', provider: 'openai', modelId: 'gpt-5.6-luna', tier: 'premium', creditCost: 12, requiresPaidPlan: true, label: 'GPT-5.6 Luna' },
-  { code: 'gpt6sol', provider: 'openai', modelId: 'gpt-6-sol', tier: 'premium', creditCost: 30, requiresPaidPlan: true, label: 'GPT-6 Sol' },
-  { code: 'gpt6luna', provider: 'openai', modelId: 'gpt-6-luna', tier: 'premium', creditCost: 8, requiresPaidPlan: true, label: 'GPT-6 Luna' },
-  { code: 'gpt55', provider: 'openai', modelId: 'gpt-5.5', tier: 'premium', creditCost: 28, requiresPaidPlan: true, label: 'GPT-5.5' },
-  { code: 'gpt54', provider: 'openai', modelId: 'gpt-5.4', tier: 'premium', creditCost: 20, requiresPaidPlan: true, label: 'GPT-5.4' },
-  { code: 'gpt54mini', provider: 'openai', modelId: 'gpt-5.4-mini', tier: 'premium', creditCost: 10, requiresPaidPlan: true, label: 'GPT-5.4 Mini' },
-  { code: 'gpt53codex', provider: 'openai', modelId: 'gpt-5.3-codex', tier: 'premium', creditCost: 24, requiresPaidPlan: true, label: 'GPT-5.3 Codex' },
+  { code: 'flash', provider: 'gemini', modelId: 'gemini-3.8-flash', tier: 'limited', creditCost: 5, requestCap: 5, minTier: 'pro', requiresPaidPlan: true, label: 'Gemini 3.8 Flash' },
+  { code: 'flash37', provider: 'gemini', modelId: 'gemini-3.7-flash', tier: 'limited', creditCost: 5, requestCap: 5, minTier: 'pro', requiresPaidPlan: true, label: 'Gemini 3.7 Flash' },
+  { code: 'flashlite', provider: 'gemini', modelId: 'gemini-3.5-flash-lite', tier: 'limited', creditCost: 3, requestCap: 10, minTier: 'pro', requiresPaidPlan: true, label: 'Gemini 3.5 Flash-Lite' },
+  { code: 'pro', provider: 'gemini', modelId: 'gemini-3.1-pro-preview', tier: 'premium', creditCost: 13, minTier: 'pro', requiresPaidPlan: true, label: 'Gemini 3.1 Pro' },
+  { code: 'sonnet', provider: 'anthropic', modelId: 'claude-sonnet-5-5', tier: 'premium', creditCost: 17, minTier: 'pro', requiresPaidPlan: true, label: 'Claude Sonnet 5.5' },
+  { code: 'opus', provider: 'anthropic', modelId: 'claude-opus-5-5', tier: 'premium', creditCost: 25, minTier: 'pro', requiresPaidPlan: true, label: 'Claude Opus 5.5' },
+  { code: 'haiku', provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', tier: 'premium', creditCost: 3, minTier: 'pro', requiresPaidPlan: true, label: 'Claude Haiku 4.5' },
+  { code: 'fable', provider: 'anthropic', modelId: 'claude-fable-5-1', tier: 'premium', creditCost: 40, minTier: 'pro_plus', requiresPaidPlan: true, label: 'Claude Fable 5.1' },
+  { code: 'sonnet5', provider: 'anthropic', modelId: 'claude-sonnet-5', tier: 'premium', creditCost: 17, minTier: 'pro', requiresPaidPlan: true, label: 'Claude Sonnet 5' },
+  { code: 'opus5', provider: 'anthropic', modelId: 'claude-opus-5', tier: 'premium', creditCost: 22, minTier: 'pro', requiresPaidPlan: true, label: 'Claude Opus 5' },
+  { code: 'sol', provider: 'openai', modelId: 'gpt-5.6-sol', tier: 'premium', creditCost: 25, minTier: 'pro', requiresPaidPlan: true, label: 'GPT-5.6 Sol' },
+  { code: 'terra', provider: 'openai', modelId: 'gpt-5.6-terra', tier: 'premium', creditCost: 15, minTier: 'pro', requiresPaidPlan: true, label: 'GPT-5.6 Terra' },
+  { code: 'luna', provider: 'openai', modelId: 'gpt-5.6-luna', tier: 'premium', creditCost: 12, minTier: 'pro', requiresPaidPlan: true, label: 'GPT-5.6 Luna' },
+  { code: 'gpt6sol', provider: 'openai', modelId: 'gpt-6-sol', tier: 'premium', creditCost: 30, minTier: 'pro_plus', requiresPaidPlan: true, label: 'GPT-6 Sol' },
+  { code: 'gpt6luna', provider: 'openai', modelId: 'gpt-6-luna', tier: 'premium', creditCost: 8, minTier: 'pro_plus', requiresPaidPlan: true, label: 'GPT-6 Luna' },
+  { code: 'gpt55', provider: 'openai', modelId: 'gpt-5.5', tier: 'premium', creditCost: 28, minTier: 'pro', requiresPaidPlan: true, label: 'GPT-5.5' },
+  { code: 'gpt54', provider: 'openai', modelId: 'gpt-5.4', tier: 'premium', creditCost: 20, minTier: 'pro', requiresPaidPlan: true, label: 'GPT-5.4' },
+  { code: 'gpt54mini', provider: 'openai', modelId: 'gpt-5.4-mini', tier: 'premium', creditCost: 10, minTier: 'pro', requiresPaidPlan: true, label: 'GPT-5.4 Mini' },
+  { code: 'gpt53codex', provider: 'openai', modelId: 'gpt-5.3-codex', tier: 'premium', creditCost: 24, minTier: 'pro', requiresPaidPlan: true, label: 'GPT-5.3 Codex' },
 ];
+
+for (const model of REGISTRY) model.requiresPaidPlan = model.minTier !== 'free';
 
 const PREFIXES: Record<string, Provider> = { g: 'gemini', c: 'anthropic', o: 'openai', q: 'openweights', d: 'gemma-google' };
 const PREFIX_BY_PROVIDER: Record<Provider, string> = { gemini: 'G', anthropic: 'C', openai: 'O', openweights: 'Q', 'gemma-google': 'D' };
@@ -122,5 +125,6 @@ export function listModelsForClient() {
     creditCost: m.creditCost,
     requestCap: m.requestCap ?? null,
     requiresPaidPlan: m.requiresPaidPlan,
+    minTier: m.minTier,
   }));
 }

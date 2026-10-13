@@ -30,3 +30,7 @@ jobs:
       - name: Type-check core
         working-directory: core
         run: npx tsc --noEmit
+
+      - name: Run AI usage tests
+        working-directory: core
+        run: npm test

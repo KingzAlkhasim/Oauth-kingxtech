@@ -55,6 +55,8 @@ export interface ToolStep {
   summary: string;
 }
 
+export interface AgentUsage { inputTokens:number; outputTokens:number; cachedInputTokens:number; cacheCreationInputTokens?:number; }
+
 export interface AgentOpts {
   modelId: string;
   history: AgentTurn[];
@@ -63,9 +65,10 @@ export interface AgentOpts {
   ctx: ProjectContext;
   /** Called immediately after each tool call finishes, for live progress streaming. */
   onStep?: (step: ToolStep) => void;
+  onUsage?: (usage: AgentUsage) => boolean | void;
 }
 
-export interface AgentResult {
+export interface AgentResult extends AgentUsage {
   text: string;
   steps: ToolStep[];
 }

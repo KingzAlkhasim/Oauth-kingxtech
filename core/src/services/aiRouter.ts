@@ -14,10 +14,11 @@ export const generateContent = async (
   modelId: string,
   history: AgentTurn[],
   ctx: ProjectContext,
-  onStep?: (step: ToolStep) => void
+  onStep?: (step: ToolStep) => void,
+  onUsage?: (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number;cacheCreationInputTokens?:number}) => boolean | void
 ): Promise<AgentResult> => {
   const tools = toolsForContext(ctx);
-  const opts = { modelId, history, prompt, tools, ctx, onStep };
+  const opts = { modelId, history, prompt, tools, ctx, onStep, onUsage };
 
   let result: AgentResult;
   if (provider === 'anthropic') {

@@ -13,6 +13,7 @@ import {
 } from '../lib/billing';
 import { getCredits } from '../lib/aiUsage';
 import { supabase } from '../lib/supabase';
+import { API_BASE } from '../lib/apiBase';
 import { Card, Button, Badge, ExpandableList } from '../components/ui';
 import { Wallet, Zap, Database as DatabaseIcon, ExternalLink } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export default function Billing() {
   const [credits, setCredits] = useState(null);
   const [error, setError] = useState('');
   const [txns, setTxns] = useState(null);
+  const [usage, setUsage] = useState(null);
 
   const [proLoading, setProLoading] = useState(false);
   const [proError, setProError] = useState('');
@@ -53,6 +55,7 @@ export default function Billing() {
 
   useEffect(() => {
     refresh();
+    (async()=>{try{const {data:{session}}=await supabase.auth.getSession();if(!session)return;const response=await fetch(`${API_BASE}/api/ai/usage`,{headers:{Authorization:`Bearer ${session.access_token}`}});const data=await response.json();if(data.tier)setUsage(data);}catch{/* non-blocking meter */}})();
     supabase.from('billing_events').select('*').order('processed_at', { ascending: false }).limit(50)
       .then(({ data, error: e }) => setTxns(e ? [] : data));
   }, []);
@@ -118,6 +121,8 @@ export default function Billing() {
       {error && error !== 'SETUP' && (
         <p className="text-[12.5px] text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2 mb-5 break-words">{error}</p>
       )}
+
+      {usage&&<Card className="p-5 sm:p-6 rounded-[20px] mb-5 min-w-0"><h2 className="font-display text-[16px] font-medium mb-1">AI usage</h2><p className="text-[12px] text-kxmist mb-4">Your usage resets automatically at the times shown below.</p><div className="grid sm:grid-cols-2 gap-4">{[{label:'Session usage',percent:usage.sessionPercent,reset:usage.sessionResetsAt},{label:'Weekly usage',percent:usage.weekPercent,reset:usage.weekResetsAt}].map((item)=><div key={item.label} className="min-w-0"><div className="flex items-center justify-between gap-2 text-[12px] mb-1"><span>{item.label}</span><span className="tabular-nums">{item.percent}%</span></div><div className="h-2 w-full rounded-full bg-white/10 overflow-hidden"><div className={`h-full rounded-full ${item.percent>=80?'bg-amber-400':'bg-kxblue'}`} style={{width:`${Math.max(0,Math.min(100,item.percent))}%`}}/></div><p className="text-[11px] text-kxmist mt-1">{new Date(item.reset).toLocaleString()}</p></div>)}</div>{(usage.sessionPercent>=80||usage.weekPercent>=80)&&<p className="text-[12px] text-amber-300 mt-3">You're close to your limit.</p>}</Card>}
 
       {/* Balance overview */}
       <Card className="p-5 sm:p-6 rounded-[20px] mb-5">

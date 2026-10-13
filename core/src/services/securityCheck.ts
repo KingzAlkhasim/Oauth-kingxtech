@@ -11,9 +11,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 // and report, never touch anything.
 const CLAUDE_MODEL_ID = 'claude-sonnet-5';
 const GEMINI_MODEL_ID = 'gemini-3.8-flash';
-export const SECURITY_CHECK_CREDIT_COST = 14; // One SecureCheck run costs 14 credits, regardless of whether Claude succeeds or fallback Gemini runs.
+export const SECURITY_CHECK_CREDIT_COST = 14;
 
-const MAX_CONTEXT_CHARS = 60_000; // keep both calls well inside context limits regardless of project size
+const MAX_CONTEXT_CHARS = 60_000;
 
 const SYSTEM_PROMPT = `You are a senior application security reviewer. You are given the full source of a web project.
 Review it for real, concrete security issues only — do not invent hypothetical ones. Focus on things like:
@@ -37,27 +37,85 @@ function buildFileContext(files: { path: string; content: string | null }[]): st
   for (const f of files) {
     if (!f.content) continue;
     const chunk = `\n\n--- FILE: ${f.path} ---\n${f.content}`;
-    if (context.length + chunk.length > MAX_CONTEXT_CHARS) break; // truncate rather than blow the context window
+    if (context.length + chunk.length > MAX_CONTEXT_CHARS) break;
     context += chunk;
   }
   return context;
 }
 
-async function reviewWithClaude(fileContext: string): Promise<string> {
+export interface SecurityUsage {
+  provider: 'anthropic' | 'google';
+  modelCode: 'sonnet5' | 'flash';
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  cacheCreationInputTokens: number;
+  estimated: boolean;
+}
+interface SecurityReview {
+  text: string;
+  usage: SecurityUsage;
+}
+function estimateTokens(text: string): number {
+  // Conservative text-only estimate used only when the provider omits token usage.
+  return Math.max(1, Math.ceil(text.length / 3));
+}
+
+async function reviewWithClaude(fileContext: string): Promise<SecurityReview> {
+  const userPrompt = `Project source follows:${fileContext}`;
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL_ID,
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: `Project source follows:${fileContext}` }],
+    messages: [{ role: 'user', content: userPrompt }],
   });
   const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
-  return textBlock?.text ?? '(Claude returned no text response.)';
+  const text = textBlock?.text ?? '(Claude returned no text response.)';
+  const usage = response.usage as Anthropic.Usage & {
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  };
+  const normalInput = usage.input_tokens ?? 0;
+  const cachedInput = usage.cache_read_input_tokens ?? 0;
+  const cacheCreation = usage.cache_creation_input_tokens ?? 0;
+  const output = usage.output_tokens ?? 0;
+  const hasUsage = normalInput + cachedInput + cacheCreation + output > 0;
+  return {
+    text,
+    usage: {
+      provider: 'anthropic',
+      modelCode: 'sonnet5',
+      inputTokens: hasUsage ? normalInput + cachedInput + cacheCreation : estimateTokens(SYSTEM_PROMPT + userPrompt),
+      outputTokens: hasUsage ? output : estimateTokens(text),
+      cachedInputTokens: cachedInput,
+      cacheCreationInputTokens: cacheCreation,
+      estimated: !hasUsage,
+    },
+  };
 }
 
-async function reviewWithGemini(fileContext: string): Promise<string> {
+async function reviewWithGemini(fileContext: string): Promise<SecurityReview> {
+  const userPrompt = `Project source follows:${fileContext}`;
   const model = genAI.getGenerativeModel({ model: GEMINI_MODEL_ID, systemInstruction: SYSTEM_PROMPT });
-  const result = await model.generateContent(`Project source follows:${fileContext}`);
-  return result.response.text() || '(Gemini returned no text response.)';
+  const result = await model.generateContent(userPrompt);
+  const text = result.response.text() || '(Gemini returned no text response.)';
+  const usage = result.response.usageMetadata;
+  const input = usage?.promptTokenCount ?? 0;
+  const output = usage?.candidatesTokenCount ?? 0;
+  const cached = usage?.cachedContentTokenCount ?? 0;
+  const hasUsage = input + output > 0;
+  return {
+    text,
+    usage: {
+      provider: 'google',
+      modelCode: 'flash',
+      inputTokens: hasUsage ? input : estimateTokens(SYSTEM_PROMPT + userPrompt),
+      outputTokens: hasUsage ? output : estimateTokens(text),
+      cachedInputTokens: cached,
+      cacheCreationInputTokens: 0,
+      estimated: !hasUsage,
+    },
+  };
 }
 
 export interface SecurityCheckResult {
@@ -67,29 +125,31 @@ export interface SecurityCheckResult {
   geminiError: string | null;
   filesReviewed: number;
   generatedAt: string;
+  usage: SecurityUsage;
 }
 
 export async function runSecurityCheck(userId: string, projectId: string): Promise<SecurityCheckResult> {
   const files = await listProjectFilesWithContent(userId, projectId);
   const fileContext = buildFileContext(files);
-
-  // SecureCheck is deliberately sequential: Claude is the primary reviewer.
-  // Gemini 3.8 Flash is only used when Claude fails, avoiding two provider
-  // calls for every run while keeping a fallback available.
   let claude: string | null = null;
   let gemini: string | null = null;
   let claudeError: string | null = null;
   let geminiError: string | null = null;
+  let usage: SecurityUsage | null = null;
 
   try {
-    claude = await reviewWithClaude(fileContext);
+    const review = await reviewWithClaude(fileContext);
+    claude = review.text;
+    usage = review.usage;
   } catch (error) {
     claudeError = String((error as Error)?.message ?? error);
   }
 
   if (!claude) {
     try {
-      gemini = await reviewWithGemini(fileContext);
+      const review = await reviewWithGemini(fileContext);
+      gemini = review.text;
+      usage = review.usage;
     } catch (error) {
       geminiError = String((error as Error)?.message ?? error);
     }
@@ -98,6 +158,7 @@ export async function runSecurityCheck(userId: string, projectId: string): Promi
   if (!claude && !gemini) {
     throw new Error(`SecureCheck: primary and fallback reviewers failed. Claude: ${claudeError}. Gemini: ${geminiError}`);
   }
+  if (!usage) throw new Error('SecureCheck completed without usage accounting data.');
   return {
     claude,
     gemini,
@@ -105,5 +166,6 @@ export async function runSecurityCheck(userId: string, projectId: string): Promi
     geminiError,
     filesReviewed: files.filter((f) => f.content).length,
     generatedAt: new Date().toISOString(),
+    usage,
   };
 }

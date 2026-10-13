@@ -33,7 +33,10 @@ function toGeminiTool(t: ToolDef): FunctionDeclaration {
  */
 export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI) {
   return async function runAgent(opts: AgentOpts): Promise<AgentResult> {
-    const { modelId, history, prompt, tools, ctx, onStep } = opts;
+    const { modelId, history, prompt, tools, ctx, onStep, onUsage } = opts;
+    let inputTokens=0, outputTokens=0, cachedInputTokens=0;
+    const usageTotals=()=>({inputTokens,outputTokens,cachedInputTokens});
+    const stoppedNote='\n\nStopped to protect your usage. You can continue after your usage window resets.';
     const geminiTools: GeminiTool[] = [{ functionDeclarations: tools.map(toGeminiTool) }];
 
     const model = genAI.getGenerativeModel({ model: modelId, tools: geminiTools, systemInstruction: buildSystemInstruction(ctx.readOnly) });
@@ -47,19 +50,21 @@ export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI) {
     const deadlineAt = Date.now() + AGENT_MAX_DURATION_MS;
 
     const generate = () => model.generateContent({ contents });
-    let result;
+    let result: Awaited<ReturnType<typeof model.generateContent>>;
     try {
       result = await runProviderCall(generate, deadlineAt);
     } catch (error) {
-      if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps };
+      if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
       throw error;
     }
 
+    const trackUsage=()=>{const u=result.response.usageMetadata;const input=u?.promptTokenCount??0,output=u?.candidatesTokenCount??0,cached=u?.cachedContentTokenCount??0;inputTokens+=input;outputTokens+=output;cachedInputTokens+=cached;return onUsage?.({inputTokens:input,outputTokens:output,cachedInputTokens:cached});};
+    if(trackUsage()===false)return {text:((result.response.candidates?.[0]?.content?.parts?.map((part)=>('text' in part ? part.text : '')??'').filter(Boolean).join('\n'))||buildAgentTimeoutSummary(steps))+stoppedNote,steps,...usageTotals()};
     let call = result.response.functionCalls()?.[0];
     let iterations = 0;
 
     while (call && iterations < AGENT_MAX_TOOL_STEPS) {
-      if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps };
+      if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
 
       const modelContent = result.response.candidates?.[0]?.content;
       if (!modelContent) {
@@ -98,13 +103,14 @@ export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI) {
       try {
         result = await runProviderCall(generate, deadlineAt);
       } catch (error) {
-        if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps };
+        if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
         throw error;
       }
+      if(trackUsage()===false)return {text:buildAgentTimeoutSummary(steps)+stoppedNote,steps,...usageTotals()};
       call = result.response.functionCalls()?.[0];
     }
 
-    if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps };
-    return { text: result.response.text() || 'No response generated.', steps };
+    if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
+    return { text: result.response.text() || 'No response generated.', steps, ...usageTotals() };
   };
 }

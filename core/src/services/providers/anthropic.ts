@@ -9,7 +9,10 @@ function toAnthropicTool(t: ToolDef): Anthropic.Tool {
 }
 
 export async function runAnthropicAgent(opts: AgentOpts): Promise<AgentResult> {
-  const { modelId, history, prompt, tools, ctx, onStep } = opts;
+  const { modelId, history, prompt, tools, ctx, onStep, onUsage } = opts;
+  let inputTokens=0, outputTokens=0, cachedInputTokens=0, cacheCreationInputTokens=0;
+  const usageTotals=()=>({inputTokens,outputTokens,cachedInputTokens,cacheCreationInputTokens});
+  const stoppedNote='\n\nStopped to protect your usage. You can continue after your usage window resets.';
 
   const messages: Anthropic.MessageParam[] = [
     ...history.map((h) => ({ role: (h.role === 'model' ? 'assistant' : 'user') as 'assistant' | 'user', content: h.text })),
@@ -22,7 +25,7 @@ export async function runAnthropicAgent(opts: AgentOpts): Promise<AgentResult> {
   const deadlineAt = Date.now() + AGENT_MAX_DURATION_MS;
 
   while (iterations < AGENT_MAX_TOOL_STEPS) {
-    if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps };
+    if (Date.now() >= deadlineAt) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
     let response: Anthropic.Message;
     try {
       response = await runProviderCall(
@@ -36,17 +39,22 @@ export async function runAnthropicAgent(opts: AgentOpts): Promise<AgentResult> {
         deadlineAt
       );
     } catch (error) {
-      if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps };
+      if (isAgentTimeout(error)) return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
       throw error;
     }
 
+    const usage=response.usage as Anthropic.Usage & { cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null };
+    const cached=usage.cache_read_input_tokens??0, cacheWrite=usage.cache_creation_input_tokens??0;
+    const currentInput=(usage.input_tokens??0)+cached+cacheWrite;
+    inputTokens+=currentInput; outputTokens+=(usage.output_tokens??0); cachedInputTokens+=cached; cacheCreationInputTokens+=cacheWrite;
+    if(onUsage?.({inputTokens:currentInput,outputTokens:usage.output_tokens??0,cachedInputTokens:cached,cacheCreationInputTokens:cacheWrite})===false)return {text:((response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text)||buildAgentTimeoutSummary(steps))+stoppedNote,steps,...usageTotals()};
     const toolUseBlocks = response.content.filter(
       (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
     );
 
     if (toolUseBlocks.length === 0) {
       const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
-      return { text: textBlock?.text || 'No response generated.', steps };
+      return { text: textBlock?.text || 'No response generated.', steps, ...usageTotals() };
     }
 
     messages.push({ role: 'assistant', content: response.content });
@@ -68,5 +76,5 @@ export async function runAnthropicAgent(opts: AgentOpts): Promise<AgentResult> {
     }
   }
 
-  return { text: buildAgentTimeoutSummary(steps), steps };
+  return { text: buildAgentTimeoutSummary(steps), steps, ...usageTotals() };
 }
