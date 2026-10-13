@@ -863,6 +863,7 @@ app.delete('/api/ai/history', requireAuth, async (req: AuthedRequest, res) => {
 app.post('/api/projects/:projectId/security-check', requireAuth, async (req: AuthedRequest, res) => {
   let secureTier: 'free'|'pro'|'pro_plus' = 'free';
   let secureCheckStarted = false;
+  let secureUsage: Awaited<ReturnType<typeof runSecurityCheck>>['usage'] | null = null;
   try {
     await assertProjectOwnership(req.user!.id, req.params.projectId);
     secureTier = await getUserTier(req.user!.id);
@@ -884,16 +885,18 @@ app.post('/api/projects/:projectId/security-check', requireAuth, async (req: Aut
       return;
     }
     secureCheckStarted = true;
-    const result = await runSecurityCheck(req.user!.id, req.params.projectId);
+    const { usage, ...result } = await runSecurityCheck(req.user!.id, req.params.projectId);
+    secureUsage = usage;
     await logUsage(req.user!.id, 'security', 'securecheck', SECURITY_CHECK_CREDIT_COST, req.params.projectId);
     res.json({ success: true, ...result, ...(shouldEnforcePaidUsage(env.AI_USAGE_MODE,secureTier)?{}:{creditsRemaining:credit.remaining}) });
   } catch (error) {
     await reportError(res, 500, 'SecureCheck failed to run', error, 'SecureCheck error:');
   } finally {
-    if(secureCheckStarted){
+    if(secureCheckStarted && secureUsage){
       try{
         const limits=secureTier==='free'?{sessionHours:5,weekDays:7}:PLAN_LIMITS[secureTier];
-        await recordAiUsage({userId:req.user!.id,projectId:req.params.projectId,source:'securecheck',provider:'security',modelCode:'securecheck',inputTokens:4096,outputTokens:2048,cachedInputTokens:0,costUsd:computeCostUsd('securecheck',{inputTokens:4096,outputTokens:2048}),tier:secureTier,estimated:true,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
+        const costUsd=computeCostUsd(secureUsage.modelCode,secureUsage);
+        await recordAiUsage({userId:req.user!.id,projectId:req.params.projectId,source:'securecheck',provider:secureUsage.provider,modelCode:secureUsage.modelCode,inputTokens:secureUsage.inputTokens,outputTokens:secureUsage.outputTokens,cachedInputTokens:secureUsage.cachedInputTokens,cacheCreationInputTokens:secureUsage.cacheCreationInputTokens,costUsd,tier:secureTier,estimated:secureUsage.estimated,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
       }catch(ledgerError){console.error('[ai-usage-ledger] SecureCheck ledger write failed:',ledgerError)}
     }
   }
