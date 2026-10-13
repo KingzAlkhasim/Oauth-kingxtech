@@ -63,7 +63,7 @@ for (const model of REGISTRY) model.requiresPaidPlan = model.minTier !== 'free';
 const PREFIXES: Record<string, Provider> = { g: 'gemini', c: 'anthropic', o: 'openai', q: 'openweights', d: 'gemma-google' };
 const PREFIX_BY_PROVIDER: Record<Provider, string> = { gemini: 'G', anthropic: 'C', openai: 'O', openweights: 'Q', 'gemma-google': 'D' };
 
-export const FREE_MODEL = REGISTRY.find((m) => m.tier === 'free')!;
+export const FREE_MODEL = REGISTRY.find((m) => m.code === 'qwen')!;
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -73,6 +73,7 @@ export interface ParsedModelRequest {
   model: ModelOption;
   cleanPrompt: string;
   unknownTag?: string;
+  explicitTag: boolean;
 }
 
 /**
@@ -83,7 +84,7 @@ export interface ParsedModelRequest {
  */
 export function parseModelTag(prompt: string): ParsedModelRequest {
   const match = prompt.match(/^:([A-Za-z]+)-([^/]+)\/\s*/);
-  if (!match) return { model: FREE_MODEL, cleanPrompt: prompt };
+  if (!match) return { model: FREE_MODEL, cleanPrompt: prompt, explicitTag: false };
 
   const [full, prefixRaw, codeRaw] = match;
   const provider = PREFIXES[prefixRaw.toLowerCase()];
@@ -93,8 +94,8 @@ export function parseModelTag(prompt: string): ParsedModelRequest {
   let found = provider ? REGISTRY.find((m) => m.provider === provider && normalize(m.code) === code) : undefined;
   if (!found) found = REGISTRY.find((m) => normalize(m.code) === code || normalize(m.modelId) === code);
 
-  if (!found) return { model: FREE_MODEL, cleanPrompt, unknownTag: full.trim() };
-  return { model: found, cleanPrompt };
+  if (!found) return { model: FREE_MODEL, cleanPrompt, unknownTag: full.trim(), explicitTag: true };
+  return { model: found, cleanPrompt, explicitTag: true };
 }
 
 export function tagForModel(m: ModelOption): string {
