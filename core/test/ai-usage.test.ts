@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeCostUsd } from '../src/config/modelPricing';
+import { resolveDefaultModelForTier } from '../src/services/modelDefaults';
+import { sanitizeGemmaError, shouldFallbackToFreeModel, isTransientGemmaError } from '../src/services/gemmaFallback';
 import { advanceWindow, clampPercent } from '../src/config/usageWindows';
 import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse, usageBudgetReached } from '../src/services/usagePolicy';
 const assertClose = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `expected ${actual} to be within 1e-9 of ${expected}`);
@@ -37,4 +39,25 @@ test('shadow mode does not enable new paid usage enforcement',()=>{
 test('enforce mode rejects at 100% and includes reset timestamp',()=>{
  assert.equal(usageBudgetReached(0.9,0.9),true);assert.equal(usageBudgetReached(0.899,0.9),false);
  const reset='2026-10-12T17:00:00.000Z';assert.deepEqual(usageLimitResponse('session',120,reset),{code:'usage_limit',window:'session',usagePercent:100,resetsAt:reset,message:`You've reached your usage limit for now. It resets at ${reset}.`});
+});
+
+test('Auto routing chooses Qwen for Free and Gemma for Pro and Pro+', () => {
+ const registry = [{ code: 'qwen', minTier: 'free' }, { code: 'llama', minTier: 'free' }, { code: 'gemma', minTier: 'free' }];
+ assert.equal(resolveDefaultModelForTier('free', registry).code, 'qwen');
+ assert.equal(resolveDefaultModelForTier('pro', registry).code, 'gemma');
+ assert.equal(resolveDefaultModelForTier('pro_plus', registry).code, 'gemma');
+ assert.equal(resolveDefaultModelForTier('pro', registry).minTier, 'free');
+});
+test('Gemma fallback decision is limited to failed Gemma requests', () => {
+ assert.equal(shouldFallbackToFreeModel('gemma-google', true), true);
+ assert.equal(shouldFallbackToFreeModel('gemma-google', false), false);
+ assert.equal(shouldFallbackToFreeModel('openweights', true), false);
+});
+test('Gemma errors are sanitized and transient 500/503 errors are retryable', () => {
+ const safe = sanitizeGemmaError(new Error('GoogleGenerativeAIFetchError https://generativelanguage.googleapis.com/v1/models/gemma:generateContent 500 Internal Server Error'));
+ assert.equal(safe, 'Gemma is temporarily unavailable. Please try again shortly.');
+ assert.doesNotMatch(safe, /googleapis|generateContent|500 Internal Server Error/i);
+ assert.equal(isTransientGemmaError({ status: 500 }), true);
+ assert.equal(isTransientGemmaError({ statusCode: 503 }), true);
+ assert.equal(isTransientGemmaError({ status: 400 }), false);
 });
