@@ -42,11 +42,6 @@ async function hmacHex(secret: string, message: string, hash: 'SHA-256' | 'SHA-5
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-  if (!secret || !signatureHeader) return false;
-  const expected = await hmacHex(secret, rawBody, 'SHA-256');
-  return timingSafeEqual(expected, signatureHeader);
-}
-
 async function verifyPaddle(rawBody: string, signatureHeader: string | null) {
   const secret = Deno.env.get('PADDLE_WEBHOOK_SECRET');
   if (!secret || !signatureHeader) return false;
@@ -140,33 +135,6 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
 
   const rawBody = await req.text();
-
-  if (req.headers.get('x-signature')) {
-    if (!valid) return new Response('Invalid signature', { status: 401 });
-
-    const payload = JSON.parse(rawBody);
-    const eventId = String(payload.data?.id ?? crypto.randomUUID());
-
-    const eventName = payload.meta?.event_name;
-    if (eventName === 'order_created' || eventName === 'subscription_payment_success') {
-      const userId = payload.meta?.custom_data?.user_id
-        ?? (payload.data?.attributes?.user_email ? await findUserIdByEmail(payload.data.attributes.user_email) : null);
-      console.log('[billing-webhook] Resolved userId:', userId);
-      if (userId) {
-        if (record.status === 'duplicate') {
-          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-        } else if (record.status === 'error') {
-          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
-          return new Response('Internal error', { status: 500 }); // triggers a gateway retry
-        } else {
-          console.log('[billing-webhook] Credited wallet for user:', userId);
-        }
-      } else {
-        console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
-      }
-    }
-    return new Response('OK', { status: 200 });
-  }
 
   // ---- Global vector: Paddle ----
   if (req.headers.get('paddle-signature')) {
