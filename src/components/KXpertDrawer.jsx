@@ -460,7 +460,7 @@ export default function KXpertDrawer() {
               {showOverflow && (
                 <div className="kxpert-overflow absolute right-3 top-12 z-50 rounded-xl border border-white/10 bg-kxsurface2 shadow-xl p-1.5 min-w-[210px]">
                   <div className="px-3 py-2 text-[12px] text-kxmist">Viewing: <span className="text-white">{viewLabel}</span></div>
-                  <div className="px-3 py-2 text-[12px] text-kxmist flex items-center gap-2"><Wallet size={14} /> Wallet · compute/storage: <span className="text-white">{balance === null ? '—' : '
+                  <div className="px-3 py-2 text-[12px] text-kxmist flex items-center gap-2"><Wallet size={14} /> Wallet balance · compute/storage: <span className="text-white">{balance === null ? '—' : '$' + Math.max(0, Number(balance) || 0).toFixed(2)}</span></div>
                   <a href="/billing" className="kxpert-menu-item">Billing &amp; wallet</a>
                   <button type="button" onClick={() => { setShowModelHint((s) => !s); setShowOverflow(false); setShowModelSheet(true); }} className="kxpert-menu-item"><Info size={14} /> Model information</button>
                   <button type="button" onClick={() => { startNewChat(); setShowOverflow(false); }} disabled={isLoading} className="kxpert-menu-item"><RotateCcw size={14} /> New chat</button>
