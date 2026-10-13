@@ -3,9 +3,10 @@ create table if not exists public.ai_usage_ledger (
  id uuid primary key default gen_random_uuid(), user_id uuid not null, project_id uuid null,
  source text not null check (source in ('chat','agent','securecheck')), provider text not null, model_code text not null,
  input_tokens integer not null default 0 check(input_tokens>=0), output_tokens integer not null default 0 check(output_tokens>=0),
- cached_input_tokens integer not null default 0 check(cached_input_tokens>=0), cost_usd numeric(12,6) not null check(cost_usd>=0),
+ cached_input_tokens integer not null default 0 check(cached_input_tokens>=0), cache_creation_input_tokens integer not null default 0 check(cache_creation_input_tokens>=0), cost_usd numeric(12,6) not null check(cost_usd>=0),
  tier_at_time text not null, usage_estimated boolean not null default false, created_at timestamptz not null default now()
 );
+alter table public.ai_usage_ledger add column if not exists cache_creation_input_tokens integer not null default 0 check(cache_creation_input_tokens>=0);
 create index if not exists ai_usage_ledger_user_created_idx on public.ai_usage_ledger(user_id,created_at desc);
 alter table public.ai_usage_ledger enable row level security;
 drop policy if exists ai_usage_ledger_select_own on public.ai_usage_ledger;
