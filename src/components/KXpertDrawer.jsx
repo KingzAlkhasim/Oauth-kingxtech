@@ -221,10 +221,9 @@ export default function KXpertDrawer() {
     // Only hydrate from the server once per session. Reopening the drawer
     // with the same session already loaded keeps whatever's in local state
     // (including pending review buttons) instead of overwriting it.
-    if (hydratedSessionRef.current === sessionId) return;
-    hydratedSessionRef.current = sessionId;
-
-    (async () => {
+    if (hydratedSessionRef.current !== sessionId) {
+      hydratedSessionRef.current = sessionId;
+      (async () => {
       setIsHistoryLoading(true);
       try {
         const headers = await getAuthHeaders();
@@ -240,7 +239,8 @@ export default function KXpertDrawer() {
       } finally {
         setIsHistoryLoading(false);
       }
-    })();
+      })();
+    }
     return () => window.clearInterval(usagePoll);
   }, [open, sessionId, getAuthHeaders, refreshUsage]);
 
