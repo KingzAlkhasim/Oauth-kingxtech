@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createGeminiCompatibleAgent } from './geminiCompatible';
+import { isTransientGemmaError, sanitizeGemmaError } from '../gemmaFallback';
 import { env } from '../../config/env';
 import type { AgentOpts, AgentResult } from '../agentTools';
 
@@ -10,12 +11,32 @@ import type { AgentOpts, AgentResult } from '../agentTools';
 // from the paid GEMINI_API_KEY used for Flash/Pro.
 const gemmaGenAI = env.GEMMA_FREE_API_KEY ? new GoogleGenerativeAI(env.GEMMA_FREE_API_KEY) : null;
 const runGemmaAgentInternal = gemmaGenAI ? createGeminiCompatibleAgent(gemmaGenAI) : null;
+const runGemmaChatOnlyInternal = gemmaGenAI ? createGeminiCompatibleAgent(gemmaGenAI, { chatOnly: true }) : null;
+const backoff = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function runWithTransientRetry(agent: NonNullable<typeof runGemmaAgentInternal>, opts: AgentOpts): Promise<AgentResult> {
+  try {
+    return await agent(opts);
+  } catch (error) {
+    if (!isTransientGemmaError(error)) throw error;
+    await backoff(300);
+    return agent(opts);
+  }
+}
 
 export async function runGemmaGoogleAgent(opts: AgentOpts): Promise<AgentResult> {
-  if (!runGemmaAgentInternal) {
-    throw new Error(
-      'Gemma (Google) is not configured yet — set GEMMA_FREE_API_KEY to a free-tier AI Studio key (no billing enabled on that project).'
-    );
+  if (!runGemmaAgentInternal || !runGemmaChatOnlyInternal) {
+    throw new Error(sanitizeGemmaError(new Error('Gemma key is not configured')));
   }
-  return runGemmaAgentInternal(opts);
+  try {
+    return await runWithTransientRetry(runGemmaAgentInternal, opts);
+  } catch (error) {
+    console.error('[gemma-google] Standard request failed; retrying without tools or systemInstruction.', error);
+    try {
+      return await runWithTransientRetry(runGemmaChatOnlyInternal, { ...opts, tools: [], chatOnly: true });
+    } catch (chatOnlyError) {
+      console.error('[gemma-google] Chat-only request failed after retry policy.', chatOnlyError);
+      throw new Error(sanitizeGemmaError(chatOnlyError));
+    }
+  }
 }
