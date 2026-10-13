@@ -616,7 +616,7 @@ function SiteSettingsTab({ projectId }) {
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-kxblue/15 text-kxblue font-sans">Pro</span>
         </div>
         <p className="text-[12.5px] text-kxmist mb-3 leading-relaxed">
-          Dual-model security review for secrets, missing auth checks, injection risks, and similar issues. Costs 14 credits per run.
+          Dual-model security review for secrets, missing auth checks, injection risks, and similar issues.
         </p>
 
         {isPro === false && (
@@ -637,7 +637,7 @@ function SiteSettingsTab({ projectId }) {
             {scResult && (
               <div className="mt-4 flex flex-col gap-4">
                 <p className="text-[11.5px] text-kxmist">
-                  Reviewed {scResult.filesReviewed} file(s) · {scResult.creditsRemaining} credits remaining
+                  Reviewed {scResult.filesReviewed} file(s)
                 </p>
                 <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3.5">
                   <p className="text-[12px] font-semibold text-kxblue mb-2">Claude's review</p>
