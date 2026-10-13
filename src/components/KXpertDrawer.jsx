@@ -628,4 +628,3 @@ export default function KXpertDrawer() {
     </>
   );
 }
-}
