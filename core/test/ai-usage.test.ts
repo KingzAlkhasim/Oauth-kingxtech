@@ -3,20 +3,21 @@ import assert from 'node:assert/strict';
 import { computeCostUsd } from '../src/config/modelPricing';
 import { advanceWindow, clampPercent } from '../src/config/usageWindows';
 import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse, usageBudgetReached } from '../src/services/usagePolicy';
+const assertClose = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `expected ${actual} to be within 1e-9 of ${expected}`);
 test('computeCostUsd applies per-million input/output and cached pricing',()=>{
- assert.equal(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:1_000_000}),22);
- assert.equal(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:0,cachedInputTokens:500_000}),2.2);
+ assertClose(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:1_000_000}),22);
+ assertClose(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:0,cachedInputTokens:500_000}),2.2);
  assert.equal(computeCostUsd('qwen',{inputTokens:100_000,outputTokens:100_000}),0);
- assert.equal(computeCostUsd('sonnet',{inputTokens:1_000_000,outputTokens:1_000_000}),12);
- assert.equal(computeCostUsd('haiku',{inputTokens:1_000_000,outputTokens:1_000_000}),6);
- assert.equal(computeCostUsd('luna',{inputTokens:1_000_000,outputTokens:1_000_000}),1.4);
- assert.equal(computeCostUsd('sonnet',{inputTokens:1_000_000,outputTokens:0,cacheCreationInputTokens:1_000_000}),2.5);
+ assertClose(computeCostUsd('sonnet',{inputTokens:1_000_000,outputTokens:1_000_000}),12);
+ assertClose(computeCostUsd('haiku',{inputTokens:1_000_000,outputTokens:1_000_000}),6);
+ assertClose(computeCostUsd('luna',{inputTokens:1_000_000,outputTokens:1_000_000}),1.4);
+ assertClose(computeCostUsd('sonnet',{inputTokens:1_000_000,outputTokens:0,cacheCreationInputTokens:1_000_000}),2.5);
 });
 test('windows start, accrue, and reset after expiry',()=>{
  const now=new Date('2026-10-12T12:00:00Z'),first=advanceWindow(null,now,5*3600000,0.25);
  assert.equal(first.spentUsd,0.25);assert.equal(first.start.toISOString(),now.toISOString());
- assert.equal(advanceWindow(first,new Date(now.getTime()+1000),5*3600000,0.1).spentUsd,0.35);
- assert.equal(advanceWindow(first,new Date(now.getTime()+5*3600000),5*3600000,0.2).spentUsd,0.2);
+ assertClose(advanceWindow(first,new Date(now.getTime()+1000),5*3600000,0.1).spentUsd,0.35);
+ assertClose(advanceWindow(first,new Date(now.getTime()+5*3600000),5*3600000,0.2).spentUsd,0.2);
  assert.equal(clampPercent(2,1),100);
 });
 test('simultaneous spend calls retain both updates under a serialized row-lock model',async()=>{
