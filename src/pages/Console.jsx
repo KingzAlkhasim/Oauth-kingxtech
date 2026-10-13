@@ -4,6 +4,7 @@ import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import useCurrentUser from '../lib/useCurrentUser';
 import { supabase } from '../lib/supabase';
+import { API_BASE } from '../lib/apiBase';
 import { Card, Button, Input, Badge, ExpandableList } from '../components/ui';
 import { listApiKeys, createApiKey, revokeApiKey, deleteApiKey } from '../lib/apiKeys';
 import { listWebhooks, createWebhook, toggleWebhook, deleteWebhook, WEBHOOK_EVENTS } from '../lib/webhooks';
@@ -11,7 +12,6 @@ import { getLinkedIdentities, findIdentity, linkProvider, unlinkProvider } from 
 import { getCommunityStats } from '../lib/community';
 import { runReadonlyQuery, KNOWN_TABLES } from '../lib/database';
 import { listUsage, totalUsage } from '../lib/usage';
-import { getCredits, getUsageLog } from '../lib/aiUsage';
 import { listProjects } from '../lib/projects';
 import {
   githubStatus, saveGithubToken, removeGithubToken, listGithubRepos,
@@ -110,7 +110,7 @@ function AiLabTab() {
   return (
     <>
       <ApiKeyVault />
-      <KxpertCreditsTab />
+      <AiUsageCard />
       <UsageTab />
       <ModelRouter />
     </>
@@ -123,6 +123,8 @@ function GithubPushTab() {
   const [saving, setSaving] = useState(false);
   const [repos, setRepos] = useState(null);
   const [projects, setProjects] = useState(null);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [showAllProjects, setShowAllProjects] = useState(false);
   const [links, setLinks] = useState({}); // { [projectId]: {repo_full_name, branch} | null }
   const [error, setError] = useState('');
 
@@ -179,6 +181,8 @@ function GithubPushTab() {
       setError(err.message);
     }
   };
+  const filteredProjects = (projects || []).filter((project) => project.name.toLowerCase().includes(projectSearch.trim().toLowerCase()));
+  const visibleProjects = showAllProjects || projectSearch.trim() ? filteredProjects : filteredProjects.slice(0, 3);
 
   return (
     <Section
@@ -207,19 +211,20 @@ function GithubPushTab() {
         <>
           <div className="flex items-center justify-between mb-4">
             <p className="text-[13px] text-emerald-300">Connected</p>
-            <button onClick={disconnect} className="text-[13px] text-red-400 hover:text-red-300">Disconnect</button>
+            <button onClick={disconnect} className="min-h-[44px] px-3 text-[13px] text-red-400 hover:text-red-300">Disconnect</button>
           </div>
 
           {projects !== null && projects.length === 0 && (
             <p className="text-[13px] text-kxmist">No projects yet — create one first, then come back here to link it to a repo.</p>
           )}
 
+          {projects && projects.length > 8 && <input aria-label="Search projects" value={projectSearch} onChange={(e) => setProjectSearch(e.target.value)} placeholder="Search projects…" className="mb-3 min-h-[44px] w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 text-[13px] outline-none focus:border-kxblue" />}
           <div className="flex flex-col gap-2.5">
-            {projects?.map((p) => (
+            {visibleProjects.map((p) => (
               <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 flex-wrap">
                 <span className="text-[13px] font-medium">{p.name}</span>
                 <select
-                  className="bg-black/30 border border-white/12 rounded-lg px-2.5 py-1.5 text-[12.5px] text-kxmist"
+                  className="min-h-[44px] max-w-full bg-black/30 border border-white/12 rounded-lg px-2.5 py-1.5 text-[12.5px] text-kxmist"
                   value={links[p.id]?.repo_full_name || ''}
                   onChange={(e) => e.target.value && setLink(p.id, e.target.value, repos.find((r) => r.full_name === e.target.value)?.default_branch || 'main')}
                 >
@@ -231,6 +236,8 @@ function GithubPushTab() {
               </div>
             ))}
           </div>
+          {projectSearch.trim() && filteredProjects.length === 0 && <p className="text-[12px] text-kxmist mt-2">No matching projects.</p>}
+          {filteredProjects.length > 3 && !projectSearch.trim() && <button type="button" onClick={() => setShowAllProjects((value) => !value)} className="mt-3 min-h-[44px] rounded-lg border border-white/10 px-3 text-[12.5px] text-kxmist hover:text-white">{showAllProjects ? "Show less" : `See more (${filteredProjects.length - 3})`}</button>}
           <p className="text-[11.5px] text-kxmist mt-3">
             Push each project from its Workspace page (Terminal tab → "Push to GitHub"), once linked here.
           </p>
@@ -240,54 +247,63 @@ function GithubPushTab() {
   );
 }
 
-function KxpertCreditsTab() {
-  const [credits, setCredits] = useState(null);
-  const [log, setLog] = useState(null);
+function formatUsageReset(value) {
+  if (!value) return 'Reset time unavailable';
+  const ms = new Date(value).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return 'Resets soon';
+  if (ms < 24 * 60 * 60 * 1000) {
+    const minutes = Math.floor(ms / 60000);
+    return `Resets in ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+  return `Resets ${new Date(value).toLocaleDateString()}`;
+}
+
+function AiUsageCard() {
+  const [usage, setUsage] = useState(null);
   const [error, setError] = useState('');
-
   useEffect(() => {
-    getCredits().then(setCredits).catch((e) => setError(e.message));
-    getUsageLog(100).then(setLog).catch(() => {});
+    let active = true;
+    const refresh = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const response = await fetch(`${API_BASE}/api/ai/usage`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to load usage');
+        if (active && data.tier) { setUsage(data); setError(''); }
+      } catch {
+        if (active) setError('Usage is temporarily unavailable.');
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
-
-  const used = credits ? credits.allowance - credits.remaining : 0;
-  const pct = credits ? Math.min(100, Math.round((used / credits.allowance) * 100)) : 0;
-
+  const bars = usage ? [
+    { label: 'Session usage', percent: usage.sessionPercent, reset: usage.sessionResetsAt },
+    { label: 'Weekly usage', percent: usage.weekPercent, reset: usage.weekResetsAt },
+  ] : [];
+  const tierLabel = usage?.tier === 'pro_plus' ? 'Pro+' : usage?.tier === 'pro' ? 'Pro' : 'Free';
   return (
-    <Section
-      title="K-XpertAI credits"
-      desc="Free monthly allowance for chatting with K-XpertAI across every model. Resets automatically at the start of each month; premium models (Claude, GPT, Gemini Pro) cost more credits per message than the free Gemini Flash tier."
-    >
-      <Notice error={error} />
-      {credits && (
-        <>
-          <div className="flex items-center justify-between mb-2 text-[13px]">
-            <span className="text-kxmist">{used} / {credits.allowance} credits used this month</span>
-            <span className="font-mono text-white">{credits.remaining} left</span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-white/8 overflow-hidden mb-5">
-            <div
-              className="h-full bg-kx-gradient transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </>
-      )}
-
-      {log !== null && (
-        <ExpandableList
-          items={log}
-          emptyLabel="No K-XpertAI usage recorded yet."
-          title="K-XpertAI usage — full history"
-          renderItem={(entry) => (
-            <div key={entry.id} className="flex items-center justify-between text-[13px] text-kxmist border-b border-white/6 py-2 last:border-0">
-              <span>{new Date(entry.created_at).toLocaleString()}</span>
-              <span className="capitalize">{entry.provider} · {entry.model_code}</span>
-              <span className="font-mono">{entry.credit_cost} credit{entry.credit_cost !== 1 ? 's' : ''}</span>
+    <Section title="K-XpertAI usage" desc="Your session and weekly usage windows, including their reset times.">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <Badge tone={tierLabel === 'Free' ? 'default' : 'live'}>{tierLabel}</Badge>
+        {tierLabel === 'Free' && <a href="/billing" className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 text-[12.5px] font-medium bg-kx-gradient text-white">Upgrade to Pro</a>}
+      </div>
+      {error && <p className="text-[12px] text-kxmist mb-3">{error}</p>}
+      {!usage && !error && <p className="text-[13px] text-kxmist">Loading usage…</p>}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {bars.map((item) => {
+          const percent = Math.max(0, Math.min(100, Number(item.percent) || 0));
+          return <div key={item.label} className="min-w-0">
+            <div className="flex items-center justify-between gap-2 text-[12px] mb-1.5"><span className="text-kxmist">{item.label}</span><span className="tabular-nums">{percent}%</span></div>
+            <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden" role="progressbar" aria-label={item.label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+              <div className={`h-full rounded-full transition-all ${percent >= 100 ? 'bg-red-400' : percent >= 80 ? 'bg-amber-400' : 'bg-kxblue'}`} style={{ width: `${percent}%` }} />
             </div>
-          )}
-        />
-      )}
+            <p className="text-[11px] text-kxmist mt-1">{formatUsageReset(item.reset)}</p>
+          </div>;
+        })}
+      </div>
     </Section>
   );
 }
@@ -316,7 +332,7 @@ function UsageTab() {
   }
 
   return (
-    <Section title="API key usage" desc="Real dollar spend from your own API keys calling KingxTech directly — separate from K-XpertAI's in-app credit allowance above. Deducted straight from your wallet balance, per call.">
+    <Section title="API key usage" desc="Usage from your own API keys calling KingxTech directly. Metered API requests draw from your wallet balance for compute and storage.">
       <Notice error={error && error !== 'SETUP' ? error : ''} />
       <div className="flex items-center gap-8 mb-5">
         <div>
