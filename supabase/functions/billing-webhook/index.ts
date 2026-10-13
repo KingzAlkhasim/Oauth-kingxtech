@@ -6,7 +6,6 @@
 //
 // Required secrets (supabase secrets set KEY=value):
 //   SUPABASE_SERVICE_ROLE_KEY   — service role key (NEVER the anon key)
-//   LEMONSQUEEZY_WEBHOOK_SECRET — from LemonSqueezy → Settings → Webhooks
 //   PADDLE_WEBHOOK_SECRET       — from Paddle → Developer Tools → Notifications
 //   PAYSTACK_SECRET_KEY         — from Paystack dashboard (sk_live_… / sk_test_…)
 //   FLUTTERWAVE_SECRET_HASH     — the secret hash you set in Flutterwave's webhook settings
@@ -43,8 +42,6 @@ async function hmacHex(secret: string, message: string, hash: 'SHA-256' | 'SHA-5
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function verifyLemonSqueezy(rawBody: string, signatureHeader: string | null) {
-  const secret = Deno.env.get('LEMONSQUEEZY_WEBHOOK_SECRET');
   if (!secret || !signatureHeader) return false;
   const expected = await hmacHex(secret, rawBody, 'SHA-256');
   return timingSafeEqual(expected, signatureHeader);
@@ -144,31 +141,24 @@ Deno.serve(async (req) => {
 
   const rawBody = await req.text();
 
-  // ---- Global vector: LemonSqueezy ----
   if (req.headers.get('x-signature')) {
-    console.log('[billing-webhook] Detected LemonSqueezy request (x-signature header present)');
-    const valid = await verifyLemonSqueezy(rawBody, req.headers.get('x-signature'));
-    console.log('[billing-webhook] LemonSqueezy signature valid:', valid);
     if (!valid) return new Response('Invalid signature', { status: 401 });
 
     const payload = JSON.parse(rawBody);
     const eventId = String(payload.data?.id ?? crypto.randomUUID());
 
     const eventName = payload.meta?.event_name;
-    console.log('[billing-webhook] LemonSqueezy event:', eventName);
     if (eventName === 'order_created' || eventName === 'subscription_payment_success') {
       const userId = payload.meta?.custom_data?.user_id
         ?? (payload.data?.attributes?.user_email ? await findUserIdByEmail(payload.data.attributes.user_email) : null);
       console.log('[billing-webhook] Resolved userId:', userId);
       if (userId) {
-        const record = await tryRecordEvent(eventId, 'lemonsqueezy', userId, PRO_PLAN_USD, eventName);
         if (record.status === 'duplicate') {
           console.log('[billing-webhook] Duplicate event, skipping:', eventId);
         } else if (record.status === 'error') {
           console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
           return new Response('Internal error', { status: 500 }); // triggers a gateway retry
         } else {
-          await creditWallet(userId, PRO_PLAN_USD, 'lemonsqueezy', String(payload.data?.attributes?.customer_id ?? ''), true);
           console.log('[billing-webhook] Credited wallet for user:', userId);
         }
       } else {
