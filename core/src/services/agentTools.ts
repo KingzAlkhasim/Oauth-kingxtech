@@ -55,7 +55,7 @@ export interface ToolStep {
   summary: string;
 }
 
-export interface AgentUsage { inputTokens:number; outputTokens:number; cachedInputTokens:number; }
+export interface AgentUsage { inputTokens:number; outputTokens:number; cachedInputTokens:number; cacheCreationInputTokens?:number; }
 
 export interface AgentOpts {
   modelId: string;
