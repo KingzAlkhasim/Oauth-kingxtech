@@ -2,36 +2,25 @@ import { useEffect, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
-import useCurrentUser from '../lib/useCurrentUser';
 import {
   getBillingProfile,
-  CHECKOUT_LINKS,
-  checkoutUrlWithUser,
   initializePaystackCheckout,
   initializePaystackTopup,
-  convertToCredits,
 } from '../lib/billing';
-import { getCredits } from '../lib/aiUsage';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/apiBase';
 import { Card, Button, Badge, ExpandableList } from '../components/ui';
-import { Wallet, Zap, Database as DatabaseIcon, ExternalLink } from 'lucide-react';
+import { Wallet, ExternalLink } from 'lucide-react';
 
 const TOPUP_PRESETS = [5, 10, 25, 50];
-const CONVERT_PRESETS = [1, 5, 10];
-const CREDITS_PER_USD = 100;
 const PRO_PRICE_USD = 20;
 
 export default function Billing() {
   useSeo({ title: 'Billing & Store — KingxTech', noindex: true });
   useRequireAuth();
-  const { user } = useCurrentUser();
 
   const [profile, setProfile] = useState(null);
-  const [credits, setCredits] = useState(null);
   const [error, setError] = useState('');
   const [txns, setTxns] = useState(null);
-  const [usage, setUsage] = useState(null);
 
   const [proLoading, setProLoading] = useState(false);
   const [proError, setProError] = useState('');
@@ -41,21 +30,15 @@ export default function Billing() {
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupError, setTopupError] = useState('');
 
-  const [convertAmount, setConvertAmount] = useState(1);
-  const [customConvert, setCustomConvert] = useState('');
-  const [convertLoading, setConvertLoading] = useState(false);
-  const [convertError, setConvertError] = useState('');
 
   const refresh = async () => {
     const { data, error: fetchError } = await getBillingProfile();
     if (fetchError) { setError(/relation .*billing_profile.* does not exist/i.test(fetchError.message) ? 'SETUP' : fetchError.message); return; }
     setProfile(data);
-    getCredits().then(setCredits).catch(() => {});
   };
 
   useEffect(() => {
     refresh();
-    (async()=>{try{const {data:{session}}=await supabase.auth.getSession();if(!session)return;const response=await fetch(`${API_BASE}/api/ai/usage`,{headers:{Authorization:`Bearer ${session.access_token}`}});const data=await response.json();if(data.tier)setUsage(data);}catch{/* non-blocking meter */}})();
     supabase.from('billing_events').select('*').order('processed_at', { ascending: false }).limit(50)
       .then(({ data, error: e }) => setTxns(e ? [] : data));
   }, []);
@@ -74,13 +57,6 @@ export default function Billing() {
     );
   }
 
-  const totalCredits = Math.max(0, Number(credits?.remaining) || 0);
-  const allowanceCredits = Math.max(0, Number(credits?.allowance) || 300);
-  const purchasedCredits = Math.max(0, Number(credits?.purchased) || 0);
-  const freeRemaining = Math.max(0, Math.min(allowanceCredits, totalCredits - purchasedCredits));
-  const freeUsed = Math.max(0, Math.min(allowanceCredits, allowanceCredits - freeRemaining));
-  const numberFormat = new Intl.NumberFormat('en-US');
-  const lemonUrl = checkoutUrlWithUser(CHECKOUT_LINKS.lemonsqueezy, user?.id, user?.email);
 
   const payWithPaystack = async () => {
     setProLoading(true);
@@ -93,7 +69,7 @@ export default function Billing() {
     }
   };
 
-  const buyCredits = async () => {
+  const topUpWallet = async () => {
     const amount = customTopup ? Number(customTopup) : topupAmount;
     setTopupLoading(true);
     setTopupError('');
@@ -105,106 +81,28 @@ export default function Billing() {
     }
   };
 
-  const convert = async () => {
-    const amount = customConvert ? Number(customConvert) : convertAmount;
-    setConvertLoading(true);
-    setConvertError('');
-    try {
-      await convertToCredits(amount);
-      await refresh();
-    } catch (err) {
-      setConvertError(err.message);
-    } finally {
-      setConvertLoading(false);
-    }
-  };
+
 
   return (
     <DashboardShell>
       <h1 className="font-display text-2xl font-semibold mb-1">Billing &amp; Store</h1>
-      <p className="text-kxmist text-sm mb-8">Real balances, real payments, and where to spend both — nothing here is a sample number.</p>
+      <p className="text-kxmist text-sm mb-8">Manage your wallet, plan, and payment history.</p>
 
       {error && error !== 'SETUP' && (
         <p className="text-[12.5px] text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2 mb-5 break-words">{error}</p>
       )}
 
-      {usage&&<Card className="p-5 sm:p-6 rounded-[20px] mb-5 min-w-0"><h2 className="font-display text-[16px] font-medium mb-1">AI usage</h2><p className="text-[12px] text-kxmist mb-4">Your usage resets automatically at the times shown below.</p><div className="grid sm:grid-cols-2 gap-4">{[{label:'Session usage',percent:usage.sessionPercent,reset:usage.sessionResetsAt},{label:'Weekly usage',percent:usage.weekPercent,reset:usage.weekResetsAt}].map((item)=><div key={item.label} className="min-w-0"><div className="flex items-center justify-between gap-2 text-[12px] mb-1"><span>{item.label}</span><span className="tabular-nums">{item.percent}%</span></div><div className="h-2 w-full rounded-full bg-white/10 overflow-hidden"><div className={`h-full rounded-full ${item.percent>=80?'bg-amber-400':'bg-kxblue'}`} style={{width:`${Math.max(0,Math.min(100,item.percent))}%`}}/></div><p className="text-[11px] text-kxmist mt-1">{new Date(item.reset).toLocaleString()}</p></div>)}</div>{(usage.sessionPercent>=80||usage.weekPercent>=80)&&<p className="text-[12px] text-amber-300 mt-3">You're close to your limit.</p>}</Card>}
-
       {/* Balance overview */}
       <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
-        <div className="grid sm:grid-cols-2 gap-6">
-          <div className="flex items-center gap-4 min-w-0">
-            <span className="w-12 h-12 rounded-full bg-kx-gradient flex items-center justify-center shrink-0"><Wallet size={20} /></span>
-            <div className="min-w-0">
-              <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">Wallet balance</p>
-              {profile ? <p className="font-display text-2xl font-semibold truncate">${Math.max(0, Number(profile.credit_balance) || 0).toFixed(2)}</p> : <p className="text-sm text-kxmist">Loading…</p>}
-            </div>
-          </div>
-          <div className="flex items-center gap-4 min-w-0">
-            <span className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0"><Zap size={20} /></span>
-            <div className="min-w-0">
-              <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">AI credits</p>
-              {credits ? (
-                <p className="font-display text-3xl font-semibold tabular-nums break-words">{numberFormat.format(totalCredits)}</p>
-              ) : <p className="text-sm text-kxmist">Loading…</p>}
-            </div>
+        <div className="flex items-center gap-4 min-w-0">
+          <span className="w-12 h-12 rounded-full bg-kx-gradient flex items-center justify-center shrink-0"><Wallet size={20} /></span>
+          <div className="min-w-0">
+            <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">Wallet balance</p>
+            <p className="text-[12.5px] text-kxmist mb-1">Wallet balance. For compute and storage.</p>
+            {profile ? <p className="font-display text-2xl font-semibold truncate">${Math.max(0, Number(profile.credit_balance) || 0).toFixed(2)}</p> : <p className="text-sm text-kxmist">Loading…</p>}
           </div>
         </div>
-        {credits && (
-          <div className="mt-5 pt-4 border-t border-white/10 space-y-3">
-            <div>
-              <div className="flex items-center justify-between gap-3 text-[12.5px] mb-1.5">
-                <span className="text-kxmist">Free allowance</span>
-                <span className="text-white tabular-nums">{numberFormat.format(freeUsed)} / {numberFormat.format(allowanceCredits)} used this month</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden" role="progressbar" aria-label="Free credits used this month" aria-valuemin="0" aria-valuemax={allowanceCredits} aria-valuenow={freeUsed}>
-                <div className="h-full rounded-full bg-kxblue" style={{ width: (allowanceCredits ? Math.min(100, (freeUsed / allowanceCredits) * 100) : 0) + '%' }} />
-              </div>
-            </div>
-            <p className="text-[12.5px] text-kxmist">{numberFormat.format(purchasedCredits)} purchased credits (never expire)</p>
-          </div>
-        )}
-        {profile && (
-          <div className="mt-4">
-            <Badge tone={profile.is_pro_member ? 'live' : 'default'}>{profile.is_pro_member ? 'Pro member' : 'Free plan'}</Badge>
-          </div>
-        )}
-      </Card>
-
-      {/* Buy AI credits with wallet balance — the actual "how do I buy credit" answer */}
-      <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
-        <h2 className="font-display text-[16px] font-medium mb-1">Buy AI credits</h2>
-        <p className="text-[13px] text-kxmist mb-4">
-          Spend your wallet balance on AI credits — $1 = {CREDITS_PER_USD} credits. These never expire or reset, unlike your monthly free allowance.
-        </p>
-
-        <div className="flex flex-wrap gap-2 mb-3">
-          {CONVERT_PRESETS.map((amt) => (
-            <button
-              key={amt}
-              onClick={() => { setConvertAmount(amt); setCustomConvert(''); }}
-              className={`px-4 py-2 rounded-lg text-[13.5px] border ${convertAmount === amt && !customConvert ? 'border-kxblue bg-kxblue/10 text-kxblue' : 'border-white/10 bg-white/[0.02] text-kxmist'}`}
-            >
-              ${amt} → {amt * CREDITS_PER_USD}cr
-            </button>
-          ))}
-          <input
-            type="number"
-            min={1}
-            placeholder="Custom $"
-            value={customConvert}
-            onChange={(e) => setCustomConvert(e.target.value)}
-            className="w-28 px-3 py-2 rounded-lg text-[13.5px] border border-white/10 bg-white/[0.02] outline-none focus:border-kxblue"
-          />
-        </div>
-
-        <Button variant="glow" onClick={convert} loading={convertLoading} disabled={!profile || profile.credit_balance < (customConvert || convertAmount)}>
-          Convert ${customConvert || convertAmount} to {(customConvert || convertAmount) * CREDITS_PER_USD} credits
-        </Button>
-        {profile && profile.credit_balance < (customConvert || convertAmount) && (
-          <p className="text-[12px] text-kxmist mt-2">Not enough wallet balance — add funds below first.</p>
-        )}
-        {convertError && <p className="text-[12.5px] text-red-400 mt-3 break-words">{convertError}</p>}
+        {profile && <div className="mt-4"><Badge tone={profile.is_pro_member ? 'live' : 'default'}>{profile.is_pro_member ? 'Pro member' : 'Free plan'}</Badge></div>}
       </Card>
 
       {/* Go Pro — styled as a highlighted price pill to match the preset-button
@@ -221,32 +119,15 @@ export default function Billing() {
             </span>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-              <p className="text-[13.5px] font-medium mb-2">Global (card)</p>
-              {lemonUrl ? (
-                <a href={lemonUrl} target="_blank" rel="noreferrer">
-                  <Button variant="glow" className="w-full">Pay with LemonSqueezy <ExternalLink size={13} /></Button>
-                </a>
-              ) : (
-                <p className="text-[12.5px] text-kxmist flex items-start gap-2"><Lock size={13} className="mt-0.5 shrink-0" /> <span className="break-words">Not configured — set <code className="text-white font-mono">VITE_LEMONSQUEEZY_CHECKOUT_URL</code> to enable.</span></p>
-              )}
-            </div>
-            <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-              <p className="text-[13.5px] font-medium mb-2">Local (Africa)</p>
-              <Button variant="subtle" className="w-full" onClick={payWithPaystack} loading={proLoading}>
-                Pay with Paystack <ExternalLink size={13} />
-              </Button>
-              {proError && <p className="text-[11.5px] text-red-400 mt-2 break-words">{proError}</p>}
-            </div>
-          </div>
+          <Button variant="glow" className="w-full sm:w-auto min-h-[44px]" onClick={payWithPaystack} loading={proLoading}>Pay with Paystack <ExternalLink size={13} /></Button>
+          {proError && <p className="text-[11.5px] text-red-400 mt-2 break-words">{proError}</p>}
         </Card>
       )}
 
       {/* Add funds */}
       <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1">Add funds</h2>
-        <p className="text-[13px] text-kxmist mb-4">Top up your wallet balance directly via Paystack — any amount from $5 to $500. Spend it above on AI credits, or save it for Pro.</p>
+        <p className="text-[13px] text-kxmist mb-4">Top up for compute and storage. Add funds to your wallet through Paystack — any amount from $5 to $500.</p>
 
         <div className="flex flex-wrap gap-2 mb-3">
           {TOPUP_PRESETS.map((amt) => (
@@ -269,7 +150,7 @@ export default function Billing() {
           />
         </div>
 
-        <Button variant="subtle" onClick={buyCredits} loading={topupLoading}>
+        <Button variant="subtle" onClick={topUpWallet} loading={topupLoading}>
           Pay ${customTopup || topupAmount} with Paystack <ExternalLink size={13} />
         </Button>
         {topupError && <p className="text-[12.5px] text-red-400 mt-3 break-words">{topupError}</p>}
@@ -301,34 +182,6 @@ export default function Billing() {
         )}
       </Card>
 
-      {/* Spend categories */}
-      <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
-        <h2 className="font-display text-[16px] font-medium mb-1">Spend your credits on</h2>
-        <p className="text-[13px] text-kxmist mb-5">Current services you can pay for with your credits.</p>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 min-w-0">
-            <p className="text-[13.5px] font-medium mb-1 flex items-center gap-2"><Zap size={14} className="shrink-0" /> AI usage</p>
-            <p className="text-[12.5px] text-kxmist">Every K-XpertAI chat turn draws from your credits above — live today.</p>
-          </div>
-          <div className="rounded-lg border border-white/10 bg-white/[0.02] p-4 min-w-0">
-            <p className="text-[13.5px] font-medium mb-1 flex items-center gap-2"><DatabaseIcon size={14} className="shrink-0" /> Database &amp; Env Vars</p>
-            <p className="text-[12.5px] text-kxmist">Database and environment-variable tools are available in Console → KX Cloud.</p>
-          </div>
-          
-          
-        </div>
-      </Card>
-
-      {/* How crediting works */}
-      <Card className="p-5 sm:p-6 rounded-[20px]">
-        <h2 className="font-display text-[16px] font-medium mb-4">How crediting works</h2>
-        <ul className="flex flex-col gap-2.5 text-[13px] text-kxmist">
-          <li>1. You pay through a real gateway checkout — this app never touches your card details.</li>
-          <li>2. The gateway calls the <code className="text-white font-mono">billing-webhook</code> Edge Function with a signed payload.</li>
-          <li>3. The function verifies the signature, converts local currency to USD if needed, and credits your wallet — once, even if the gateway retries.</li>
-          <li>4. Wallet funds convert to AI credits above at a fixed rate, or go toward Pro. Paid actions deduct from credits via a database-level gate — insufficient funds blocks the action outright.</li>
-        </ul>
-      </Card>
     </DashboardShell>
   );
 }
