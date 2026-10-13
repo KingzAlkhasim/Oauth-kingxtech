@@ -6,6 +6,8 @@ import { runOpenAIAgent } from './providers/openai';
 import { runOpenWeightsAgent } from './providers/openweights';
 import { runGemmaGoogleAgent } from './providers/gemmaGoogle';
 import { REGISTRY } from './modelRegistry';
+import { resolveDefaultModelForTier } from './modelDefaults';
+import { sanitizeGemmaError, shouldFallbackToFreeModel } from './gemmaFallback';
 import type { Provider } from './modelRegistry';
 
 export const generateContent = async (
@@ -63,7 +65,20 @@ export const generateContent = async (
     }
     if (!succeeded) throw lastErr;
   } else if (provider === 'gemma-google') {
-    result = await runGemmaGoogleAgent(opts);
+    try {
+      result = await runGemmaGoogleAgent(opts);
+    } catch (error) {
+      console.error('[aiRouter] Gemma unavailable; attempting a free-model fallback.', error);
+      if (!shouldFallbackToFreeModel(provider, true)) throw new Error(sanitizeGemmaError(error));
+      const fallback = resolveDefaultModelForTier('free', REGISTRY);
+      try {
+        result = await generateContent(prompt, fallback.provider, fallback.modelId, history, ctx, onStep, onUsage);
+        result = { ...result, text: \`Gemma was unavailable, answered with \${fallback.label}.\n\n\${result.text}\` };
+      } catch (fallbackError) {
+        console.error('[aiRouter] Free-model fallback failed after Gemma failure.', fallbackError);
+        throw new Error(sanitizeGemmaError(error));
+      }
+    }
   } else {
     result = await runGeminiAgent(opts);
   }
