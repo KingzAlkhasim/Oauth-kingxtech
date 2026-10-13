@@ -7,6 +7,10 @@ test('computeCostUsd applies per-million input/output and cached pricing',()=>{
  assert.equal(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:1_000_000}),22);
  assert.equal(computeCostUsd('pro',{inputTokens:1_000_000,outputTokens:0,cachedInputTokens:500_000}),2.2);
  assert.equal(computeCostUsd('qwen',{inputTokens:100_000,outputTokens:100_000}),0);
+ assert.equal(computeCostUsd('sonnet',{inputTokens:1_000_000,outputTokens:1_000_000}),12);
+ assert.equal(computeCostUsd('haiku',{inputTokens:1_000_000,outputTokens:1_000_000}),6);
+ assert.equal(computeCostUsd('luna',{inputTokens:1_000_000,outputTokens:1_000_000}),1.4);
+ assert.equal(computeCostUsd('sonnet',{inputTokens:1_000_000,outputTokens:0,cacheCreationInputTokens:1_000_000}),2.5);
 });
 test('windows start, accrue, and reset after expiry',()=>{
  const now=new Date('2026-10-12T12:00:00Z'),first=advanceWindow(null,now,5*3600000,0.25);
@@ -21,7 +25,7 @@ test('simultaneous spend calls retain both updates under a serialized row-lock m
  let lock=Promise.resolve();
  const record=(cost:number)=>{const next=lock.then(()=>{holder.state=advanceWindow(holder.state,now,duration,cost)});lock=next;return next};
  await Promise.all([record(0.1),record(0.2)]);
- assert.equal(holder.state?.spentUsd,0.3);
+ assert.ok(Math.abs((holder.state?.spentUsd ?? 0)-0.3)<1e-9);
 });
 test('tier gate denies Pro on Pro+ model and preserves free tier restrictions',()=>{
  assert.equal(modelTierAllowed('pro','pro_plus'),false);assert.equal(modelTierAllowed('pro_plus','pro_plus'),true);assert.equal(modelTierAllowed('free','pro'),false);
