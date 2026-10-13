@@ -52,6 +52,7 @@ test('Gemma fallback decision is limited to failed Gemma requests', () => {
  assert.equal(shouldFallbackToFreeModel('gemma-google', true), true);
  assert.equal(shouldFallbackToFreeModel('gemma-google', false), false);
  assert.equal(shouldFallbackToFreeModel('openweights', true), false);
+ assert.equal(shouldFallbackToFreeModel('gemma-google', true, true), false);
 });
 test('Gemma errors are sanitized and transient 500/503 errors are retryable', () => {
  const safe = sanitizeGemmaError(new Error('GoogleGenerativeAIFetchError https://generativelanguage.googleapis.com/v1/models/gemma:generateContent 500 Internal Server Error'));
