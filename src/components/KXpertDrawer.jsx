@@ -141,7 +141,7 @@ function MarkdownMessage({ text }) {
 }
 
 function resetLabel(value){if(!value)return 'reset time unavailable';const ms=new Date(value).getTime()-Date.now();if(ms<=0)return 'resetting soon';if(ms<86400000){const mins=Math.floor(ms/60000);return `resets in ${Math.floor(mins/60)}h ${mins%60}m`;}return `resets ${new Date(value).toLocaleDateString()}`;}
-function UsageBar({label,percent,resetsAt}){const value=Math.max(0,Math.min(100,Number(percent)||0));return <div className="min-w-0"><div className="flex items-center justify-between gap-2 text-[11px] mb-1"><span className="text-kxmist">{label}</span><span className="text-white tabular-nums">{value}%</span></div><div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden"><div className={`h-full rounded-full ${value>=80?'bg-amber-400':'bg-kxblue'}`} style={{width:`${value}%`}}/></div><p className="text-[10px] text-kxmist/80 mt-1">{resetLabel(resetsAt)}</p></div>}
+function UsageBar({label,percent,resetsAt}){const value=Math.max(0,Math.min(100,Number(percent)||0));return <div className="min-w-0"><div className="flex items-center justify-between gap-2 text-[11px] mb-1"><span className="text-kxmist">{label}</span><span className="text-white tabular-nums">{value}%</span></div><div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden"><div className={`h-full rounded-full ${value>=100?'bg-red-400':value>=80?'bg-amber-400':'bg-kxblue'}`} style={{width:`${value}%`}}/></div><p className="text-[10px] text-kxmist/80 mt-1">{resetLabel(resetsAt)}</p></div>}
 
 export default function KXpertDrawer() {
   const [open, setOpen] = useState(false);
@@ -155,7 +155,8 @@ export default function KXpertDrawer() {
   const [showOverflow, setShowOverflow] = useState(false);
   const [showModelSheet, setShowModelSheet] = useState(false);
   const [showUsageSheet, setShowUsageSheet] = useState(false);
-  const [tipDismissed, setTipDismissed] = useState(false);
+  const [tipDismissed, setTipDismissed] = useState(() => sessionStorage.getItem('kxpert_tip_dismissed') === '1');
+  const [hasSentFirstMessage, setHasSentFirstMessage] = useState(() => sessionStorage.getItem('kxpert_tip_seen') === '1');
   const [models, setModels] = useState([]);
   const [usage, setUsage] = useState(null);
   const [upgradePrompt, setUpgradePrompt] = useState('');
@@ -208,6 +209,7 @@ export default function KXpertDrawer() {
   useEffect(() => {
     if (!open) return;
 
+    const usagePoll = window.setInterval(() => { refreshUsage(); }, 30000);
     getBillingProfile().then(({ data }) => setBalance(data?.credit_balance ?? null));
 
     getAuthHeaders().then((headers) => {
@@ -239,12 +241,15 @@ export default function KXpertDrawer() {
         setIsHistoryLoading(false);
       }
     })();
+    return () => window.clearInterval(usagePoll);
   }, [open, sessionId, getAuthHeaders, refreshUsage]);
 
   const send = async (e) => {
     e.preventDefault();
     if (!message.trim() || isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))) return;
     const userText = message;
+    setHasSentFirstMessage(true);
+    sessionStorage.setItem('kxpert_tip_seen', '1');
     const explicitTag = userText.match(/^:([A-Za-z]+)-([^/]+)\/\s*/);
     const tagToUse = explicitTag ? '' : (selectedTag || activeTag || '');
     const modePrefix = mode === 'plan'
@@ -524,9 +529,9 @@ export default function KXpertDrawer() {
                   <div className="kxpert-empty-icon"><Sparkles size={21}/></div>
                   <p className="text-[14px] font-medium text-white">Hey! What are we working on?</p>
                   <p className="text-[12px] text-kxmist mt-1">Ask a question or pick a starting point.</p>
-                  {tip && !tipDismissed && (
+                  {tip && !tipDismissed && !hasSentFirstMessage && (
                     <div className="kxpert-empty-tip">
-                      <button type="button" className="kxpert-tip-dismiss" aria-label="Dismiss tip" onClick={() => setTipDismissed(true)}><X size={13}/></button>
+                      <button type="button" className="kxpert-tip-dismiss" aria-label="Dismiss tip" onClick={() => { setTipDismissed(true); sessionStorage.setItem('kxpert_tip_dismissed', '1'); }}><X size={13}/></button>
                       <span className="block text-[10px] uppercase tracking-wider text-kxpurple mb-1">Quick tip</span>{tip}
                     </div>
                   )}
