@@ -15,7 +15,7 @@ export const generateContent = async (
   history: AgentTurn[],
   ctx: ProjectContext,
   onStep?: (step: ToolStep) => void,
-  onUsage?: (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number}) => boolean | void
+  onUsage?: (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number;cacheCreationInputTokens?:number}) => boolean | void
 ): Promise<AgentResult> => {
   const tools = toolsForContext(ctx);
   const opts = { modelId, history, prompt, tools, ctx, onStep, onUsage };
