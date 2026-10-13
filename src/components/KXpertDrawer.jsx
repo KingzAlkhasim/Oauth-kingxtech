@@ -282,8 +282,8 @@ export default function KXpertDrawer() {
       if (response.status === 401) throw new Error('Your session expired — please sign in again.');
       if (response.status === 429) throw new Error("You're sending messages too fast — give it a minute and try again.");
       if (response.status === 402) {
-        const data = await response.json();
-        throw new Error(data.error || "You've reached your free usage limit for this month.");
+        // Keep legacy backend credit-limit wording out of the UI until the later enforcement migration.
+        throw new Error('This AI request is unavailable right now. Please try again later or check your plan.');
       }
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({}));
