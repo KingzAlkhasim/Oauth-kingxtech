@@ -75,7 +75,7 @@ export const generateContent = async (
       const fallback = resolveDefaultModelForTier('free', REGISTRY);
       try {
         result = await generateContent(prompt, fallback.provider, fallback.modelId, history, ctx, onStep, onUsage);
-        result = { ...result, text: \`Gemma was unavailable, answered with \${fallback.label}.\n\n\${result.text}\` };
+        result = { ...result, text: 'Gemma was unavailable, answered with ' + fallback.label + '.\n\n' + result.text };
       } catch (fallbackError) {
         console.error('[aiRouter] Free-model fallback failed after Gemma failure.', fallbackError);
         throw new Error(sanitizeGemmaError(error));
