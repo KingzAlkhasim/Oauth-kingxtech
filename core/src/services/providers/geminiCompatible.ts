@@ -50,7 +50,7 @@ export function createGeminiCompatibleAgent(genAI: GoogleGenerativeAI) {
     const deadlineAt = Date.now() + AGENT_MAX_DURATION_MS;
 
     const generate = () => model.generateContent({ contents });
-    let result;
+    let result: Awaited<ReturnType<typeof model.generateContent>>;
     try {
       result = await runProviderCall(generate, deadlineAt);
     } catch (error) {
