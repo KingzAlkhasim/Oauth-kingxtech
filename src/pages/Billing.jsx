@@ -137,7 +137,7 @@ export default function Billing() {
             <span className="w-12 h-12 rounded-full bg-kx-gradient flex items-center justify-center shrink-0"><Wallet size={20} /></span>
             <div className="min-w-0">
               <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">Wallet balance</p>
-              {profile ? <p className="font-display text-2xl font-semibold truncate">${profile.credit_balance.toFixed(2)}</p> : <p className="text-sm text-kxmist">Loading…</p>}
+              {profile ? <p className="font-display text-2xl font-semibold truncate">${Math.max(0, Number(profile.credit_balance) || 0).toFixed(2)}</p> : <p className="text-sm text-kxmist">Loading…</p>}
             </div>
           </div>
           <div className="flex items-center gap-4 min-w-0">
