@@ -41,10 +41,9 @@ create index if not exists project_transfer_project_idx on public.project_transf
 create index if not exists project_transfer_target_idx on public.project_transfer_requests(to_user_id,status,created_at desc);
 
 insert into public.project_members(project_id,user_id,role)
-select id,user_id,'owner' from public.projects
+select id,user_id,'owner' from public.projects where user_id is not null
 on conflict (project_id,user_id) do update set role='owner';
 
--- SECURITY DEFINER breaks RLS recursion on project_members. It returns only a boolean.
 create or replace function public.is_project_member(p_project_id uuid,p_min_role text)
 returns boolean language sql stable security definer set search_path=''
 as $$
@@ -61,8 +60,27 @@ returns uuid language sql stable security definer set search_path=''
 as $$ select p.user_id from public.projects p where p.id=p_project_id; $$;
 revoke execute on function public.project_owner_id(uuid) from public,anon,authenticated;
 
--- Atomic transfer. Files/history/domains survive; old GitHub link is removed and
--- env-var values are blanked so the incoming owner must relink/re-enter secrets.
+-- Serialize invite creation per project so concurrent requests cannot race past the cap.
+create or replace function public.create_project_invite(p_project_id uuid,p_email text,p_role text,p_invited_by uuid,p_token_hash text,p_expires_at timestamptz,p_member_cap integer)
+returns uuid language plpgsql security definer set search_path=''
+as $$
+declare invite_id uuid; member_count integer; pending_count integer;
+begin
+  perform 1 from public.projects where id=p_project_id for update;
+  if not found then raise exception 'Project not found'; end if;
+  select count(*)::integer into member_count from public.project_members where project_id=p_project_id and role<>'owner';
+  select count(*)::integer into pending_count from public.project_invites where project_id=p_project_id and accepted_at is null and revoked_at is null and expires_at>now();
+  if member_count+pending_count>=p_member_cap then raise exception 'Project member cap reached'; end if;
+  if exists(select 1 from public.project_invites where project_id=p_project_id and lower(email)=lower(trim(p_email)) and accepted_at is null and revoked_at is null and expires_at>now()) then raise exception 'Duplicate pending invite'; end if;
+  insert into public.project_invites(project_id,email,role,token_hash,invited_by,expires_at)
+    values(p_project_id,lower(trim(p_email)),p_role,p_token_hash,p_invited_by,p_expires_at)
+    returning id into invite_id;
+  return invite_id;
+end; $$;
+revoke execute on function public.create_project_invite(uuid,text,text,uuid,text,timestamptz,integer) from public,anon,authenticated;
+grant execute on function public.create_project_invite(uuid,text,text,uuid,text,timestamptz,integer) to service_role;
+
+-- Atomic transfer. Files/history/domains survive; old GitHub link is removed and env values are blanked.
 create or replace function public.accept_project_transfer(p_request_id uuid,p_actor_user_id uuid)
 returns jsonb language plpgsql security definer set search_path=''
 as $$
@@ -107,25 +125,19 @@ end; $$;
 revoke execute on function public.accept_project_invite(text,uuid,text) from public,anon,authenticated;
 grant execute on function public.accept_project_invite(text,uuid,text) to service_role;
 
--- Remove all prior policies on the collaboration-scoped tables before installing
--- the single role model. This also makes the migration safe across prior policy names.
+-- Remove all prior policies on the collaboration-scoped tables before installing the role model.
 do $$ declare r record; begin
-  for r in select schemaname,tablename,policyname from pg_policies
-    where schemaname='public' and tablename in ('projects','project_members','project_files','project_file_versions','project_github_links','project_env_vars','kxpert_sessions','kxpert_messages','activity_log','custom_domains','webhooks') loop
+  for r in select schemaname,tablename,policyname from pg_policies where schemaname='public' and tablename in ('projects','project_members','project_files','project_file_versions','project_github_links','project_env_vars','kxpert_sessions','kxpert_messages','activity_log','custom_domains','webhooks') loop
     execute format('drop policy if exists %I on %I.%I',r.policyname,r.schemaname,r.tablename);
   end loop;
 end $$;
 
--- projects: members read, editors update metadata, owner deletes/transfers.
 create policy project_read on public.projects for select to authenticated using((select public.is_project_member(id,'viewer')));
 create policy project_insert on public.projects for insert to authenticated with check((select auth.uid())=user_id);
-create policy project_editor_update on public.projects for update to authenticated
-  using((select public.is_project_member(id,'editor')))
-  with check(user_id=(select public.project_owner_id(id)) or (select public.is_project_member(id,'owner')));
+create policy project_editor_update on public.projects for update to authenticated using((select public.is_project_member(id,'editor'))) with check(user_id=(select public.project_owner_id(id)) or (select public.is_project_member(id,'owner')));
 create policy project_owner_delete on public.projects for delete to authenticated using((select public.is_project_member(id,'owner')));
 
--- project_members has a separate read policy using the SECURITY DEFINER helper;
--- this is the non-recursive membership policy.
+-- Separate non-recursive membership policies use the SECURITY DEFINER helper.
 alter table public.project_members enable row level security;
 revoke all on public.project_members from anon;
 grant select,insert,update,delete on public.project_members to authenticated;
@@ -134,17 +146,17 @@ create policy member_owner_insert on public.project_members for insert to authen
 create policy member_owner_update on public.project_members for update to authenticated using((select public.is_project_member(project_id,'owner'))) with check((select public.is_project_member(project_id,'owner')));
 create policy member_owner_delete on public.project_members for delete to authenticated using((select public.is_project_member(project_id,'owner')));
 
--- Files/versions: viewer read, editor write, owner delete. Rows stay attributed to owner.
+-- Files/versions: viewers read; editors read/write; project deletion remains owner-only.
 create policy files_read on public.project_files for select to authenticated using((select public.is_project_member(project_id,'viewer')));
 create policy files_editor_insert on public.project_files for insert to authenticated with check((select public.is_project_member(project_id,'editor')) and user_id=(select public.project_owner_id(project_id)));
 create policy files_editor_update on public.project_files for update to authenticated using((select public.is_project_member(project_id,'editor'))) with check(user_id=(select public.project_owner_id(project_id)));
-create policy files_owner_delete on public.project_files for delete to authenticated using((select public.is_project_member(project_id,'owner')));
+create policy files_editor_delete on public.project_files for delete to authenticated using((select public.is_project_member(project_id,'editor')));
 create policy versions_read on public.project_file_versions for select to authenticated using((select public.is_project_member(project_id,'viewer')));
 create policy versions_editor_insert on public.project_file_versions for insert to authenticated with check((select public.is_project_member(project_id,'editor')) and user_id=(select public.project_owner_id(project_id)));
 create policy versions_editor_update on public.project_file_versions for update to authenticated using((select public.is_project_member(project_id,'editor'))) with check(user_id=(select public.project_owner_id(project_id)));
-create policy versions_owner_delete on public.project_file_versions for delete to authenticated using((select public.is_project_member(project_id,'owner')));
+create policy versions_editor_delete on public.project_file_versions for delete to authenticated using((select public.is_project_member(project_id,'editor')));
 
--- Project chats are shared only when session.project_id is set; personal chats stay private.
+-- Project chat is shared only when session.project_id is set; personal chats stay private.
 create policy sessions_read on public.kxpert_sessions for select to authenticated using((project_id is not null and (select public.is_project_member(project_id,'viewer'))) or (project_id is null and (select auth.uid())=user_id));
 create policy sessions_insert on public.kxpert_sessions for insert to authenticated with check((select auth.uid())=user_id and (project_id is null or (select public.is_project_member(project_id,'viewer'))));
 create policy sessions_update on public.kxpert_sessions for update to authenticated using((select auth.uid())=user_id and (project_id is null or (select public.is_project_member(project_id,'editor')))) with check((select auth.uid())=user_id);
@@ -160,14 +172,20 @@ create policy github_owner_insert on public.project_github_links for insert to a
 create policy github_owner_update on public.project_github_links for update to authenticated using((select public.is_project_member(project_id,'owner'))) with check((select public.is_project_member(project_id,'owner')));
 create policy github_owner_delete on public.project_github_links for delete to authenticated using((select public.is_project_member(project_id,'owner')));
 
--- Secrets: base table is owner-only. Editors receive key names through the safe view.
+-- Secrets: base table is owner-only. Editors get key names through this safe function.
 create policy env_owner_read on public.project_env_vars for select to authenticated using((select public.is_project_member(project_id,'owner')));
 create policy env_owner_insert on public.project_env_vars for insert to authenticated with check((select public.is_project_member(project_id,'owner')) and user_id=(select auth.uid()));
 create policy env_owner_update on public.project_env_vars for update to authenticated using((select public.is_project_member(project_id,'owner'))) with check((select public.is_project_member(project_id,'owner')));
 create policy env_owner_delete on public.project_env_vars for delete to authenticated using((select public.is_project_member(project_id,'owner')));
-create or replace view public.project_env_var_keys with (security_invoker=true) as select project_id,id,key,is_public,created_at,updated_at from public.project_env_vars;
-revoke all on public.project_env_var_keys from anon;
-grant select on public.project_env_var_keys to authenticated;
+create or replace function public.project_env_keys(p_project_id uuid)
+returns table(id uuid,key text,is_public boolean,created_at timestamptz,updated_at timestamptz)
+language sql stable security definer set search_path=''
+as $$
+  select e.id,e.key,e.is_public,e.created_at,e.updated_at from public.project_env_vars e
+  where e.project_id=p_project_id and public.is_project_member(p_project_id,'viewer');
+$$;
+revoke execute on function public.project_env_keys(uuid) from public,anon;
+grant execute on function public.project_env_keys(uuid) to authenticated;
 
 -- Domains: members read; owner manages. Legacy rows without project_id remain private.
 create policy domains_read on public.custom_domains for select to authenticated using((project_id is not null and (select public.is_project_member(project_id,'viewer'))) or (project_id is null and (select auth.uid())=user_id));
@@ -175,7 +193,7 @@ create policy domains_owner_insert on public.custom_domains for insert to authen
 create policy domains_owner_update on public.custom_domains for update to authenticated using((project_id is not null and (select public.is_project_member(project_id,'owner'))) or (project_id is null and (select auth.uid())=user_id)) with check((project_id is null and (select auth.uid())=user_id) or (project_id is not null and (select public.is_project_member(project_id,'owner'))));
 create policy domains_owner_delete on public.custom_domains for delete to authenticated using((project_id is not null and (select public.is_project_member(project_id,'owner'))) or (project_id is null and (select auth.uid())=user_id));
 
--- webhooks lacked project_id, so add it for new project-scoped hooks; existing global hooks remain private.
+-- webhooks lacked project_id; add it so new project-scoped hooks follow the member boundary.
 alter table public.webhooks add column if not exists project_id uuid references public.projects(id) on delete cascade;
 create index if not exists webhooks_project_idx on public.webhooks(project_id);
 create policy webhooks_read on public.webhooks for select to authenticated using((project_id is not null and (select public.is_project_member(project_id,'viewer'))) or (project_id is null and (select auth.uid())=user_id));
@@ -189,8 +207,7 @@ create index if not exists activity_log_project_idx on public.activity_log(proje
 create policy activity_read on public.activity_log for select to authenticated using((select auth.uid())=user_id or (project_id is not null and (select public.is_project_member(project_id,'viewer'))));
 create policy activity_insert on public.activity_log for insert to authenticated with check((select auth.uid())=user_id and (project_id is null or (select public.is_project_member(project_id,'viewer'))));
 
--- Invite/transfer tables are backend-only so raw invite hashes and email addresses
--- are never returned by the authenticated Data API.
+-- Invite/transfer tables are backend-only so raw invite hashes and email addresses never reach the authenticated Data API.
 alter table public.project_invites enable row level security;
 alter table public.project_transfer_requests enable row level security;
 revoke all on public.project_invites from anon,authenticated;
