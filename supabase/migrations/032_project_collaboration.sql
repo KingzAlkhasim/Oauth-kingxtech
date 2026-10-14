@@ -115,7 +115,6 @@ $$;
 revoke execute on function public.accept_project_transfer(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.accept_project_transfer(uuid,uuid) to service_role;
 
--- Replace only the collaboration policies. Membership mutations are service-role-only.
 do $$ declare r record; begin
   for r in select schemaname,tablename,policyname from pg_policies where schemaname='public' and tablename in ('projects','project_members','project_files','project_file_versions','project_github_links','project_env_vars','kxpert_sessions','kxpert_messages','activity_log','custom_domains','webhooks') loop
     execute format('drop policy if exists %I on %I.%I',r.policyname,r.schemaname,r.tablename);
@@ -124,7 +123,7 @@ end $$;
 
 create policy project_read on public.projects for select to authenticated using(public.is_project_member(id,'viewer'));
 create policy project_insert on public.projects for insert to authenticated with check(auth.uid()=user_id);
-create policy project_editor_update on public.projects for update to authenticated using(public.is_project_member(id,'editor')) with check(user_id=public.project_owner_id(id) or public.is_project_member(id,'owner'));
+create policy project_editor_update on public.projects for update to authenticated using(public.is_project_member(id,'editor')) with check(user_id=public.project_owner_id(id));
 create policy project_owner_delete on public.projects for delete to authenticated using(public.is_project_member(id,'owner'));
 
 alter table public.project_members enable row level security;
@@ -166,7 +165,7 @@ create policy env_owner_delete on public.project_env_vars for delete to authenti
 create or replace function public.project_env_keys(p_project_id uuid)
 returns table(id uuid,key text,is_public boolean,created_at timestamptz,updated_at timestamptz)
 language sql stable security definer set search_path=public
-as $$ select e.id,e.key,e.is_public,e.created_at,e.updated_at from public.project_env_vars e where e.project_id=p_project_id and public.is_project_member(p_project_id,'editor'); $$;
+as $$ select e.id,e.key,e.is_public,e.created_at,e.updated_at from public.project_env_vars e where e.project_id=p_project_id and public.is_project_member(p_project_id,'viewer'); $$;
 revoke execute on function public.project_env_keys(uuid) from public,anon;
 grant execute on function public.project_env_keys(uuid) to authenticated;
 
