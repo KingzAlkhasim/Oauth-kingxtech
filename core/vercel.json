@@ -6,6 +6,12 @@
       "includeFiles": "node_modules/**"
     }
   },
+  "crons": [
+    {
+      "path": "/api/internal/cron/expire-plans",
+      "schedule": "0 * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/api" }
   ]
