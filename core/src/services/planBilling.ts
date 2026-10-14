@@ -1,4 +1,6 @@
-export const PRO_PLAN_PRICE_USD = 20;
+import { PRO_PLAN_PRICE_USD } from '../config/billing';
+
+export { PRO_PLAN_PRICE_USD };
 export const PRO_PLAN_DAYS = 30;
 
 export type BillingPlan = 'free' | 'paid' | 'pro' | 'pro_plus';
@@ -71,21 +73,21 @@ export function applyWalletPayment(
 ): { ok: boolean; state: PlanState } {
   if (state.lastPaymentReference === idempotencyKey) return { ok: true, state };
   if (!canPayFromWallet(state.walletBalance, price)) return { ok: false, state };
-  return {
-    ok: true,
-    state: {
-      ...applyPlanPayment({ ...state, walletBalance: state.walletBalance - price }, now, idempotencyKey),
-      walletBalance: state.walletBalance - price,
-    },
-  };
+
+  const paid = applyPlanPayment(
+    { ...state, walletBalance: state.walletBalance - price },
+    now,
+    idempotencyKey,
+  );
+  return { ok: true, state: paid };
 }
 
-export function revokePlan(state: PlanState): PlanState {
+export function revokePlan(state: PlanState, now = new Date()): PlanState {
   return {
     ...state,
     plan: 'free',
     isProMember: false,
-    planExpiresAt: new Date().toISOString(),
+    planExpiresAt: now.toISOString(),
   };
 }
 
