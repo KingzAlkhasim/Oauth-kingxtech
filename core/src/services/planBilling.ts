@@ -7,6 +7,8 @@ export interface PlanState {
   plan: BillingPlan;
   isProMember: boolean;
   planExpiresAt: string | null;
+  walletBalance: number;
+  lastPaymentReference: string | null;
 }
 
 export function addPlanDays(base: Date, days = PRO_PLAN_DAYS): Date {
@@ -43,4 +45,59 @@ export function shouldAcceptPaystackPayment(
 
 export function canPayFromWallet(balance: number, price = PRO_PLAN_PRICE_USD): boolean {
   return balance >= price;
+}
+
+export function applyPlanPayment(
+  state: PlanState,
+  now: Date,
+  reference: string,
+  plan: 'pro' | 'pro_plus' = 'pro',
+): PlanState {
+  if (state.lastPaymentReference === reference) return state;
+  return {
+    ...state,
+    plan,
+    isProMember: true,
+    planExpiresAt: extendPlanExpiry(now, state.planExpiresAt).toISOString(),
+    lastPaymentReference: reference,
+  };
+}
+
+export function applyWalletPayment(
+  state: PlanState,
+  now: Date,
+  idempotencyKey: string,
+  price = PRO_PLAN_PRICE_USD,
+): { ok: boolean; state: PlanState } {
+  if (state.lastPaymentReference === idempotencyKey) return { ok: true, state };
+  if (!canPayFromWallet(state.walletBalance, price)) return { ok: false, state };
+  return {
+    ok: true,
+    state: {
+      ...applyPlanPayment({ ...state, walletBalance: state.walletBalance - price }, now, idempotencyKey),
+      walletBalance: state.walletBalance - price,
+    },
+  };
+}
+
+export function revokePlan(state: PlanState): PlanState {
+  return {
+    ...state,
+    plan: 'free',
+    isProMember: false,
+    planExpiresAt: new Date().toISOString(),
+  };
+}
+
+export function applyCreditTopup(
+  state: PlanState,
+  reference: string,
+  usdAmount: number,
+): PlanState {
+  if (state.lastPaymentReference === reference) return state;
+  return {
+    ...state,
+    walletBalance: state.walletBalance + usdAmount,
+    lastPaymentReference: reference,
+  };
 }
