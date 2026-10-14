@@ -64,22 +64,27 @@ export async function initializePaystackTransaction(
   }
 
   const reference = String(data.data.reference);
+  // Every Paystack checkout gets an intent because the webhook deliberately
+  // grants nothing for unknown references. For Pro, the expected amount is
+  // the exact NGN minor-unit amount sent to Paystack. Top-ups retain their
+  // existing amount calculation and wallet-credit math.
+  const { error: intentError } = await supabaseAdmin.from('payment_intents').insert({
+    user_id: userId,
+    provider: 'paystack',
+    reference,
+    purpose,
+    expected_amount_minor: amountKobo,
+    currency: 'NGN',
+    status: 'pending',
+  });
+  if (intentError) {
+    throw new Error(`Failed to record payment intent: ${intentError.message}`);
+  }
+
   if (purpose === 'pro_plan') {
     // Pro price is PRO_PLAN_PRICE_USD ($20); PAYSTACK_PLAN_AMOUNT_KOBO is the
     // exact NGN minor-unit amount sent to Paystack and is stored verbatim here.
     // Keep the USD price constant synchronized with the webhook's Edge copy.
-    const { error: intentError } = await supabaseAdmin.from('payment_intents').insert({
-      user_id: userId,
-      provider: 'paystack',
-      reference,
-      purpose,
-      expected_amount_minor: amountKobo,
-      currency: 'NGN',
-      status: 'pending',
-    });
-    if (intentError) {
-      throw new Error(`Failed to record payment intent: ${intentError.message}`);
-    }
   }
 
   return { authorization_url: data.data.authorization_url, reference };
