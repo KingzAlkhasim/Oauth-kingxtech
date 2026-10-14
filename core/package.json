@@ -10,7 +10,7 @@
     "dev": "tsx watch src/server.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/ai-usage.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "engines": {
     "node": ">=20.9.0"
@@ -28,7 +28,6 @@
     "helmet": "^7.1.0",
     "openai": "^4.52.7",
     "pino": "^9.2.0",
-    "pino-http": "^10.1.0",
     "zod": "^3.23.8",
     "@vercel/sandbox": "^3.5.1",
     "sharp": "^0.35.0"
