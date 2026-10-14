@@ -15,8 +15,9 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
+// Keep this synchronized with core/src/config/billing.ts.
 const PRO_PLAN_USD = 20.0;
-const PRO_PLAN_USD_TOLERANCE = 2.0; // allow FX slippage before treating a local payment as "the Pro Plan"
+const PRO_PLAN_USD_TOLERANCE = 2.0; // retained for the non-Paystack gateway branches
 
 const supabaseAdmin = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -84,16 +85,6 @@ async function toUsd(amount: number, currency: string): Promise<number> {
 
 type RecordOutcome = { status: 'recorded' } | { status: 'duplicate' } | { status: 'error'; error: unknown };
 
-/**
- * Records a billing event and doubles as the idempotency check — the insert
- * IS the "already processed?" check, atomically, via billing_events' own
- * primary key. This replaces a separate SELECT-then-later-INSERT pattern
- * that had two real bugs: (1) the insert's result was never checked, so a
- * failed insert silently left credit_balance updated with zero transaction
- * history and zero visibility into why, and (2) two retries arriving close
- * together could both pass the earlier SELECT check before either INSERT
- * completed, crediting the same payment twice.
- */
 async function tryRecordEvent(
   eventId: string,
   gateway: string,
@@ -105,7 +96,7 @@ async function tryRecordEvent(
     .from('billing_events')
     .insert({ id: eventId, gateway, user_id: userId, amount_usd: amountUsd, raw_type: rawType });
   if (!error) return { status: 'recorded' };
-  if ((error as { code?: string }).code === '23505') return { status: 'duplicate' }; // unique_violation on id
+  if ((error as { code?: string }).code === '23505') return { status: 'duplicate' };
   return { status: 'error', error };
 }
 
@@ -131,127 +122,334 @@ async function creditWallet(userId: string, usdAmount: number, gateway: string, 
     .eq('user_id', userId);
 }
 
+async function markIntentFailed(reference: string, reason: string) {
+  const { error } = await supabaseAdmin
+    .from('payment_intents')
+    .update({ status: 'failed' })
+    .eq('reference', reference)
+    .eq('status', 'pending');
+  if (error) console.error('[billing-webhook] Failed to mark payment intent failed:', reason, error);
+}
+
+async function verifyPaystackTransaction(reference: string) {
+  const secret = Deno.env.get('PAYSTACK_SECRET_KEY');
+  if (!secret) throw new Error('PAYSTACK_SECRET_KEY is missing');
+
+  const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  if (!res.ok) throw new Error(`Paystack verification HTTP ${res.status}`);
+
+  const payload = await res.json();
+  if (payload?.data?.status !== 'success' || payload?.data?.reference !== reference) {
+    throw new Error(`Paystack verification did not confirm success for ${reference}`);
+  }
+  return payload.data;
+}
+
+async function revokeProForReference(reference: string, rawType: string) {
+  const { data: intent, error: intentError } = await supabaseAdmin
+    .from('payment_intents')
+    .select('id, user_id, purpose, currency, expected_amount_minor')
+    .eq('reference', reference)
+    .maybeSingle();
+
+  if (intentError) throw intentError;
+  if (!intent) {
+    console.error('[billing-webhook] Refund/dispute references unknown payment intent:', reference);
+    return;
+  }
+  if (intent.purpose !== 'pro_plan') {
+    console.log('[billing-webhook] Refund/dispute is not a Pro payment; no plan revocation:', reference);
+    return;
+  }
+
+  const { error: revokeError } = await supabaseAdmin
+    .from('billing_profile')
+    .update({
+      plan: 'free',
+      is_pro_member: false,
+      plan_expires_at: new Date().toISOString(),
+      plan_cancel_at_period_end: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', intent.user_id);
+  if (revokeError) throw revokeError;
+
+  const { error: intentUpdateError } = await supabaseAdmin
+    .from('payment_intents')
+    .update({ status: 'refunded' })
+    .eq('id', intent.id);
+  if (intentUpdateError) throw intentUpdateError;
+
+  const { error: eventError } = await supabaseAdmin
+    .from('billing_events')
+    .upsert({
+      id: `paystack:${rawType}:${reference}`,
+      gateway: 'paystack',
+      user_id: intent.user_id,
+      raw_type: rawType,
+      reference,
+      currency: intent.currency,
+      amount_minor: intent.expected_amount_minor,
+      processed_at: new Date().toISOString(),
+    }, { onConflict: 'gateway,reference' });
+  if (eventError) throw eventError;
+
+  console.log('[billing-webhook] Revoked Pro for refunded/disputed reference:', reference);
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
 
-  const rawBody = await req.text();
+  try {
+    const rawBody = await req.text();
 
-  // ---- Global vector: Paddle ----
-  if (req.headers.get('paddle-signature')) {
-    console.log('[billing-webhook] Detected Paddle request (paddle-signature header present)');
-    const valid = await verifyPaddle(rawBody, req.headers.get('paddle-signature'));
-    console.log('[billing-webhook] Paddle signature valid:', valid);
-    if (!valid) return new Response('Invalid signature', { status: 401 });
+    // ---- Global vector: Paddle ----
+    if (req.headers.get('paddle-signature')) {
+      console.log('[billing-webhook] Detected Paddle request (paddle-signature header present)');
+      const valid = await verifyPaddle(rawBody, req.headers.get('paddle-signature'));
+      console.log('[billing-webhook] Paddle signature valid:', valid);
+      if (!valid) return new Response('Invalid signature', { status: 401 });
 
-    const payload = JSON.parse(rawBody);
-    const eventId = String(payload.event_id ?? crypto.randomUUID());
+      const payload = JSON.parse(rawBody);
+      const eventId = String(payload.event_id ?? crypto.randomUUID());
 
-    console.log('[billing-webhook] Paddle event:', payload.event_type);
-    if (payload.event_type === 'transaction.completed') {
-      const userId = payload.data?.custom_data?.user_id ?? null;
-      console.log('[billing-webhook] Resolved userId:', userId);
-      if (userId) {
-        const record = await tryRecordEvent(eventId, 'paddle', userId, PRO_PLAN_USD, payload.event_type);
-        if (record.status === 'duplicate') {
-          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-        } else if (record.status === 'error') {
-          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
-          return new Response('Internal error', { status: 500 });
+      console.log('[billing-webhook] Paddle event:', payload.event_type);
+      if (payload.event_type === 'transaction.completed') {
+        const userId = payload.data?.custom_data?.user_id ?? null;
+        console.log('[billing-webhook] Resolved userId:', userId);
+        if (userId) {
+          const record = await tryRecordEvent(eventId, 'paddle', userId, PRO_PLAN_USD, payload.event_type);
+          if (record.status === 'duplicate') {
+            console.log('[billing-webhook] Duplicate event, skipping:', eventId);
+          } else if (record.status === 'error') {
+            console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+            return new Response('Internal error', { status: 500 });
+          } else {
+            await creditWallet(userId, PRO_PLAN_USD, 'paddle', String(payload.data?.customer_id ?? ''), true);
+            console.log('[billing-webhook] Credited wallet for user:', userId);
+          }
         } else {
-          await creditWallet(userId, PRO_PLAN_USD, 'paddle', String(payload.data?.customer_id ?? ''), true);
-          console.log('[billing-webhook] Credited wallet for user:', userId);
+          console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
         }
-      } else {
-        console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
       }
-    }
-    return new Response('OK', { status: 200 });
-  }
-
-  // ---- Local vector: Paystack ----
-  if (req.headers.get('x-paystack-signature')) {
-    console.log('[billing-webhook] Detected Paystack request (x-paystack-signature header present)');
-    const valid = await verifyPaystack(rawBody, req.headers.get('x-paystack-signature'));
-    console.log('[billing-webhook] Paystack signature valid:', valid);
-    if (!valid) {
-      console.error('[billing-webhook] Paystack signature mismatch — check PAYSTACK_SECRET_KEY matches the key used to initialize the transaction (test vs live).');
-      return new Response('Invalid signature', { status: 401 });
+      return new Response('OK', { status: 200 });
     }
 
-    const payload = JSON.parse(rawBody);
-    const eventId = String(payload.data?.id ?? crypto.randomUUID());
+    // ---- Local vector: Paystack ----
+    if (req.headers.get('x-paystack-signature')) {
+      console.log('[billing-webhook] Detected Paystack request (x-paystack-signature header present)');
+      const valid = await verifyPaystack(rawBody, req.headers.get('x-paystack-signature'));
+      console.log('[billing-webhook] Paystack signature valid:', valid);
+      if (!valid) {
+        console.error('[billing-webhook] Paystack signature mismatch — check PAYSTACK_SECRET_KEY matches the key used to initialize the transaction (test vs live).');
+        return new Response('Invalid signature', { status: 401 });
+      }
 
-    console.log('[billing-webhook] Paystack event:', payload.event);
-    if (payload.event === 'charge.success') {
-      const amountLocal = (payload.data?.amount ?? 0) / 100; // kobo → naira (or equivalent minor unit)
-      const currency = payload.data?.currency ?? 'NGN';
-      const userId = payload.data?.metadata?.user_id
-        ?? (payload.data?.customer?.email ? await findUserIdByEmail(payload.data.customer.email) : null);
-      console.log('[billing-webhook] amountLocal:', amountLocal, currency, '| resolved userId:', userId);
+      const payload = JSON.parse(rawBody);
+      console.log('[billing-webhook] Paystack event:', payload.event);
 
-      if (userId) {
-        const usd = await toUsd(amountLocal, currency);
-        // 'purpose' is set explicitly by initializePaystackTransaction as of
-        // the Store's credit top-up feature. Older/pre-Store transactions
-        // never set it, so default to 'pro_plan' for backward compatibility
-        // with the fixed-amount flow that predates arbitrary top-ups.
-        const purpose = payload.data?.metadata?.purpose ?? 'pro_plan';
-        const treatAsPro = purpose === 'pro_plan';
-        const record = await tryRecordEvent(eventId, 'paystack', userId, usd, payload.event);
-        if (record.status === 'duplicate') {
-          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-        } else if (record.status === 'error') {
-          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+      if (payload.event === 'charge.success') {
+        const reference = String(payload.data?.reference ?? '');
+        if (!reference) {
+          console.error('[billing-webhook] charge.success has no transaction reference — nothing granted.');
+          return new Response('OK', { status: 200 });
+        }
+
+        const { data: intent, error: intentError } = await supabaseAdmin
+          .from('payment_intents')
+          .select('id, user_id, purpose, expected_amount_minor, currency, status')
+          .eq('reference', reference)
+          .maybeSingle();
+
+        if (intentError) {
+          console.error('[billing-webhook] Payment-intent lookup failed:', intentError);
           return new Response('Internal error', { status: 500 });
-        } else {
-          await creditWallet(userId, usd, 'paystack', String(payload.data?.customer?.customer_code ?? ''), treatAsPro);
-          console.log('[billing-webhook] Credited', usd, 'USD to user:', userId, '| is_pro_member:', treatAsPro);
         }
-      } else {
-        console.error('[billing-webhook] Could not resolve a userId from metadata.user_id or customer email — nothing credited. Full metadata:', JSON.stringify(payload.data?.metadata));
-      }
-    }
-    return new Response('OK', { status: 200 });
-  }
+        if (!intent) {
+          console.error('[billing-webhook] Unknown Paystack transaction reference — nothing granted:', reference);
+          return new Response('OK', { status: 200 });
+        }
+        if (intent.status === 'paid') {
+          console.log('[billing-webhook] Payment intent already paid — skipping:', reference);
+          return new Response('OK', { status: 200 });
+        }
 
-  // ---- Local vector: Flutterwave ----
-  if (req.headers.get('verif-hash')) {
-    console.log('[billing-webhook] Detected Flutterwave request (verif-hash header present)');
-    const valid = verifyFlutterwave(req.headers.get('verif-hash'));
-    console.log('[billing-webhook] Flutterwave signature valid:', valid);
-    if (!valid) return new Response('Invalid signature', { status: 401 });
+        const actualAmountMinor = Number(payload.data?.amount ?? 0);
+        const actualCurrency = String(payload.data?.currency ?? '');
+        const actualStatus = String(payload.data?.status ?? '');
 
-    const payload = JSON.parse(rawBody);
-    const eventId = String(payload.data?.id ?? crypto.randomUUID());
+        if (
+          actualStatus !== 'success'
+          || actualCurrency !== intent.currency
+          || actualAmountMinor < Number(intent.expected_amount_minor)
+        ) {
+          const reason = `status=${actualStatus}, amount=${actualAmountMinor}, expected=${intent.expected_amount_minor}, currency=${actualCurrency}, expectedCurrency=${intent.currency}`;
+          await markIntentFailed(reference, reason);
+          console.error('[billing-webhook] Invalid Paystack payment intent:', reference, reason);
+          return new Response('OK', { status: 200 });
+        }
 
-    console.log('[billing-webhook] Flutterwave event:', payload.event, '| status:', payload.data?.status);
-    if (payload.event === 'charge.completed' && payload.data?.status === 'successful') {
-      const amountLocal = payload.data?.amount ?? 0;
-      const currency = payload.data?.currency ?? 'NGN';
-      const userId = payload.data?.meta?.user_id
-        ?? (payload.data?.customer?.email ? await findUserIdByEmail(payload.data.customer.email) : null);
-      console.log('[billing-webhook] Resolved userId:', userId);
-
-      if (userId) {
-        const usd = await toUsd(amountLocal, currency);
-        const treatAsPro = usd >= PRO_PLAN_USD - PRO_PLAN_USD_TOLERANCE;
-        const record = await tryRecordEvent(eventId, 'flutterwave', userId, usd, payload.event);
-        if (record.status === 'duplicate') {
-          console.log('[billing-webhook] Duplicate event, skipping:', eventId);
-        } else if (record.status === 'error') {
-          console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+        // Paystack documents webhook verification as the preferred delivery path,
+        // but the Verify API is also checked here before any value is granted.
+        // A verification transport failure returns 500 so Paystack can retry.
+        let verifiedTransaction;
+        try {
+          verifiedTransaction = await verifyPaystackTransaction(reference);
+        } catch (verificationError) {
+          console.error('[billing-webhook] Paystack transaction verification failed:', verificationError);
           return new Response('Internal error', { status: 500 });
-        } else {
-          await creditWallet(userId, usd, 'flutterwave', String(payload.data?.customer?.id ?? ''), treatAsPro);
-          console.log('[billing-webhook] Credited', usd, 'USD to user:', userId);
         }
-      } else {
-        console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
-      }
-    }
-    return new Response('OK', { status: 200 });
-  }
 
-  console.error('[billing-webhook] Unrecognized webhook source — headers received:', JSON.stringify([...req.headers.keys()]));
-  return new Response('Unrecognized webhook source', { status: 400 });
+        if (
+          Number(verifiedTransaction.amount) < Number(intent.expected_amount_minor)
+          || String(verifiedTransaction.currency) !== intent.currency
+          || verifiedTransaction.status !== 'success'
+        ) {
+          const reason = `verify status=${verifiedTransaction.status}, amount=${verifiedTransaction.amount}, currency=${verifiedTransaction.currency}`;
+          await markIntentFailed(reference, reason);
+          console.error('[billing-webhook] Verified Paystack transaction does not match payment intent:', reference, reason);
+          return new Response('OK', { status: 200 });
+        }
+
+        if (intent.purpose === 'pro_plan') {
+          const { data: expiry, error: applyError } = await supabaseAdmin.rpc('apply_plan_payment', {
+            p_user_id: intent.user_id,
+            p_reference: reference,
+            p_plan: 'pro',
+          });
+          if (applyError) {
+            console.error('[billing-webhook] Failed to apply Pro plan payment:', applyError);
+            return new Response('Internal error', { status: 500 });
+          }
+
+          const { error: eventUpdateError } = await supabaseAdmin
+            .from('billing_events')
+            .update({
+              amount_usd: PRO_PLAN_USD,
+              amount_minor: actualAmountMinor,
+              currency: actualCurrency,
+              raw_type: payload.event,
+              processed_at: new Date().toISOString(),
+            })
+            .eq('gateway', 'paystack')
+            .eq('reference', reference);
+          if (eventUpdateError) {
+            console.error('[billing-webhook] Failed to finalize Pro billing event:', eventUpdateError);
+            return new Response('Internal error', { status: 500 });
+          }
+
+          const { error: intentPaidError } = await supabaseAdmin
+            .from('payment_intents')
+            .update({ status: 'paid', paid_at: new Date().toISOString() })
+            .eq('id', intent.id)
+            .eq('status', 'pending');
+          if (intentPaidError) {
+            console.error('[billing-webhook] Failed to mark Pro payment intent paid:', intentPaidError);
+            return new Response('Internal error', { status: 500 });
+          }
+
+          console.log('[billing-webhook] Applied Pro plan payment:', reference, '| expiry:', expiry);
+          return new Response('OK', { status: 200 });
+        }
+
+        if (intent.purpose === 'credit_topup') {
+          const amountLocal = actualAmountMinor / 100;
+          const usd = await toUsd(amountLocal, actualCurrency);
+          const record = await tryRecordEvent(reference, 'paystack', intent.user_id, usd, payload.event);
+          if (record.status === 'duplicate') {
+            console.log('[billing-webhook] Duplicate top-up reference, skipping:', reference);
+          } else if (record.status === 'error') {
+            console.error('[billing-webhook] Failed to record top-up billing event — not crediting:', record.error);
+            return new Response('Internal error', { status: 500 });
+          } else {
+            await creditWallet(intent.user_id, usd, 'paystack', String(payload.data?.customer?.customer_code ?? ''));
+            console.log('[billing-webhook] Credited', usd, 'USD wallet top-up for user:', intent.user_id);
+          }
+
+          const { error: intentPaidError } = await supabaseAdmin
+            .from('payment_intents')
+            .update({ status: 'paid', paid_at: new Date().toISOString() })
+            .eq('id', intent.id)
+            .eq('status', 'pending');
+          if (intentPaidError) {
+            console.error('[billing-webhook] Failed to mark top-up payment intent paid:', intentPaidError);
+            return new Response('Internal error', { status: 500 });
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        console.error('[billing-webhook] Unknown payment intent purpose — nothing granted:', intent.purpose, reference);
+        return new Response('OK', { status: 200 });
+      }
+
+      if (payload.event === 'refund.processed' || payload.event === 'charge.dispute.create') {
+        const reference = String(
+          payload.data?.transaction_reference
+          ?? payload.data?.transaction?.reference
+          ?? payload.data?.reference
+          ?? ''
+        );
+        if (!reference) {
+          console.error('[billing-webhook] Refund/dispute event has no transaction reference.');
+          return new Response('OK', { status: 200 });
+        }
+
+        try {
+          await revokeProForReference(reference, payload.event);
+        } catch (error) {
+          console.error('[billing-webhook] Failed to process refund/dispute:', error);
+          return new Response('Internal error', { status: 500 });
+        }
+        return new Response('OK', { status: 200 });
+      }
+
+      return new Response('OK', { status: 200 });
+    }
+
+    // ---- Local vector: Flutterwave ----
+    if (req.headers.get('verif-hash')) {
+      console.log('[billing-webhook] Detected Flutterwave request (verif-hash header present)');
+      const valid = verifyFlutterwave(req.headers.get('verif-hash'));
+      console.log('[billing-webhook] Flutterwave signature valid:', valid);
+      if (!valid) return new Response('Invalid signature', { status: 401 });
+
+      const payload = JSON.parse(rawBody);
+      const eventId = String(payload.data?.id ?? crypto.randomUUID());
+
+      console.log('[billing-webhook] Flutterwave event:', payload.event, '| status:', payload.data?.status);
+      if (payload.event === 'charge.completed' && payload.data?.status === 'successful') {
+        const amountLocal = payload.data?.amount ?? 0;
+        const currency = payload.data?.currency ?? 'NGN';
+        const userId = payload.data?.meta?.user_id
+          ?? (payload.data?.customer?.email ? await findUserIdByEmail(payload.data.customer.email) : null);
+        console.log('[billing-webhook] Resolved userId:', userId);
+
+        if (userId) {
+          const usd = await toUsd(amountLocal, currency);
+          const treatAsPro = usd >= PRO_PLAN_USD - PRO_PLAN_USD_TOLERANCE;
+          const record = await tryRecordEvent(eventId, 'flutterwave', userId, usd, payload.event);
+          if (record.status === 'duplicate') {
+            console.log('[billing-webhook] Duplicate event, skipping:', eventId);
+          } else if (record.status === 'error') {
+            console.error('[billing-webhook] Failed to record billing event — not crediting to avoid an unrecorded transaction:', record.error);
+            return new Response('Internal error', { status: 500 });
+          } else {
+            await creditWallet(userId, usd, 'flutterwave', String(payload.data?.customer?.id ?? ''), treatAsPro);
+            console.log('[billing-webhook] Credited', usd, 'USD to user:', userId);
+          }
+        } else {
+          console.error('[billing-webhook] Could not resolve a userId — nothing credited.');
+        }
+      }
+      return new Response('OK', { status: 200 });
+    }
+
+    console.error('[billing-webhook] Unrecognized webhook source — headers received:', JSON.stringify([...req.headers.keys()]));
+    return new Response('Unrecognized webhook source', { status: 400 });
+  } catch (error) {
+    console.error('[billing-webhook] Unhandled webhook error:', error);
+    return new Response('Internal error', { status: 500 });
+  }
 });
