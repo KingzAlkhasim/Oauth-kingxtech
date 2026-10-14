@@ -81,12 +81,6 @@ export async function initializePaystackTransaction(
     throw new Error(`Failed to record payment intent: ${intentError.message}`);
   }
 
-  if (purpose === 'pro_plan') {
-    // Pro price is PRO_PLAN_PRICE_USD ($20); PAYSTACK_PLAN_AMOUNT_KOBO is the
-    // exact NGN minor-unit amount sent to Paystack and is stored verbatim here.
-    // Keep the USD price constant synchronized with the webhook's Edge copy.
-  }
-
   return { authorization_url: data.data.authorization_url, reference };
 }
 
