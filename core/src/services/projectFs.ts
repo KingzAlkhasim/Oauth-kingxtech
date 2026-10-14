@@ -1,7 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { MAX_BINARY_FILE_BYTES, MAX_PROJECT_BINARY_BYTES, SUPPORTED_BINARY_EXTENSIONS, extensionOf, decodeBinaryContent, validateBinaryBytes, validateSvgText } from './binaryFiles';
 import { assertProjectRole } from './projectCollaboration';
-
 export class ProjectAccessError extends Error {}
 export interface ProjectFileEntry { path:string; is_folder:boolean; updated_at:string; }
 export interface ProjectFileContent extends ProjectFileEntry { content:string|null; }
@@ -22,3 +21,5 @@ export async function writeProjectFile(userId:string,projectId:string,rawPath:st
 export async function createProjectFolder(userId:string,projectId:string,rawPath:string):Promise<void>{await assertProjectRole(userId,projectId,'editor');const path=normalizePath(rawPath);const ownerId=await getProjectOwnerId(projectId);if(!ownerId)throw new ProjectAccessError('Project not found.');const {error}=await supabaseAdmin.from('project_files').upsert({project_id:projectId,user_id:ownerId,path,is_folder:true,content:null},{onConflict:'project_id,path'});if(error)throw new Error(`createProjectFolder failed: ${error.message}`);}
 export async function deleteProjectFile(userId:string,projectId:string,rawPath:string):Promise<void>{await assertProjectRole(userId,projectId,'editor');const path=normalizePath(rawPath);const {error:exactErr}=await supabaseAdmin.from('project_files').delete().eq('project_id',projectId).eq('path',path);if(exactErr)throw new Error(`deleteProjectFile failed: ${exactErr.message}`);const {error:childErr}=await supabaseAdmin.from('project_files').delete().eq('project_id',projectId).like('path',`${path}/%`);if(childErr)throw new Error(`deleteProjectFile (children) failed: ${childErr.message}`);}
 export async function listProjectFiles(userId:string,projectId:string):Promise<ProjectFileEntry[]>{await assertProjectRole(userId,projectId,'viewer');const {data,error}=await supabaseAdmin.from('project_files').select('path,is_folder,updated_at').eq('project_id',projectId).order('path',{ascending:true});if(error)throw new Error(`listProjectFiles failed: ${error.message}`);return(data??[]).filter(file=>!file.path.startsWith('.kingxtech-dist/'));}
+/** Legacy owner-only helper retained for non-collaboration services that manage owner-only resources. */
+export async function assertProjectOwnership(userId:string,projectId:string):Promise<void>{await assertProjectRole(userId,projectId,'owner');}
