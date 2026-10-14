@@ -23,9 +23,7 @@ export const generateContent = async (
   if (ctx.projectId && ctx.userId) {
     const role = await getProjectRole(ctx.userId, ctx.projectId);
     if (!role) throw new ProjectRoleError('You are not a member of this project.');
-    if (role === 'viewer' && !ctx.readOnly) {
-      throw new ProjectRoleError('View-only members can use K-XpertAI in Plan mode only.');
-    }
+    if (role === 'viewer') ctx = { ...ctx, readOnly: true };
   }
 
   const tools = toolsForContext(ctx);
@@ -44,10 +42,7 @@ export const generateContent = async (
       ...freeModels.filter((m) => m.modelId !== modelId),
     ]
       .filter((m): m is (typeof freeModels)[number] => !!m)
-      .map((m) => ({
-        ...m,
-        modelId: m.modelId.endsWith(':free') ? FREE_ROUTER_MODEL_ID : m.modelId,
-      }))
+      .map((m) => ({ ...m, modelId: m.modelId.endsWith(':free') ? FREE_ROUTER_MODEL_ID : m.modelId }))
       .filter((m, i, arr) => arr.findIndex((x) => x.modelId === m.modelId) === i);
 
     let lastErr: any;
