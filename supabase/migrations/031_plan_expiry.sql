@@ -23,7 +23,9 @@ create table if not exists public.payment_intents (
 );
 
 alter table public.payment_intents enable row level security;
--- Intentionally no anon/authenticated policies. Payment intents are service-role only.
+revoke all on public.payment_intents from public, anon, authenticated;
+grant all on public.payment_intents to service_role;
+-- Intentionally no anon/authenticated policies: payment intents are service-role only.
 
 alter table public.billing_events
   add column if not exists reference text,
