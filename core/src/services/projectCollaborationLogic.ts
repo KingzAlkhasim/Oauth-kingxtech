@@ -2,6 +2,27 @@ import type { ProjectRole } from '../config/projectCollaboration';
 
 const rank: Record<ProjectRole, number> = { viewer: 1, editor: 2, owner: 3 };
 
+export const PROJECT_ROUTE_MIN_ROLES = {
+  aiGeneratePlan: 'viewer',
+  aiGenerateBuild: 'editor',
+  filesRead: 'viewer',
+  filesWrite: 'editor',
+  fileVersions: 'editor',
+  revert: 'editor',
+  rejectTurn: 'editor',
+  publish: 'editor',
+  envValues: 'owner',
+  pwa: 'owner',
+  githubLink: 'owner',
+  githubPush: 'owner',
+  githubImport: 'owner',
+  customDomains: 'owner',
+  deleteProject: 'owner',
+  securityCheck: 'owner',
+  runtime: 'owner',
+  terminal: 'owner',
+} as const satisfies Record<string, ProjectRole>;
+
 export function roleAtLeast(role: ProjectRole, minimum: ProjectRole): boolean {
   return rank[role] >= rank[minimum];
 }
