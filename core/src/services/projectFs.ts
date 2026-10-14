@@ -1,25 +1,250 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
-import { MAX_BINARY_FILE_BYTES, MAX_PROJECT_BINARY_BYTES, SUPPORTED_BINARY_EXTENSIONS, extensionOf, decodeBinaryContent, validateBinaryBytes, validateSvgText } from './binaryFiles';
+import {
+  MAX_BINARY_FILE_BYTES,
+  MAX_PROJECT_BINARY_BYTES,
+  SUPPORTED_BINARY_EXTENSIONS,
+  extensionOf,
+  decodeBinaryContent,
+  validateBinaryBytes,
+  validateSvgText,
+} from './binaryFiles';
 import { assertProjectRole } from './projectCollaboration';
+
 export class ProjectAccessError extends Error {}
-export interface ProjectFileEntry { path:string; is_folder:boolean; updated_at:string; }
-export interface ProjectFileContent extends ProjectFileEntry { content:string|null; }
-function normalizePath(rawPath:string):string{const input=rawPath.trim();if(input.startsWith('/')||input.includes('\\')||/^[a-z]:[\\/]/i.test(input))throw new ProjectAccessError('Absolute paths are not allowed. Use a path relative to the project root.');const trimmed=input.replace(/\/+$/,'');if(!trimmed||trimmed.length>500)throw new ProjectAccessError('Invalid path.');const segments=trimmed.split('/');if(segments.some(s=>s===''||s==='.'||s==='..'))throw new ProjectAccessError('Path cannot contain empty, ".", or ".." segments.');return trimmed;}
-export interface ProjectFileWithContent { path:string; is_folder:boolean; content:string|null; }
-export async function listProjectFilesWithContent(userId:string,projectId:string):Promise<ProjectFileWithContent[]>{await assertProjectRole(userId,projectId,'viewer');const {data,error}=await supabaseAdmin.from('project_files').select('path,is_folder,content').eq('project_id',projectId).eq('is_folder',false).order('path',{ascending:true});if(error)throw new Error(`listProjectFilesWithContent failed: ${error.message}`);return data??[];}
-export async function getProjectOwnerId(projectId:string):Promise<string|null>{const {data,error}=await supabaseAdmin.from('projects').select('user_id').eq('id',projectId).maybeSingle();if(error)throw new Error(`getProjectOwnerId failed: ${error.message}`);return data?.user_id??null;}
-function slugify(input:string):string{return input.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'project';}
-export async function publishProject(userId:string,projectId:string):Promise<string>{await assertProjectRole(userId,projectId,'editor');const {data:project,error:fetchErr}=await supabaseAdmin.from('projects').select('name,slug').eq('id',projectId).single();if(fetchErr)throw new Error(`publishProject failed to load project: ${fetchErr.message}`);if(project.slug){await supabaseAdmin.from('projects').update({published_at:new Date().toISOString()}).eq('id',projectId);return project.slug;}const base=slugify(project.name||'project');let slug=base;for(let attempt=0;attempt<5;attempt++){const {data:existing}=await supabaseAdmin.from('projects').select('id').eq('slug',slug).maybeSingle();if(!existing)break;slug=`${base}-${Math.random().toString(36).slice(2,6)}`;}const {error:updateErr}=await supabaseAdmin.from('projects').update({slug,published_at:new Date().toISOString()}).eq('id',projectId);if(updateErr)throw new Error(`publishProject failed to save slug: ${updateErr.message}`);return slug;}
-export async function getProjectIdBySlug(slug:string):Promise<string|null>{const {data,error}=await supabaseAdmin.from('projects').select('id').eq('slug',slug).maybeSingle();if(error)throw new Error(`getProjectIdBySlug failed: ${error.message}`);return data?.id??null;}
-export async function readProjectFilePublic(projectId:string,rawPath:string):Promise<ProjectFileContent|null>{const path=normalizePath(rawPath);const {data,error}=await supabaseAdmin.from('project_files').select('path,is_folder,content,updated_at').eq('project_id',projectId).eq('path',path).maybeSingle();if(error)throw new Error(`readProjectFilePublic failed: ${error.message}`);return data??null;}
-export interface PublishedBuildFile {path:string;content:string;isBinary?:boolean;}
-export async function replacePublishedBuild(userId:string,projectId:string,files:PublishedBuildFile[]):Promise<void>{await assertProjectRole(userId,projectId,'editor');const ownerId=await getProjectOwnerId(projectId);if(!ownerId)throw new ProjectAccessError('Project not found.');const {error:deleteErr}=await supabaseAdmin.from('project_files').delete().eq('project_id',projectId).like('path','.kingxtech-dist/%');if(deleteErr)throw new Error(`replacePublishedBuild cleanup failed: ${deleteErr.message}`);if(files.length===0)throw new Error('Published build produced no files.');const rows=files.map(file=>({project_id:projectId,user_id:ownerId,path:`.kingxtech-dist/${file.path}`,is_folder:false,content:file.isBinary?`__KX_BINARY_BASE64__:${file.content}`:file.content}));for(let i=0;i<rows.length;i+=100){const {error}=await supabaseAdmin.from('project_files').upsert(rows.slice(i,i+100),{onConflict:'project_id,path'});if(error)throw new Error(`replacePublishedBuild failed: ${error.message}`);}}
-export async function hasPublishedBuild(projectId:string):Promise<boolean>{const {data,error}=await supabaseAdmin.from('project_files').select('path').eq('project_id',projectId).eq('path','.kingxtech-dist/index.html').maybeSingle();if(error)throw new Error(`hasPublishedBuild failed: ${error.message}`);return !!data;}
-export async function readPublishedBuildFile(projectId:string,rawPath:string):Promise<ProjectFileContent|null>{const path=normalizePath(`.kingxtech-dist/${rawPath}`);const {data,error}=await supabaseAdmin.from('project_files').select('path,is_folder,content,updated_at').eq('project_id',projectId).eq('path',path).maybeSingle();if(error)throw new Error(`readPublishedBuildFile failed: ${error.message}`);if(!data)return null;return {...data,path:rawPath};}
-export async function readProjectFile(userId:string,projectId:string,rawPath:string):Promise<ProjectFileContent>{await assertProjectRole(userId,projectId,'viewer');const path=normalizePath(rawPath);const {data,error}=await supabaseAdmin.from('project_files').select('path,is_folder,content,updated_at').eq('project_id',projectId).eq('path',path).maybeSingle();if(error)throw new Error(`readProjectFile failed: ${error.message}`);if(!data)throw new ProjectAccessError(`File not found: ${path}`);return data;}
-export async function writeProjectFile(userId:string,projectId:string,rawPath:string,content:string):Promise<void>{await assertProjectRole(userId,projectId,'editor');const path=normalizePath(rawPath);const ext=extensionOf(path);const binaryBytes=decodeBinaryContent(content);if(binaryBytes)validateBinaryBytes(path,binaryBytes);else if(SUPPORTED_BINARY_EXTENSIONS.has(ext))throw new Error('This file type must be uploaded as a binary file. Use the file upload control instead of pasting text into it.');validateSvgText(path,content);if(binaryBytes&&binaryBytes.length>MAX_BINARY_FILE_BYTES)throw new Error('This file is larger than 5 MB. Choose a smaller file.');if(binaryBytes||ext==='svg'){const {data:existingFiles,error:totalErr}=await supabaseAdmin.from('project_files').select('path,content,is_folder').eq('project_id',projectId).eq('is_folder',false);if(totalErr)throw new Error(`Could not check project asset storage: ${totalErr.message}`);let totalBytes=0;for(const existing of existingFiles??[]){if(existing.path===path||existing.path.startsWith('.kingxtech-dist/')||existing.path.startsWith('.kx-verify-dist/')||typeof existing.content!=='string')continue;const oldBinary=decodeBinaryContent(existing.content);if(oldBinary)totalBytes+=oldBinary.length;else if(extensionOf(existing.path)==='svg')totalBytes+=Buffer.byteLength(existing.content,'utf8');}totalBytes+=binaryBytes?binaryBytes.length:Buffer.byteLength(content,'utf8');if(totalBytes>MAX_PROJECT_BINARY_BYTES)throw new Error('This project has reached its 25 MB total asset limit. Delete an existing image or binary file before adding another.');}const ownerId=await getProjectOwnerId(projectId);if(!ownerId)throw new ProjectAccessError('Project not found.');const {error}=await supabaseAdmin.from('project_files').upsert({project_id:projectId,user_id:ownerId,path,is_folder:false,content},{onConflict:'project_id,path'});if(error)throw new Error(`writeProjectFile failed: ${error.message}`);}
-export async function createProjectFolder(userId:string,projectId:string,rawPath:string):Promise<void>{await assertProjectRole(userId,projectId,'editor');const path=normalizePath(rawPath);const ownerId=await getProjectOwnerId(projectId);if(!ownerId)throw new ProjectAccessError('Project not found.');const {error}=await supabaseAdmin.from('project_files').upsert({project_id:projectId,user_id:ownerId,path,is_folder:true,content:null},{onConflict:'project_id,path'});if(error)throw new Error(`createProjectFolder failed: ${error.message}`);}
-export async function deleteProjectFile(userId:string,projectId:string,rawPath:string):Promise<void>{await assertProjectRole(userId,projectId,'editor');const path=normalizePath(rawPath);const {error:exactErr}=await supabaseAdmin.from('project_files').delete().eq('project_id',projectId).eq('path',path);if(exactErr)throw new Error(`deleteProjectFile failed: ${exactErr.message}`);const {error:childErr}=await supabaseAdmin.from('project_files').delete().eq('project_id',projectId).like('path',`${path}/%`);if(childErr)throw new Error(`deleteProjectFile (children) failed: ${childErr.message}`);}
-export async function listProjectFiles(userId:string,projectId:string):Promise<ProjectFileEntry[]>{await assertProjectRole(userId,projectId,'viewer');const {data,error}=await supabaseAdmin.from('project_files').select('path,is_folder,updated_at').eq('project_id',projectId).order('path',{ascending:true});if(error)throw new Error(`listProjectFiles failed: ${error.message}`);return(data??[]).filter(file=>!file.path.startsWith('.kingxtech-dist/'));}
+
+export interface ProjectFileEntry {
+  path: string;
+  is_folder: boolean;
+  updated_at: string;
+}
+
+export interface ProjectFileContent extends ProjectFileEntry {
+  content: string | null;
+}
+
+function normalizePath(rawPath: string): string {
+  const input = rawPath.trim();
+  if (input.startsWith('/') || input.includes('\\') || /^[a-z]:[\\/]/i.test(input)) {
+    throw new ProjectAccessError('Absolute paths are not allowed. Use a path relative to the project root.');
+  }
+  const trimmed = input.replace(/\/+$/, '');
+  if (!trimmed || trimmed.length > 500) throw new ProjectAccessError('Invalid path.');
+  const segments = trimmed.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    throw new ProjectAccessError('Path cannot contain empty, ".", or ".." segments.');
+  }
+  return trimmed;
+}
+
+export interface ProjectFileWithContent {
+  path: string;
+  is_folder: boolean;
+  content: string | null;
+}
+
+export async function listProjectFilesWithContent(userId: string, projectId: string): Promise<ProjectFileWithContent[]> {
+  await assertProjectRole(userId, projectId, 'viewer');
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path,is_folder,content')
+    .eq('project_id', projectId)
+    .eq('is_folder', false)
+    .order('path', { ascending: true });
+  if (error) throw new Error(`listProjectFilesWithContent failed: ${error.message}`);
+  return data ?? [];
+}
+
+export async function getProjectOwnerId(projectId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.from('projects').select('user_id').eq('id', projectId).maybeSingle();
+  if (error) throw new Error(`getProjectOwnerId failed: ${error.message}`);
+  return data?.user_id ?? null;
+}
+
+function slugify(input: string): string {
+  return input.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project';
+}
+
+export async function publishProject(userId: string, projectId: string): Promise<string> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const { data: project, error: fetchErr } = await supabaseAdmin
+    .from('projects')
+    .select('name,slug')
+    .eq('id', projectId)
+    .single();
+  if (fetchErr) throw new Error(`publishProject failed to load project: ${fetchErr.message}`);
+  if (project.slug) {
+    await supabaseAdmin.from('projects').update({ published_at: new Date().toISOString() }).eq('id', projectId);
+    return project.slug;
+  }
+  const base = slugify(project.name || 'project');
+  let slug = base;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data: existing } = await supabaseAdmin.from('projects').select('id').eq('slug', slug).maybeSingle();
+    if (!existing) break;
+    slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+  const { error: updateErr } = await supabaseAdmin
+    .from('projects')
+    .update({ slug, published_at: new Date().toISOString() })
+    .eq('id', projectId);
+  if (updateErr) throw new Error(`publishProject failed to save slug: ${updateErr.message}`);
+  return slug;
+}
+
+export async function getProjectIdBySlug(slug: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.from('projects').select('id').eq('slug', slug).maybeSingle();
+  if (error) throw new Error(`getProjectIdBySlug failed: ${error.message}`);
+  return data?.id ?? null;
+}
+
+export async function readProjectFilePublic(projectId: string, rawPath: string): Promise<ProjectFileContent | null> {
+  const path = normalizePath(rawPath);
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path,is_folder,content,updated_at')
+    .eq('project_id', projectId)
+    .eq('path', path)
+    .maybeSingle();
+  if (error) throw new Error(`readProjectFilePublic failed: ${error.message}`);
+  return data ?? null;
+}
+
+export interface PublishedBuildFile {
+  path: string;
+  content: string;
+  isBinary?: boolean;
+}
+
+export async function replacePublishedBuild(userId: string, projectId: string, files: PublishedBuildFile[]): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const ownerId = await getProjectOwnerId(projectId);
+  if (!ownerId) throw new ProjectAccessError('Project not found.');
+  const { error: deleteErr } = await supabaseAdmin
+    .from('project_files')
+    .delete()
+    .eq('project_id', projectId)
+    .like('path', '.kingxtech-dist/%');
+  if (deleteErr) throw new Error(`replacePublishedBuild cleanup failed: ${deleteErr.message}`);
+  if (files.length === 0) throw new Error('Published build produced no files.');
+  const rows = files.map((file) => ({
+    project_id: projectId,
+    user_id: ownerId,
+    path: `.kingxtech-dist/${file.path}`,
+    is_folder: false,
+    content: file.isBinary ? `__KX_BINARY_BASE64__:${file.content}` : file.content,
+  }));
+  for (let i = 0; i < rows.length; i += 100) {
+    const { error } = await supabaseAdmin.from('project_files').upsert(rows.slice(i, i + 100), { onConflict: 'project_id,path' });
+    if (error) throw new Error(`replacePublishedBuild failed: ${error.message}`);
+  }
+}
+
+export async function hasPublishedBuild(projectId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path')
+    .eq('project_id', projectId)
+    .eq('path', '.kingxtech-dist/index.html')
+    .maybeSingle();
+  if (error) throw new Error(`hasPublishedBuild failed: ${error.message}`);
+  return !!data;
+}
+
+export async function readPublishedBuildFile(projectId: string, rawPath: string): Promise<ProjectFileContent | null> {
+  const path = normalizePath(`.kingxtech-dist/${rawPath}`);
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path,is_folder,content,updated_at')
+    .eq('project_id', projectId)
+    .eq('path', path)
+    .maybeSingle();
+  if (error) throw new Error(`readPublishedBuildFile failed: ${error.message}`);
+  if (!data) return null;
+  return { ...data, path: rawPath };
+}
+
+export async function readProjectFile(userId: string, projectId: string, rawPath: string): Promise<ProjectFileContent> {
+  await assertProjectRole(userId, projectId, 'viewer');
+  const path = normalizePath(rawPath);
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path,is_folder,content,updated_at')
+    .eq('project_id', projectId)
+    .eq('path', path)
+    .maybeSingle();
+  if (error) throw new Error(`readProjectFile failed: ${error.message}`);
+  if (!data) throw new ProjectAccessError(`File not found: ${path}`);
+  return data;
+}
+
+export async function writeProjectFile(userId: string, projectId: string, rawPath: string, content: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const path = normalizePath(rawPath);
+  const ext = extensionOf(path);
+  const binaryBytes = decodeBinaryContent(content);
+  if (binaryBytes) validateBinaryBytes(path, binaryBytes);
+  else if (SUPPORTED_BINARY_EXTENSIONS.has(ext)) throw new Error('This file type must be uploaded as a binary file. Use the file upload control instead of pasting text into it.');
+  validateSvgText(path, content);
+  if (binaryBytes && binaryBytes.length > MAX_BINARY_FILE_BYTES) throw new Error('This file is larger than 5 MB. Choose a smaller file.');
+  if (binaryBytes || ext === 'svg') {
+    const { data: existingFiles, error: totalErr } = await supabaseAdmin
+      .from('project_files')
+      .select('path,content,is_folder')
+      .eq('project_id', projectId)
+      .eq('is_folder', false);
+    if (totalErr) throw new Error(`Could not check project asset storage: ${totalErr.message}`);
+    let totalBytes = 0;
+    for (const existing of existingFiles ?? []) {
+      if (existing.path === path || existing.path.startsWith('.kingxtech-dist/') || existing.path.startsWith('.kx-verify-dist/') || typeof existing.content !== 'string') continue;
+      const oldBinary = decodeBinaryContent(existing.content);
+      if (oldBinary) totalBytes += oldBinary.length;
+      else if (extensionOf(existing.path) === 'svg') totalBytes += Buffer.byteLength(existing.content, 'utf8');
+    }
+    totalBytes += binaryBytes ? binaryBytes.length : Buffer.byteLength(content, 'utf8');
+    if (totalBytes > MAX_PROJECT_BINARY_BYTES) throw new Error('This project has reached its 25 MB total asset limit. Delete an existing image or binary file before adding another.');
+  }
+  const ownerId = await getProjectOwnerId(projectId);
+  if (!ownerId) throw new ProjectAccessError('Project not found.');
+  const { error } = await supabaseAdmin.from('project_files').upsert(
+    { project_id: projectId, user_id: ownerId, path, is_folder: false, content },
+    { onConflict: 'project_id,path' }
+  );
+  if (error) throw new Error(`writeProjectFile failed: ${error.message}`);
+}
+
+export async function createProjectFolder(userId: string, projectId: string, rawPath: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const path = normalizePath(rawPath);
+  const ownerId = await getProjectOwnerId(projectId);
+  if (!ownerId) throw new ProjectAccessError('Project not found.');
+  const { error } = await supabaseAdmin.from('project_files').upsert(
+    { project_id: projectId, user_id: ownerId, path, is_folder: true, content: null },
+    { onConflict: 'project_id,path' }
+  );
+  if (error) throw new Error(`createProjectFolder failed: ${error.message}`);
+}
+
+export async function deleteProjectFile(userId: string, projectId: string, rawPath: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const path = normalizePath(rawPath);
+  const { error: exactErr } = await supabaseAdmin.from('project_files').delete().eq('project_id', projectId).eq('path', path);
+  if (exactErr) throw new Error(`deleteProjectFile failed: ${exactErr.message}`);
+  const { error: childErr } = await supabaseAdmin.from('project_files').delete().eq('project_id', projectId).like('path', `${path}/%`);
+  if (childErr) throw new Error(`deleteProjectFile (children) failed: ${childErr.message}`);
+}
+
+export async function listProjectFiles(userId: string, projectId: string): Promise<ProjectFileEntry[]> {
+  await assertProjectRole(userId, projectId, 'viewer');
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path,is_folder,updated_at')
+    .eq('project_id', projectId)
+    .order('path', { ascending: true });
+  if (error) throw new Error(`listProjectFiles failed: ${error.message}`);
+  return (data ?? []).filter((file) => !file.path.startsWith('.kingxtech-dist/'));
+}
+
 /** Legacy owner-only helper retained for non-collaboration services that manage owner-only resources. */
-export async function assertProjectOwnership(userId:string,projectId:string):Promise<void>{await assertProjectRole(userId,projectId,'owner');}
+export async function assertProjectOwnership(userId: string, projectId: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'owner');
+}
