@@ -182,19 +182,20 @@ async function revokeProForReference(reference: string, rawType: string) {
     .eq('id', intent.id);
   if (intentUpdateError) throw intentUpdateError;
 
+  const eventReference = `${reference}:${rawType}`;
   const { error: eventError } = await supabaseAdmin
     .from('billing_events')
-    .upsert({
+    .insert({
       id: `paystack:${rawType}:${reference}`,
       gateway: 'paystack',
       user_id: intent.user_id,
       raw_type: rawType,
-      reference,
+      reference: eventReference,
       currency: intent.currency,
       amount_minor: intent.expected_amount_minor,
       processed_at: new Date().toISOString(),
-    }, { onConflict: 'gateway,reference' });
-  if (eventError) throw eventError;
+    });
+  if (eventError && (eventError as { code?: string }).code !== '23505') throw eventError;
 
   console.log('[billing-webhook] Revoked Pro for refunded/disputed reference:', reference);
 }
