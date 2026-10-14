@@ -1,6 +1,17 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { assertProjectRole } from './projectCollaboration';
 
 export type VersionAction = 'write' | 'delete' | 'create_folder';
+
+async function projectOwnerId(projectId: string): Promise<string> {
+  const { data, error } = await supabaseAdmin
+    .from('projects')
+    .select('user_id')
+    .eq('id', projectId)
+    .single();
+  if (error || !data?.user_id) throw new Error(`Project owner lookup failed: ${error?.message ?? 'owner missing'}`);
+  return data.user_id;
+}
 
 /**
  * Captures the state of a file/folder BEFORE a mutating tool call touches it,
@@ -14,17 +25,19 @@ export async function snapshotBeforeChange(
   turnId: string,
   action: VersionAction
 ): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const ownerId = await projectOwnerId(projectId);
   const { data: existing } = await supabaseAdmin
     .from('project_files')
     .select('content, is_folder')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
+    .eq('user_id', ownerId)
     .eq('path', path)
     .maybeSingle();
 
   const { error } = await supabaseAdmin.from('project_file_versions').insert({
     project_id: projectId,
-    user_id: userId,
+    user_id: ownerId,
     turn_id: turnId,
     path,
     action,
@@ -48,11 +61,13 @@ export interface TurnChange {
 
 /** Lists what a turn changed, for the accept/reject summary shown in chat. */
 export async function getTurnChanges(userId: string, projectId: string, turnId: string): Promise<TurnChange[]> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const ownerId = await projectOwnerId(projectId);
   const { data, error } = await supabaseAdmin
     .from('project_file_versions')
     .select('path, action, existed_before')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
+    .eq('user_id', ownerId)
     .eq('turn_id', turnId)
     .order('created_at', { ascending: true });
 
@@ -66,11 +81,13 @@ export async function getTurnChanges(userId: string, projectId: string, turnId: 
  * chained edits within the same turn unwind correctly.
  */
 export async function revertTurn(userId: string, projectId: string, turnId: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const ownerId = await projectOwnerId(projectId);
   const { data: versions, error } = await supabaseAdmin
     .from('project_file_versions')
     .select('path, action, existed_before, prev_content, prev_is_folder')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
+    .eq('user_id', ownerId)
     .eq('turn_id', turnId)
     .order('created_at', { ascending: false });
 
@@ -79,11 +96,10 @@ export async function revertTurn(userId: string, projectId: string, turnId: stri
 
   for (const v of versions) {
     if (v.existed_before) {
-      // Restore the file/folder to its pre-turn content.
       const { error: upsertErr } = await supabaseAdmin.from('project_files').upsert(
         {
           project_id: projectId,
-          user_id: userId,
+          user_id: ownerId,
           path: v.path,
           is_folder: v.prev_is_folder,
           content: v.prev_content,
@@ -92,12 +108,11 @@ export async function revertTurn(userId: string, projectId: string, turnId: stri
       );
       if (upsertErr) throw new Error(`revertTurn restore failed for ${v.path}: ${upsertErr.message}`);
     } else {
-      // The file didn't exist before this turn — undo means deleting it.
       const { error: delErr } = await supabaseAdmin
         .from('project_files')
         .delete()
         .eq('project_id', projectId)
-        .eq('user_id', userId)
+        .eq('user_id', ownerId)
         .eq('path', v.path);
       if (delErr) throw new Error(`revertTurn delete failed for ${v.path}: ${delErr.message}`);
     }
@@ -110,11 +125,13 @@ export async function revertFileToPreviousVersion(
   projectId: string,
   path: string
 ): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const ownerId = await projectOwnerId(projectId);
   const { data: version, error } = await supabaseAdmin
     .from('project_file_versions')
     .select('existed_before, prev_content, prev_is_folder')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
+    .eq('user_id', ownerId)
     .eq('path', path)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -127,7 +144,7 @@ export async function revertFileToPreviousVersion(
     const { error: upsertErr } = await supabaseAdmin.from('project_files').upsert(
       {
         project_id: projectId,
-        user_id: userId,
+        user_id: ownerId,
         path,
         is_folder: version.prev_is_folder,
         content: version.prev_content,
@@ -140,7 +157,7 @@ export async function revertFileToPreviousVersion(
       .from('project_files')
       .delete()
       .eq('project_id', projectId)
-      .eq('user_id', userId)
+      .eq('user_id', ownerId)
       .eq('path', path);
     if (delErr) throw new Error(`revertFileToPreviousVersion delete failed: ${delErr.message}`);
   }
