@@ -4,7 +4,7 @@
 -- then run this file with the pgTAP test runner (for example `supabase test db`).
 
 begin;
-select plan(14);
+select plan(16);
 
 select tests.create_supabase_user('collab_a@example.com') as a_id \gset
 select tests.create_supabase_user('collab_b@example.com') as b_id \gset
@@ -41,7 +41,7 @@ select throws_ok(
   'viewer cannot write files'
 );
 
--- Promote B to editor as the backend/service role, then verify editor write but no project deletion.
+-- Promote B to editor as the owner/backend service role, then verify editor write but no project deletion.
 set local role service_role;
 update public.project_members set role='editor' where project_id=:'id' and user_id=:'b_id';
 reset role;
