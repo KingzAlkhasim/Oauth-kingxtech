@@ -101,7 +101,8 @@ begin
     plan = p_plan,
     is_pro_member = true,
     plan_started_at = case
-      when plan in ('pro', 'pro_plus')
+      when is_pro_member = true
+        and plan in ('pro', 'pro_plus')
         and plan_expires_at is not null
         and plan_expires_at >= now()
       then plan_started_at
@@ -191,7 +192,8 @@ begin
     plan = 'pro',
     is_pro_member = true,
     plan_started_at = case
-      when plan in ('pro', 'pro_plus')
+      when is_pro_member = true
+        and plan in ('pro', 'pro_plus')
         and plan_expires_at is not null
         and plan_expires_at >= now()
       then plan_started_at
