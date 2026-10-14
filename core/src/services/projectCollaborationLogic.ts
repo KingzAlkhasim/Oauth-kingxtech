@@ -6,14 +6,42 @@ export function roleAtLeast(role: ProjectRole, minimum: ProjectRole): boolean {
   return rank[role] >= rank[minimum];
 }
 
-export function canInvite(role: ProjectRole): boolean { return roleAtLeast(role, 'editor'); }
-export function canManageMembers(role: ProjectRole): boolean { return role === 'owner'; }
-export function canDeleteProject(role: ProjectRole): boolean { return role === 'owner'; }
-export function canWriteFiles(role: ProjectRole): boolean { return roleAtLeast(role, 'editor'); }
-export function canViewProject(role: ProjectRole): boolean { return roleAtLeast(role, 'viewer'); }
+export function canInvite(role: ProjectRole): boolean {
+  return roleAtLeast(role, 'editor');
+}
 
-export function validInvite({ signedInEmail, invitedEmail, expired, revoked, accepted }: {
-  signedInEmail: string; invitedEmail: string; expired: boolean; revoked: boolean; accepted: boolean;
+export function canManageMembers(role: ProjectRole): boolean {
+  return role === 'owner';
+}
+
+export function canDeleteProject(role: ProjectRole): boolean {
+  return role === 'owner';
+}
+
+export function canWriteFiles(role: ProjectRole): boolean {
+  return roleAtLeast(role, 'editor');
+}
+
+export function canViewProject(role: ProjectRole): boolean {
+  return roleAtLeast(role, 'viewer');
+}
+
+export function canUseAiMode(role: ProjectRole, mode: 'plan' | 'build'): boolean {
+  return role !== 'viewer' || mode === 'plan';
+}
+
+export function validInvite({
+  signedInEmail,
+  invitedEmail,
+  expired,
+  revoked,
+  accepted,
+}: {
+  signedInEmail: string;
+  invitedEmail: string;
+  expired: boolean;
+  revoked: boolean;
+  accepted: boolean;
 }): { ok: true } | { ok: false; code: string } {
   if (accepted) return { ok: false, code: 'invite_used' };
   if (revoked) return { ok: false, code: 'invite_revoked' };
@@ -23,6 +51,7 @@ export function validInvite({ signedInEmail, invitedEmail, expired, revoked, acc
 }
 
 export type TransferStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';
+
 export function transferTransition(status: TransferStatus, action: 'accept' | 'decline' | 'cancel'): TransferStatus {
   if (status !== 'pending') throw new Error('Only pending transfers can change state.');
   return action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'cancelled';
