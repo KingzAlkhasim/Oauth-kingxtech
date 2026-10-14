@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { createHash } from 'crypto';
 import { env } from '../config/env';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { handleBillingMaintenance, handleBillingRoute } from '../services/billingRoutes';
 
 export interface AuthedRequest extends Request {
   user?: { id: string; email?: string };
@@ -58,6 +59,8 @@ async function tryApiKeyAuth(req: AuthedRequest, token: string): Promise<boolean
  * Expects: Authorization: Bearer <supabase_access_token | kx_live_/kx_test_ API key>
  */
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (await handleBillingMaintenance(req, res)) return;
+
   const header = req.headers.authorization;
 
   if (!header?.startsWith('Bearer ')) {
@@ -69,6 +72,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
 
   try {
     if (await tryApiKeyAuth(req, token)) {
+      if (await handleBillingRoute(req, res)) return;
       next();
       return;
     }
@@ -88,8 +92,11 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     const user = (await resp.json()) as { id: string; email?: string };
     req.user = { id: user.id, email: user.email };
     req.authMethod = 'session';
+
+    if (await handleBillingRoute(req, res)) return;
     next();
   } catch (err) {
+    console.error('[auth] verification/route dispatch error:', err);
     res.status(503).json({ success: false, error: 'Could not verify session (auth service unreachable).' });
   }
 }
