@@ -166,7 +166,7 @@ create policy env_owner_delete on public.project_env_vars for delete to authenti
 create or replace function public.project_env_keys(p_project_id uuid)
 returns table(id uuid,key text,is_public boolean,created_at timestamptz,updated_at timestamptz)
 language sql stable security definer set search_path=public
-as $$ select e.id,e.key,e.is_public,e.created_at,e.updated_at from public.project_env_vars e where e.project_id=p_project_id and public.is_project_member(p_project_id,'viewer'); $$;
+as $$ select e.id,e.key,e.is_public,e.created_at,e.updated_at from public.project_env_vars e where e.project_id=p_project_id and public.is_project_member(p_project_id,'editor'); $$;
 revoke execute on function public.project_env_keys(uuid) from public,anon;
 grant execute on function public.project_env_keys(uuid) to authenticated;
 
