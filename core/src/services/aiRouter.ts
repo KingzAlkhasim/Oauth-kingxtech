@@ -8,6 +8,7 @@ import { runGemmaGoogleAgent } from './providers/gemmaGoogle';
 import { REGISTRY } from './modelRegistry';
 import { resolveDefaultModelForTier } from './modelDefaults';
 import { sanitizeGemmaError, shouldFallbackToFreeModel } from './gemmaFallback';
+import { getProjectRole, ProjectRoleError } from './projectCollaboration';
 import type { Provider } from './modelRegistry';
 
 export const generateContent = async (
@@ -17,8 +18,16 @@ export const generateContent = async (
   history: AgentTurn[],
   ctx: ProjectContext,
   onStep?: (step: ToolStep) => void,
-  onUsage?: (usage: {inputTokens:number;outputTokens:number;cachedInputTokens:number;cacheCreationInputTokens?:number}) => boolean | void
+  onUsage?: (usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number; cacheCreationInputTokens?: number }) => boolean | void
 ): Promise<AgentResult> => {
+  if (ctx.projectId && ctx.userId) {
+    const role = await getProjectRole(ctx.userId, ctx.projectId);
+    if (!role) throw new ProjectRoleError('You are not a member of this project.');
+    if (role === 'viewer' && !ctx.readOnly) {
+      throw new ProjectRoleError('View-only members can use K-XpertAI in Plan mode only.');
+    }
+  }
+
   const tools = toolsForContext(ctx);
   const opts = { modelId, history, prompt, tools, ctx, onStep, onUsage };
 
@@ -28,15 +37,7 @@ export const generateContent = async (
   } else if (provider === 'openai') {
     result = await runOpenAIAgent(opts);
   } else if (provider === 'openweights') {
-    // OpenRouter's free tier is a SHARED quota across every KingxTech user,
-    // and individual free model IDs occasionally get renamed/retired by
-    // OpenRouter. Try every free model in sequence — on ANY failure (rate
-    // limit, invalid ID, transient provider error) — before giving up, so
-    // one bad or busy model never takes down the whole free tier.
     const freeModels = REGISTRY.filter((m) => m.provider === 'openweights');
-    // OpenRouter's individual :free model slugs are frequently retired or
-    // renamed. The stable free router automatically selects a currently
-    // available free model and filters for tool-calling support.
     const FREE_ROUTER_MODEL_ID = 'openrouter/free';
     const ordered = [
       freeModels.find((m) => m.modelId === modelId),
@@ -60,7 +61,6 @@ export const generateContent = async (
       } catch (err: any) {
         console.error(`[openweights fallback] ${candidate.modelId} failed:`, err?.message ?? err);
         lastErr = err;
-        // Keep trying the next candidate regardless of error type.
       }
     }
     if (!succeeded) throw lastErr;
@@ -85,10 +85,6 @@ export const generateContent = async (
     result = await runGeminiAgent(opts);
   }
 
-  // Defense-in-depth: some models (esp. smaller open-weight ones) sometimes
-  // return empty text after tool calls despite the system instruction. Never
-  // show the user a bare "No response generated" when we can build a real
-  // summary from what the tools actually did.
   if (!result.text || !result.text.trim() || result.text === 'No response generated.') {
     result = { ...result, text: synthesizeFallbackText(result.steps) };
   }
