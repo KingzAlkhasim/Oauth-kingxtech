@@ -2,96 +2,24 @@ import type { Express } from 'express';
 import { requireAuth, type AuthedRequest } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
 import { env } from '../config/env';
-import { CollaborationError, acceptProjectInvite, acceptTransfer, cancelTransfer, changeMemberRole, createProjectInvite, createTransferRequest, declineTransfer, getPendingTransfers, listProjectInvites, listProjectMembers, removeMember, revokeProjectInvite } from './projectCollaboration';
+import { CollaborationError, acceptProjectInvite, acceptTransfer, cancelTransfer, changeMemberRole, createProjectInvite, createTransferRequest, declineTransfer, getPendingTransfers, getProjectTier, listProjectInvites, listProjectMembers, removeMember, revokeProjectInvite } from './projectCollaboration';
+import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { memberCapForTier } from '../config/collaboration';
 
-function sendError(res: any, error: unknown) {
-  if (error instanceof CollaborationError) {
-    res.status(error.status).json({ success: false, code: error.code, error: error.message });
-    return;
-  }
-  console.error('Project collaboration error:', error);
-  res.status(500).json({ success: false, error: 'Project collaboration request failed.' });
-}
+function sendError(res: any, error: unknown) { if (error instanceof CollaborationError) { res.status(error.status).json({ success:false, code:error.code, error:error.message }); return; } console.error('Project collaboration error:',error); res.status(500).json({success:false,error:'Project collaboration request failed.'}); }
+async function audit(projectId:string,userId:string,action:string,detail:string){const {error}=await supabaseAdmin.from('activity_log').insert({project_id:projectId,user_id:userId,action,detail});if(error)console.error('Project collaboration audit failed:',error.message);}
+function inviteAppBase():string{return env.ALLOWED_ORIGINS.find((origin)=>origin.includes('auth.'))||'https://auth.kingxtech.name.ng';}
 
-function inviteAppBase(): string {
-  return env.ALLOWED_ORIGINS.find((origin) => origin.includes('auth.')) || 'https://auth.kingxtech.name.ng';
-}
-
-export function registerProjectCollaborationRoutes(app: Express) {
-  app.post('/api/projects/:projectId/invites', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
-    try {
-      const email = typeof req.body?.email === 'string' ? req.body.email : '';
-      const role = req.body?.role === 'editor' ? 'editor' : req.body?.role === 'viewer' ? 'viewer' : null;
-      if (!role) { res.status(400).json({ success: false, code: 'invalid_role', error: 'Invite role must be editor or viewer.' }); return; }
-      const result = await createProjectInvite(req.user!.id, req.params.projectId, email, role);
-      res.status(201).json({ success: true, ...result, inviteUrl: `${inviteAppBase()}${result.inviteUrl}` });
-    } catch (error) { sendError(res, error); }
-  });
-
-  app.get('/api/projects/:projectId/members', requireAuth, async (req: AuthedRequest, res) => {
-    try {
-      const members = await listProjectMembers(req.params.projectId, req.user!.id);
-      const { invites } = await listProjectInvites(req.params.projectId, req.user!.id).catch((error) => ({ invites: [], error }));
-      res.json({ success: true, members, pendingInvites: invites });
-    } catch (error) { sendError(res, error); }
-  });
-
-  app.patch('/api/projects/:projectId/members/:userId', requireAuth, async (req: AuthedRequest, res) => {
-    try {
-      const role = req.body?.role === 'editor' ? 'editor' : req.body?.role === 'viewer' ? 'viewer' : null;
-      if (!role) { res.status(400).json({ success: false, code: 'invalid_role', error: 'Role must be editor or viewer.' }); return; }
-      await changeMemberRole(req.user!.id, req.params.projectId, req.params.userId, role);
-      res.json({ success: true });
-    } catch (error) { sendError(res, error); }
-  });
-
-  app.delete('/api/projects/:projectId/members/:userId', requireAuth, async (req: AuthedRequest, res) => {
-    try {
-      await removeMember(req.user!.id, req.params.projectId, req.params.userId);
-      res.json({ success: true });
-    } catch (error) { sendError(res, error); }
-  });
-
-  app.delete('/api/projects/:projectId/invites/:inviteId', requireAuth, async (req: AuthedRequest, res) => {
-    try {
-      await revokeProjectInvite(req.user!.id, req.params.projectId, req.params.inviteId);
-      res.json({ success: true });
-    } catch (error) { sendError(res, error); }
-  });
-
-  app.post('/api/invites/accept', requireAuth, async (req: AuthedRequest, res) => {
-    try {
-      const token = typeof req.body?.token === 'string' ? req.body.token : '';
-      const member = await acceptProjectInvite(req.user!.id, req.user!.email, token);
-      res.json({ success: true, member });
-    } catch (error) { sendError(res, error); }
-  });
-
-  app.post('/api/projects/:projectId/transfer', requireAuth, async (req: AuthedRequest, res) => {
-    try {
-      const targetUserId = typeof req.body?.toUserId === 'string' ? req.body.toUserId : '';
-      const transfer = await createTransferRequest(req.user!.id, req.params.projectId, targetUserId);
-      res.status(201).json({ success: true, transfer });
-    } catch (error) { sendError(res, error); }
-  });
-
-  app.post('/api/transfers/:id/accept', requireAuth, async (req: AuthedRequest, res) => {
-    try { res.json({ success: true, transfer: await acceptTransfer(req.user!.id, req.params.id) }); }
-    catch (error) { sendError(res, error); }
-  });
-
-  app.post('/api/transfers/:id/decline', requireAuth, async (req: AuthedRequest, res) => {
-    try { await declineTransfer(req.user!.id, req.params.id); res.json({ success: true }); }
-    catch (error) { sendError(res, error); }
-  });
-
-  app.post('/api/transfers/:id/cancel', requireAuth, async (req: AuthedRequest, res) => {
-    try { await cancelTransfer(req.user!.id, req.params.id); res.json({ success: true }); }
-    catch (error) { sendError(res, error); }
-  });
-
-  app.get('/api/transfers/pending', requireAuth, async (req: AuthedRequest, res) => {
-    try { res.json({ success: true, transfers: await getPendingTransfers(req.user!.id) }); }
-    catch (error) { sendError(res, error); }
-  });
+export function registerProjectCollaborationRoutes(app:Express){
+ app.post('/api/projects/:projectId/invites',requireAuth,rateLimit,async(req:AuthedRequest,res)=>{try{const email=typeof req.body?.email==='string'?req.body.email:'';const role=req.body?.role==='editor'?'editor':req.body?.role==='viewer'?'viewer':null;if(!role){res.status(400).json({success:false,code:'invalid_role',error:'Invite role must be editor or viewer.'});return;}const result=await createProjectInvite(req.user!.id,req.params.projectId,email,role);await audit(req.params.projectId,req.user!.id,'Project member invited',`${email} as ${role}`);res.status(201).json({success:true,...result,inviteUrl:`${inviteAppBase()}${result.inviteUrl}`});}catch(error){sendError(res,error);}});
+ app.get('/api/projects/:projectId/members',requireAuth,async(req:AuthedRequest,res)=>{try{const members=await listProjectMembers(req.params.projectId,req.user!.id);const {invites}=await listProjectInvites(req.params.projectId,req.user!.id).catch(()=>({invites:[]}));const tier=await getProjectTier(req.user!.id);res.json({success:true,currentUserId:req.user!.id,tier,memberCap:memberCapForTier(tier),members,pendingInvites:invites});}catch(error){sendError(res,error);}});
+ app.patch('/api/projects/:projectId/members/:userId',requireAuth,async(req:AuthedRequest,res)=>{try{const role=req.body?.role==='editor'?'editor':req.body?.role==='viewer'?'viewer':null;if(!role){res.status(400).json({success:false,code:'invalid_role',error:'Role must be editor or viewer.'});return;}await changeMemberRole(req.user!.id,req.params.projectId,req.params.userId,role);res.json({success:true});}catch(error){sendError(res,error);}});
+ app.delete('/api/projects/:projectId/members/:userId',requireAuth,async(req:AuthedRequest,res)=>{try{await removeMember(req.user!.id,req.params.projectId,req.params.userId);res.json({success:true});}catch(error){sendError(res,error);}});
+ app.delete('/api/projects/:projectId/invites/:inviteId',requireAuth,async(req:AuthedRequest,res)=>{try{await revokeProjectInvite(req.user!.id,req.params.projectId,req.params.inviteId);await audit(req.params.projectId,req.user!.id,'Project invite revoked',req.params.inviteId);res.json({success:true});}catch(error){sendError(res,error);}});
+ app.post('/api/invites/accept',requireAuth,async(req:AuthedRequest,res)=>{try{const token=typeof req.body?.token==='string'?req.body.token:'';const member=await acceptProjectInvite(req.user!.id,req.user!.email,token);res.json({success:true,member});}catch(error){sendError(res,error);}});
+ app.post('/api/projects/:projectId/transfer',requireAuth,async(req:AuthedRequest,res)=>{try{const targetUserId=typeof req.body?.toUserId==='string'?req.body.toUserId:'';const transfer=await createTransferRequest(req.user!.id,req.params.projectId,targetUserId);res.status(201).json({success:true,transfer});}catch(error){sendError(res,error);}});
+ app.post('/api/transfers/:id/accept',requireAuth,async(req:AuthedRequest,res)=>{try{res.json({success:true,transfer:await acceptTransfer(req.user!.id,req.params.id)});}catch(error){sendError(res,error);}});
+ app.post('/api/transfers/:id/decline',requireAuth,async(req:AuthedRequest,res)=>{try{await declineTransfer(req.user!.id,req.params.id);res.json({success:true});}catch(error){sendError(res,error);}});
+ app.post('/api/transfers/:id/cancel',requireAuth,async(req:AuthedRequest,res)=>{try{await cancelTransfer(req.user!.id,req.params.id);res.json({success:true});}catch(error){sendError(res,error);}});
+ app.get('/api/transfers/pending',requireAuth,async(req:AuthedRequest,res)=>{try{res.json({success:true,transfers:await getPendingTransfers(req.user!.id)});}catch(error){sendError(res,error);}});
 }
