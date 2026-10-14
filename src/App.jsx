@@ -10,6 +10,8 @@ import Welcome from './pages/Welcome';
 import Settings from './pages/Settings';
 import Projects from './pages/Projects';
 import ProjectWorkspace from './pages/ProjectWorkspace';
+import ProjectShare from './pages/ProjectShare';
+import InviteAccept from './pages/InviteAccept';
 import Console from './pages/Console';
 import Confirmed from './pages/Confirmed';
 import Billing from './pages/Billing';
@@ -46,6 +48,8 @@ export default function App() {
         <Route path="/sessions" element={<Navigate to="/account/sessions" replace />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:id/workspace" element={<ProjectWorkspace />} />
+        <Route path="/projects/:id/share" element={<ProjectShare />} />
+        <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/console" element={<Console />} />
         <Route path="/activity" element={<Navigate to="/account/activity" replace />} />
         <Route path="/confirmed" element={<Confirmed />} />
