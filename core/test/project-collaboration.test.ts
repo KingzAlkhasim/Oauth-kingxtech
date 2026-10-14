@@ -11,6 +11,7 @@ import {
   validInvite,
   transferTransition,
   memberCapReached,
+  PROJECT_ROUTE_MIN_ROLES,
 } from '../src/services/projectCollaborationLogic';
 
 test('role permissions are ordered owner > editor > viewer', () => {
@@ -31,6 +32,27 @@ test('viewer AI access is Plan-only', () => {
   assert.equal(canUseAiMode('editor', 'plan'), true);
   assert.equal(canUseAiMode('editor', 'build'), true);
   assert.equal(canUseAiMode('owner', 'build'), true);
+});
+
+test('project routes have explicit minimum roles', () => {
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.aiGeneratePlan, 'viewer');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.aiGenerateBuild, 'editor');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.filesRead, 'viewer');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.filesWrite, 'editor');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.fileVersions, 'editor');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.revert, 'editor');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.rejectTurn, 'editor');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.publish, 'editor');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.envValues, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.pwa, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.githubLink, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.githubPush, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.githubImport, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.customDomains, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.deleteProject, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.securityCheck, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.runtime, 'owner');
+  assert.equal(PROJECT_ROUTE_MIN_ROLES.terminal, 'owner');
 });
 
 test('plan caps are 2 for Free and 10 for Pro/Pro+', () => {
