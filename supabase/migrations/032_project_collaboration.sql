@@ -1,6 +1,7 @@
 -- 032: Phase 1 project collaboration. APPLY MANUALLY AFTER REVIEW; never apply from this PR.
 -- Migration 031 is reserved for the plan-expiry PR. Additive/idempotent.
 -- projects.user_id remains canonical ownership and compute/storage billing ownership.
+begin; -- all-or-nothing: if anything below fails, nothing is applied
 
 create table if not exists public.project_members (
   project_id uuid references public.projects(id) on delete cascade not null,
@@ -54,8 +55,11 @@ grant execute on function public.is_project_member(uuid,text) to authenticated;
 
 create or replace function public.project_owner_id(p_project_id uuid)
 returns uuid language sql stable security definer set search_path=public
-as $$ select user_id from public.projects where id=p_project_id; $$;
-revoke execute on function public.project_owner_id(uuid) from public,anon,authenticated;
+as $$ select p.user_id from public.projects p where p.id=p_project_id and (p.user_id=auth.uid() or exists(select 1 from public.project_members pm where pm.project_id=p.id and pm.user_id=auth.uid())); $$;
+-- RLS policies call this as the signed-in user, so authenticated must be able to execute it.
+-- It only returns the owner id to the owner and to members of that project.
+revoke execute on function public.project_owner_id(uuid) from public,anon;
+grant execute on function public.project_owner_id(uuid) to authenticated;
 
 create or replace function public.create_project_invite(p_project_id uuid,p_email text,p_role text,p_invited_by uuid,p_token_hash text,p_expires_at timestamptz,p_member_cap integer)
 returns uuid language plpgsql security definer set search_path=public
@@ -121,10 +125,24 @@ do $$ declare r record; begin
   end loop;
 end $$;
 
-create policy project_read on public.projects for select to authenticated using(public.is_project_member(id,'viewer'));
+create policy project_read on public.projects for select to authenticated using(user_id=(select auth.uid()) or public.is_project_member(id,'viewer'));
 create policy project_insert on public.projects for insert to authenticated with check(auth.uid()=user_id);
 create policy project_editor_update on public.projects for update to authenticated using(public.is_project_member(id,'editor')) with check(user_id=public.project_owner_id(id));
-create policy project_owner_delete on public.projects for delete to authenticated using(public.is_project_member(id,'owner'));
+create policy project_owner_delete on public.projects for delete to authenticated using(user_id=(select auth.uid()) or public.is_project_member(id,'owner'));
+
+-- New projects must get an owner membership row automatically; otherwise every
+-- project created after this migration would have no member rows and the
+-- owner-based policies on files, versions, env vars, etc. would reject the owner.
+create or replace function public.add_project_owner_member()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  insert into public.project_members(project_id,user_id,role) values(new.id,new.user_id,'owner')
+  on conflict (project_id,user_id) do update set role='owner';
+  return new;
+end $$;
+revoke execute on function public.add_project_owner_member() from public,anon,authenticated;
+drop trigger if exists projects_add_owner_member on public.projects;
+create trigger projects_add_owner_member after insert on public.projects for each row execute function public.add_project_owner_member();
 
 alter table public.project_members enable row level security;
 revoke all on public.project_members from anon,authenticated;
@@ -190,3 +208,5 @@ alter table public.project_invites enable row level security;
 alter table public.project_transfer_requests enable row level security;
 revoke all on public.project_invites from anon,authenticated;
 revoke all on public.project_transfer_requests from anon,authenticated;
+
+commit;
