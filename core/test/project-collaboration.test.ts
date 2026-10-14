@@ -1,7 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROJECT_MEMBER_CAPS } from '../src/config/projectCollaboration';
-import { roleAtLeast, canInvite, canManageMembers, canDeleteProject, canWriteFiles, validInvite, transferTransition, memberCapReached } from '../src/services/projectCollaborationLogic';
+import {
+  roleAtLeast,
+  canInvite,
+  canManageMembers,
+  canDeleteProject,
+  canWriteFiles,
+  canUseAiMode,
+  validInvite,
+  transferTransition,
+  memberCapReached,
+} from '../src/services/projectCollaborationLogic';
 
 test('role permissions are ordered owner > editor > viewer', () => {
   assert.equal(canWriteFiles('viewer'), false);
@@ -13,6 +23,14 @@ test('role permissions are ordered owner > editor > viewer', () => {
   assert.equal(canManageMembers('editor'), false);
   assert.equal(canManageMembers('owner'), true);
   assert.equal(roleAtLeast('owner', 'viewer'), true);
+});
+
+test('viewer AI access is Plan-only', () => {
+  assert.equal(canUseAiMode('viewer', 'plan'), true);
+  assert.equal(canUseAiMode('viewer', 'build'), false);
+  assert.equal(canUseAiMode('editor', 'plan'), true);
+  assert.equal(canUseAiMode('editor', 'build'), true);
+  assert.equal(canUseAiMode('owner', 'build'), true);
 });
 
 test('plan caps are 2 for Free and 10 for Pro/Pro+', () => {
