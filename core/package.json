@@ -10,7 +10,7 @@
     "dev": "tsx watch src/server.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/ai-usage.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "engines": {
     "node": ">=20.9.0"

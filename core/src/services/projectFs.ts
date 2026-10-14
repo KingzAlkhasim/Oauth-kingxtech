@@ -1,5 +1,14 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
-import { MAX_BINARY_FILE_BYTES, MAX_PROJECT_BINARY_BYTES, SUPPORTED_BINARY_EXTENSIONS, extensionOf, decodeBinaryContent, validateBinaryBytes, validateSvgText } from './binaryFiles';
+import {
+  MAX_BINARY_FILE_BYTES,
+  MAX_PROJECT_BINARY_BYTES,
+  SUPPORTED_BINARY_EXTENSIONS,
+  extensionOf,
+  decodeBinaryContent,
+  validateBinaryBytes,
+  validateSvgText,
+} from './binaryFiles';
+import { assertProjectRole } from './projectCollaboration';
 
 export class ProjectAccessError extends Error {}
 
@@ -13,59 +22,38 @@ export interface ProjectFileContent extends ProjectFileEntry {
   content: string | null;
 }
 
-/**
- * Normalizes and validates a virtual path. This isn't guarding a real
- * filesystem (there's nothing to "escape" — it's just a DB column), but we
- * still reject weirdness so paths stay predictable and collision-free:
- * no leading/trailing slashes, no "..", no empty segments, reasonable length.
- */
 function normalizePath(rawPath: string): string {
   const input = rawPath.trim();
   if (input.startsWith('/') || input.includes('\\') || /^[a-z]:[\\/]/i.test(input)) {
     throw new ProjectAccessError('Absolute paths are not allowed. Use a path relative to the project root.');
   }
   const trimmed = input.replace(/\/+$/, '');
-
-  if (!trimmed || trimmed.length > 500) {
-    throw new ProjectAccessError('Invalid path.');
-  }
+  if (!trimmed || trimmed.length > 500) throw new ProjectAccessError('Invalid path.');
   const segments = trimmed.split('/');
-  if (segments.some((s) => s === '' || s === '.' || s === '..')) {
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
     throw new ProjectAccessError('Path cannot contain empty, ".", or ".." segments.');
   }
   return trimmed;
 }
 
-/**
- * Confirms the project exists and belongs to this user before any file
- * operation runs. Required because supabaseAdmin uses the service role key
- * and bypasses RLS — this is the manual equivalent of the RLS check.
- */
 export interface ProjectFileWithContent {
   path: string;
   is_folder: boolean;
   content: string | null;
 }
 
-/** Full listing with content, for bulk export use cases like pushing to GitHub. */
-export async function listProjectFilesWithContent(
-  userId: string,
-  projectId: string
-): Promise<ProjectFileWithContent[]> {
-  await assertProjectOwnership(userId, projectId);
+export async function listProjectFilesWithContent(userId: string, projectId: string): Promise<ProjectFileWithContent[]> {
+  await assertProjectRole(userId, projectId, 'viewer');
   const { data, error } = await supabaseAdmin
     .from('project_files')
-    .select('path, is_folder, content')
+    .select('path,is_folder,content')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .eq('is_folder', false) // Git has no concept of empty folders, so skip them
+    .eq('is_folder', false)
     .order('path', { ascending: true });
-
   if (error) throw new Error(`listProjectFilesWithContent failed: ${error.message}`);
   return data ?? [];
 }
 
-/** Resolves a project's owner, for public routes that need it (e.g. serving that owner's public env vars alongside a preview). */
 export async function getProjectOwnerId(projectId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin.from('projects').select('user_id').eq('id', projectId).maybeSingle();
   if (error) throw new Error(`getProjectOwnerId failed: ${error.message}`);
@@ -73,24 +61,14 @@ export async function getProjectOwnerId(projectId: string): Promise<string | nul
 }
 
 function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60) || 'project';
+  return input.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project';
 }
 
-/**
- * Assigns a permanent, human-friendly slug to a project (if it doesn't
- * already have one) so it's reachable at /site/:slug/ in addition to the
- * raw /preview/:projectId/ link. Appends a short random suffix on collision.
- */
 export async function publishProject(userId: string, projectId: string): Promise<string> {
-  await assertProjectOwnership(userId, projectId);
-
+  await assertProjectRole(userId, projectId, 'editor');
   const { data: project, error: fetchErr } = await supabaseAdmin
     .from('projects')
-    .select('name, slug')
+    .select('name,slug')
     .eq('id', projectId)
     .single();
   if (fetchErr) throw new Error(`publishProject failed to load project: ${fetchErr.message}`);
@@ -98,21 +76,18 @@ export async function publishProject(userId: string, projectId: string): Promise
     await supabaseAdmin.from('projects').update({ published_at: new Date().toISOString() }).eq('id', projectId);
     return project.slug;
   }
-
   const base = slugify(project.name || 'project');
   let slug = base;
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     const { data: existing } = await supabaseAdmin.from('projects').select('id').eq('slug', slug).maybeSingle();
     if (!existing) break;
     slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
   }
-
   const { error: updateErr } = await supabaseAdmin
     .from('projects')
     .update({ slug, published_at: new Date().toISOString() })
     .eq('id', projectId);
   if (updateErr) throw new Error(`publishProject failed to save slug: ${updateErr.message}`);
-
   return slug;
 }
 
@@ -122,56 +97,16 @@ export async function getProjectIdBySlug(slug: string): Promise<string | null> {
   return data?.id ?? null;
 }
 
-/**
- * Public read, used ONLY by the /preview route. No userId check — anyone
- * who has the project's UUID can view its files as a rendered site. That's
- * an intentional tradeoff (see server.ts preview route comment): project
- * IDs are unguessable UUIDs, so this behaves like any "anyone with the
- * link" share model, not true per-user access control.
- */
-export async function readProjectFilePublic(
-  projectId: string,
-  rawPath: string
-): Promise<ProjectFileContent | null> {
+export async function readProjectFilePublic(projectId: string, rawPath: string): Promise<ProjectFileContent | null> {
   const path = normalizePath(rawPath);
   const { data, error } = await supabaseAdmin
     .from('project_files')
-    .select('path, is_folder, content, updated_at')
+    .select('path,is_folder,content,updated_at')
     .eq('project_id', projectId)
     .eq('path', path)
     .maybeSingle();
-
   if (error) throw new Error(`readProjectFilePublic failed: ${error.message}`);
   return data ?? null;
-}
-
-export async function assertProjectOwnership(userId: string, projectId: string): Promise<void> {
-  const { data, error } = await supabaseAdmin
-    .from('projects')
-    .select('id')
-    .eq('id', projectId)
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (error) throw new Error(`Ownership check failed: ${error.message}`);
-  if (!data) throw new ProjectAccessError('Project not found or not owned by this user.');
-}
-
-export async function listProjectFiles(
-  userId: string,
-  projectId: string
-): Promise<ProjectFileEntry[]> {
-  await assertProjectOwnership(userId, projectId);
-
-  const { data, error } = await supabaseAdmin
-    .from('project_files')
-    .select('path, is_folder, updated_at')
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .order('path', { ascending: true });
-
-  if (error) throw new Error(`listProjectFiles failed: ${error.message}`);
-  return (data ?? []).filter((file) => !file.path.startsWith('.kingxtech-dist/'));
 }
 
 export interface PublishedBuildFile {
@@ -180,36 +115,26 @@ export interface PublishedBuildFile {
   isBinary?: boolean;
 }
 
-/** Replaces the generated static artifact set used by the permanent published URL. */
-export async function replacePublishedBuild(
-  userId: string,
-  projectId: string,
-  files: PublishedBuildFile[],
-): Promise<void> {
-  await assertProjectOwnership(userId, projectId);
-
+export async function replacePublishedBuild(userId: string, projectId: string, files: PublishedBuildFile[]): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
+  const ownerId = await getProjectOwnerId(projectId);
+  if (!ownerId) throw new ProjectAccessError('Project not found.');
   const { error: deleteErr } = await supabaseAdmin
     .from('project_files')
     .delete()
     .eq('project_id', projectId)
-    .eq('user_id', userId)
     .like('path', '.kingxtech-dist/%');
   if (deleteErr) throw new Error(`replacePublishedBuild cleanup failed: ${deleteErr.message}`);
-
   if (files.length === 0) throw new Error('Published build produced no files.');
-
   const rows = files.map((file) => ({
     project_id: projectId,
-    user_id: userId,
+    user_id: ownerId,
     path: `.kingxtech-dist/${file.path}`,
     is_folder: false,
     content: file.isBinary ? `__KX_BINARY_BASE64__:${file.content}` : file.content,
   }));
-
   for (let i = 0; i < rows.length; i += 100) {
-    const { error } = await supabaseAdmin
-      .from('project_files')
-      .upsert(rows.slice(i, i + 100), { onConflict: 'project_id,path' });
+    const { error } = await supabaseAdmin.from('project_files').upsert(rows.slice(i, i + 100), { onConflict: 'project_id,path' });
     if (error) throw new Error(`replacePublishedBuild failed: ${error.message}`);
   }
 }
@@ -225,14 +150,11 @@ export async function hasPublishedBuild(projectId: string): Promise<boolean> {
   return !!data;
 }
 
-export async function readPublishedBuildFile(
-  projectId: string,
-  rawPath: string,
-): Promise<ProjectFileContent | null> {
+export async function readPublishedBuildFile(projectId: string, rawPath: string): Promise<ProjectFileContent | null> {
   const path = normalizePath(`.kingxtech-dist/${rawPath}`);
   const { data, error } = await supabaseAdmin
     .from('project_files')
-    .select('path, is_folder, content, updated_at')
+    .select('path,is_folder,content,updated_at')
     .eq('project_id', projectId)
     .eq('path', path)
     .maybeSingle();
@@ -241,38 +163,22 @@ export async function readPublishedBuildFile(
   return { ...data, path: rawPath };
 }
 
-export async function readProjectFile(
-  userId: string,
-  projectId: string,
-  rawPath: string
-): Promise<ProjectFileContent> {
-  await assertProjectOwnership(userId, projectId);
+export async function readProjectFile(userId: string, projectId: string, rawPath: string): Promise<ProjectFileContent> {
+  await assertProjectRole(userId, projectId, 'viewer');
   const path = normalizePath(rawPath);
-
   const { data, error } = await supabaseAdmin
     .from('project_files')
-    .select('path, is_folder, content, updated_at')
+    .select('path,is_folder,content,updated_at')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
     .eq('path', path)
     .maybeSingle();
-
   if (error) throw new Error(`readProjectFile failed: ${error.message}`);
   if (!data) throw new ProjectAccessError(`File not found: ${path}`);
   return data;
 }
 
-/**
- * Creates a file if it doesn't exist, or overwrites its content if it does
- * (upsert). This is what both "create file" and "edit file" map to.
- */
-export async function writeProjectFile(
-  userId: string,
-  projectId: string,
-  rawPath: string,
-  content: string
-): Promise<void> {
-  await assertProjectOwnership(userId, projectId);
+export async function writeProjectFile(userId: string, projectId: string, rawPath: string, content: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
   const path = normalizePath(rawPath);
   const ext = extensionOf(path);
   const binaryBytes = decodeBinaryContent(content);
@@ -281,7 +187,11 @@ export async function writeProjectFile(
   validateSvgText(path, content);
   if (binaryBytes && binaryBytes.length > MAX_BINARY_FILE_BYTES) throw new Error('This file is larger than 5 MB. Choose a smaller file.');
   if (binaryBytes || ext === 'svg') {
-    const { data: existingFiles, error: totalErr } = await supabaseAdmin.from('project_files').select('path, content, is_folder').eq('project_id', projectId).eq('user_id', userId).eq('is_folder', false);
+    const { data: existingFiles, error: totalErr } = await supabaseAdmin
+      .from('project_files')
+      .select('path,content,is_folder')
+      .eq('project_id', projectId)
+      .eq('is_folder', false);
     if (totalErr) throw new Error(`Could not check project asset storage: ${totalErr.message}`);
     let totalBytes = 0;
     for (const existing of existingFiles ?? []) {
@@ -293,65 +203,48 @@ export async function writeProjectFile(
     totalBytes += binaryBytes ? binaryBytes.length : Buffer.byteLength(content, 'utf8');
     if (totalBytes > MAX_PROJECT_BINARY_BYTES) throw new Error('This project has reached its 25 MB total asset limit. Delete an existing image or binary file before adding another.');
   }
-
+  const ownerId = await getProjectOwnerId(projectId);
+  if (!ownerId) throw new ProjectAccessError('Project not found.');
   const { error } = await supabaseAdmin.from('project_files').upsert(
-    { project_id: projectId, user_id: userId, path, is_folder: false, content },
+    { project_id: projectId, user_id: ownerId, path, is_folder: false, content },
     { onConflict: 'project_id,path' }
   );
-
   if (error) throw new Error(`writeProjectFile failed: ${error.message}`);
 }
 
-export async function createProjectFolder(
-  userId: string,
-  projectId: string,
-  rawPath: string
-): Promise<void> {
-  await assertProjectOwnership(userId, projectId);
+export async function createProjectFolder(userId: string, projectId: string, rawPath: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
   const path = normalizePath(rawPath);
-
+  const ownerId = await getProjectOwnerId(projectId);
+  if (!ownerId) throw new ProjectAccessError('Project not found.');
   const { error } = await supabaseAdmin.from('project_files').upsert(
-    {
-      project_id: projectId,
-      user_id: userId,
-      path,
-      is_folder: true,
-      content: null,
-    },
+    { project_id: projectId, user_id: ownerId, path, is_folder: true, content: null },
     { onConflict: 'project_id,path' }
   );
-
   if (error) throw new Error(`createProjectFolder failed: ${error.message}`);
 }
 
-/**
- * Deletes a single file, OR a folder and everything under it (prefix match
- * on "path/"), scoped to this user + project.
- */
-export async function deleteProjectFile(
-  userId: string,
-  projectId: string,
-  rawPath: string
-): Promise<void> {
-  await assertProjectOwnership(userId, projectId);
+export async function deleteProjectFile(userId: string, projectId: string, rawPath: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'editor');
   const path = normalizePath(rawPath);
-
-  const { error: exactErr } = await supabaseAdmin
-    .from('project_files')
-    .delete()
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .eq('path', path);
-
+  const { error: exactErr } = await supabaseAdmin.from('project_files').delete().eq('project_id', projectId).eq('path', path);
   if (exactErr) throw new Error(`deleteProjectFile failed: ${exactErr.message}`);
-
-  // Also remove any children if this was a folder (prefix match).
-  const { error: childErr } = await supabaseAdmin
-    .from('project_files')
-    .delete()
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .like('path', `${path}/%`);
-
+  const { error: childErr } = await supabaseAdmin.from('project_files').delete().eq('project_id', projectId).like('path', `${path}/%`);
   if (childErr) throw new Error(`deleteProjectFile (children) failed: ${childErr.message}`);
+}
+
+export async function listProjectFiles(userId: string, projectId: string): Promise<ProjectFileEntry[]> {
+  await assertProjectRole(userId, projectId, 'viewer');
+  const { data, error } = await supabaseAdmin
+    .from('project_files')
+    .select('path,is_folder,updated_at')
+    .eq('project_id', projectId)
+    .order('path', { ascending: true });
+  if (error) throw new Error(`listProjectFiles failed: ${error.message}`);
+  return (data ?? []).filter((file) => !file.path.startsWith('.kingxtech-dist/'));
+}
+
+/** Legacy owner-only helper retained for non-collaboration services that manage owner-only resources. */
+export async function assertProjectOwnership(userId: string, projectId: string): Promise<void> {
+  await assertProjectRole(userId, projectId, 'owner');
 }

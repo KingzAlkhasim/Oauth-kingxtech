@@ -51,6 +51,8 @@ import {
 import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
+import { getProjectRole } from './services/projectCollaboration';
+import { authorizeProjectAi } from './services/projectCollaborationLogic';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
 
@@ -363,7 +365,13 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   let activeProjectId: string | undefined;
   if (projectId) {
     try {
-      await assertProjectOwnership(userId, projectId);
+      const projectRole = await getProjectRole(userId, projectId);
+      if (!projectRole) throw new ProjectAccessError('Project not found.');
+      const aiAccess = authorizeProjectAi(projectRole, cleanPrompt.startsWith('PLANNING MODE:') ? 'plan' : 'build');
+      if (!aiAccess.allowed) {
+        res.status(aiAccess.status).json({ success: false, code: aiAccess.code, error: 'View-only members can use K-XpertAI in Plan mode only.' });
+        return;
+      }
       activeProjectId = projectId;
     } catch (error) {
       if (error instanceof ProjectAccessError) {

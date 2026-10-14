@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { listProjectFilesWithContent } from './projectFs';
+import { assertProjectRole } from './projectCollaboration';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -129,6 +130,7 @@ export interface SecurityCheckResult {
 }
 
 export async function runSecurityCheck(userId: string, projectId: string): Promise<SecurityCheckResult> {
+  await assertProjectRole(userId, projectId, 'owner');
   const files = await listProjectFilesWithContent(userId, projectId);
   const fileContext = buildFileContext(files);
   let claude: string | null = null;

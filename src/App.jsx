@@ -9,12 +9,13 @@ import TwoFactor from './pages/TwoFactor';
 import Welcome from './pages/Welcome';
 import Settings from './pages/Settings';
 import Projects from './pages/Projects';
-import ProjectWorkspace from './pages/ProjectWorkspace';
+import ProjectCollaborationOverlay from './components/ProjectCollaborationOverlay';
 import Console from './pages/Console';
 import Confirmed from './pages/Confirmed';
 import Billing from './pages/Billing';
 import Domains from './pages/Domains';
 import Help from './pages/Help';
+import ProjectInvite from './pages/ProjectInvite';
 
 function LegacySettingsRedirect() {
   const location = useLocation();
@@ -45,7 +46,8 @@ export default function App() {
         <Route path="/account/activity" element={<Settings />} />
         <Route path="/sessions" element={<Navigate to="/account/sessions" replace />} />
         <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:id/workspace" element={<ProjectWorkspace />} />
+        <Route path="/projects/:id/workspace" element={<ProjectCollaborationOverlay />} />
+        <Route path="/invite/:token" element={<ProjectInvite />} />
         <Route path="/console" element={<Console />} />
         <Route path="/activity" element={<Navigate to="/account/activity" replace />} />
         <Route path="/confirmed" element={<Confirmed />} />
