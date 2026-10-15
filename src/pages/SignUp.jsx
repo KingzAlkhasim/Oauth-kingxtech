@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import Stepper from '../components/Stepper';
 import { Button, Input, Divider, SocialButtons } from '../components/ui';
@@ -60,6 +60,9 @@ export default function SignUp() {
   useSeo({ title: 'Create your account — KingxTech', noindex: false });
   const [step, setStep] = useState(0);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get('redirect');
+  const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : null;
   const [form, setForm] = useState({
     email: '', password: '', confirmPassword: '',
     fullName: '', username: '',
@@ -85,7 +88,7 @@ export default function SignUp() {
       email: form.email,
       password: form.password,
       options: {
-        emailRedirectTo: 'https://auth.kingxtech.name.ng/confirmed',
+        emailRedirectTo: `https://auth.kingxtech.name.ng/confirmed${safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ''}`,
         data: {
           full_name: form.fullName,
           username: form.username,
@@ -124,7 +127,7 @@ export default function SignUp() {
     setError('');
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: 'https://auth.kingxtech.name.ng/welcome' },
+      options: { redirectTo: `https://auth.kingxtech.name.ng/welcome${safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ''}` },
     });
     if (oauthError) setError(oauthError.message);
   };
