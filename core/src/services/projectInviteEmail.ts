@@ -7,7 +7,7 @@ export interface ProjectInviteEmailInput {
 }
 
 export function buildProjectInviteLink(token: string, appOrigin: string): string {
-  return `${appOrigin.replace(/\\/+$/, '')}/invite/${encodeURIComponent(token)}`;
+  return `${appOrigin.replace(/\/+$/, '')}/invite/${encodeURIComponent(token)}`;
 }
 
 export function escapeHtml(value: string): string {
@@ -52,6 +52,6 @@ export function buildProjectInviteEmail(input: ProjectInviteEmailInput): { subje
     '',
     'If you were not expecting this invitation, you can ignore this email.',
     'KingxTech · Questions? Contact hello@kingxtech.name.ng',
-  ].join('\\n');
+  ].join('\n');
   return { subject, html, text };
 }
