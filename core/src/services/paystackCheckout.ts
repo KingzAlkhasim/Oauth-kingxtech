@@ -1,5 +1,7 @@
 import { env } from '../config/env';
+import { PRO_PLAN_PRICE_USD } from '../config/billing';
 import { usdToLocal } from '../lib/fx';
+import { supabaseAdmin } from '../lib/supabaseAdmin';
 
 const PAYSTACK_API = 'https://api.paystack.co';
 
@@ -22,8 +24,8 @@ export interface PaystackInitOpts {
  * carry arbitrary custom metadata through to the webhook payload.
  *
  * `purpose` is also attached to metadata so the webhook can tell a Pro-plan
- * subscription payment apart from a one-off Store credit top-up without
- * having to guess from the charged amount (see billing-webhook/index.ts).
+ * payment apart from a one-off Store credit top-up without guessing from the
+ * charged amount.
  */
 export async function initializePaystackTransaction(
   userId: string,
@@ -60,5 +62,26 @@ export async function initializePaystackTransaction(
   if (!res.ok || !data.status) {
     throw new Error(data.message || 'Failed to initialize Paystack transaction');
   }
-  return { authorization_url: data.data.authorization_url, reference: data.data.reference };
+
+  const reference = String(data.data.reference);
+  // Every Paystack checkout gets an intent because the webhook deliberately
+  // grants nothing for unknown references. For Pro, the expected amount is
+  // the exact NGN minor-unit amount sent to Paystack. Top-ups retain their
+  // existing amount calculation and wallet-credit math.
+  const { error: intentError } = await supabaseAdmin.from('payment_intents').insert({
+    user_id: userId,
+    provider: 'paystack',
+    reference,
+    purpose,
+    expected_amount_minor: amountKobo,
+    currency: 'NGN',
+    status: 'pending',
+  });
+  if (intentError) {
+    throw new Error(`Failed to record payment intent: ${intentError.message}`);
+  }
+
+  return { authorization_url: data.data.authorization_url, reference };
 }
+
+export { PRO_PLAN_PRICE_USD };

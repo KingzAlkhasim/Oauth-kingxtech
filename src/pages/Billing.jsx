@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import {
+  cancelProPlan,
   getBillingProfile,
   initializePaystackCheckout,
   initializePaystackTopup,
+  payProFromWallet,
+  resumeProPlan,
 } from '../lib/billing';
 import { supabase } from '../lib/supabase';
 import { Card, Button, Badge, ExpandableList } from '../components/ui';
@@ -13,6 +16,18 @@ import { Wallet, ExternalLink } from 'lucide-react';
 
 const TOPUP_PRESETS = [5, 10, 25, 50];
 const PRO_PRICE_USD = 20;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getDaysLeft(expiry) {
+  if (!expiry) return null;
+  const remaining = new Date(expiry).getTime() - Date.now();
+  return Math.max(0, Math.ceil(remaining / DAY_MS));
+}
+
+function newIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `pro-wallet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export default function Billing() {
   useSeo({ title: 'Billing & Store — KingxTech', noindex: true });
@@ -24,24 +39,50 @@ export default function Billing() {
 
   const [proLoading, setProLoading] = useState(false);
   const [proError, setProError] = useState('');
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState('');
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState('');
 
   const [topupAmount, setTopupAmount] = useState(10);
   const [customTopup, setCustomTopup] = useState('');
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupError, setTopupError] = useState('');
 
-
   const refresh = async () => {
     const { data, error: fetchError } = await getBillingProfile();
-    if (fetchError) { setError(/relation .*billing_profile.* does not exist/i.test(fetchError.message) ? 'SETUP' : fetchError.message); return; }
+    if (fetchError) {
+      setError(/relation .*billing_profile.* does not exist/i.test(fetchError.message) ? 'SETUP' : fetchError.message);
+      return;
+    }
     setProfile(data);
+  };
+
+  const refreshTransactions = async () => {
+    const { data, error: e } = await supabase
+      .from('billing_events')
+      .select('*')
+      .order('processed_at', { ascending: false })
+      .limit(50);
+    setTxns(e ? [] : data);
   };
 
   useEffect(() => {
     refresh();
-    supabase.from('billing_events').select('*').order('processed_at', { ascending: false }).limit(50)
-      .then(({ data, error: e }) => setTxns(e ? [] : data));
+    refreshTransactions();
   }, []);
+
+  const planInfo = useMemo(() => {
+    const expiry = profile?.plan_expires_at ?? null;
+    const daysLeft = getDaysLeft(expiry);
+    const expired = Boolean(expiry && new Date(expiry).getTime() < Date.now());
+    const active = Boolean(profile && (profile.plan === 'pro' || profile.plan === 'pro_plus' || profile.plan === 'paid' || profile.is_pro_member) && !expired);
+    const planName = active && profile?.plan === 'pro_plus' ? 'Pro+' : active ? 'Pro' : 'Free';
+    return { expiry, daysLeft, expired, active, planName };
+  }, [profile]);
+
+  const walletBalance = Math.max(0, Number(profile?.credit_balance) || 0);
+  const canRenewFromWallet = walletBalance >= PRO_PRICE_USD;
 
   if (error === 'SETUP') {
     return (
@@ -57,7 +98,6 @@ export default function Billing() {
     );
   }
 
-
   const payWithPaystack = async () => {
     setProLoading(true);
     setProError('');
@@ -66,6 +106,50 @@ export default function Billing() {
     } catch (err) {
       setProError(err.message);
       setProLoading(false);
+    }
+  };
+
+  const payFromWallet = async () => {
+    if (!canRenewFromWallet) return;
+    if (!window.confirm('Renew Pro for $20.00 from your wallet? This will debit your wallet immediately.')) return;
+
+    setWalletLoading(true);
+    setWalletError('');
+    try {
+      await payProFromWallet(newIdempotencyKey());
+      await refresh();
+      await refreshTransactions();
+    } catch (err) {
+      setWalletError(err.message);
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const cancelPlan = async () => {
+    if (!window.confirm('Cancel Pro at the end of the current paid period? You will keep Pro until the active expiry date.')) return;
+    setPlanLoading(true);
+    setPlanError('');
+    try {
+      await cancelProPlan();
+      await refresh();
+    } catch (err) {
+      setPlanError(err.message);
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
+  const resumePlan = async () => {
+    setPlanLoading(true);
+    setPlanError('');
+    try {
+      await resumeProPlan();
+      await refresh();
+    } catch (err) {
+      setPlanError(err.message);
+    } finally {
+      setPlanLoading(false);
     }
   };
 
@@ -80,8 +164,6 @@ export default function Billing() {
       setTopupLoading(false);
     }
   };
-
-
 
   return (
     <DashboardShell>
@@ -98,29 +180,68 @@ export default function Billing() {
           <span className="w-12 h-12 rounded-full bg-kx-gradient flex items-center justify-center shrink-0"><Wallet size={20} /></span>
           <div className="min-w-0">
             <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">Wallet balance</p>
-            <p className="text-[12.5px] text-kxmist mb-1">Wallet balance. For compute and storage.</p>
-            {profile ? <p className="font-display text-2xl font-semibold truncate">${Math.max(0, Number(profile.credit_balance) || 0).toFixed(2)}</p> : <p className="text-sm text-kxmist">Loading…</p>}
+            <p className="text-[12.5px] text-kxmist mb-1">Wallet balance. For compute and storage. You can also use it to renew Pro.</p>
+            {profile ? <p className="font-display text-2xl font-semibold truncate">${walletBalance.toFixed(2)}</p> : <p className="text-sm text-kxmist">Loading…</p>}
           </div>
         </div>
-        {profile && <div className="mt-4"><Badge tone={profile.is_pro_member ? 'live' : 'default'}>{profile.is_pro_member ? 'Pro member' : 'Free plan'}</Badge></div>}
+        {profile && <div className="mt-4"><Badge tone={planInfo.active ? 'live' : 'default'}>{planInfo.planName} plan</Badge></div>}
       </Card>
 
-      {/* Go Pro — styled as a highlighted price pill to match the preset-button
-          look used elsewhere on this page, since $20/mo is a fixed price, not
-          an arbitrary amount like the wallet top-up below. */}
-      {profile && !profile.is_pro_member && (
+      {/* Pro plan */}
+      {profile && (
         <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
-          <h2 className="font-display text-[16px] font-medium mb-1">Go Pro</h2>
-          <p className="text-[13px] text-kxmist mb-4">Unlocks premium models and SecureCheck. Pro activates after Paystack confirms your payment.</p>
-
-          <div className="flex flex-wrap gap-2 mb-4">
-            <span className="px-4 py-2 rounded-lg text-[13.5px] border border-kxblue bg-kxblue/10 text-kxblue font-medium">
-              ${PRO_PRICE_USD}/mo — Pro
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h2 className="font-display text-[16px] font-medium mb-1">{planInfo.planName} plan</h2>
+              {planInfo.active && planInfo.expiry && (
+                <>
+                  <p className="text-[13px] text-kxmist">Active until {new Date(planInfo.expiry).toLocaleDateString()}</p>
+                  {planInfo.daysLeft !== null && (
+                    <p className={`text-[13px] mt-1 ${planInfo.daysLeft <= 5 ? 'text-amber-300' : 'text-kxmist'}`}>
+                      {planInfo.daysLeft <= 5 ? `Expires in ${planInfo.daysLeft} days` : `${planInfo.daysLeft} days left`}
+                    </p>
+                  )}
+                </>
+              )}
+              {planInfo.expired && <p className="text-[13px] text-red-400">Expired. Renew to get Pro back.</p>}
+              {!planInfo.active && !planInfo.expired && <p className="text-[13px] text-kxmist">Upgrade to Pro for $20/month.</p>}
+              {profile.plan_cancel_at_period_end && planInfo.active && (
+                <p className="text-[12px] text-amber-300 mt-1">Cancellation scheduled for the active expiry date.</p>
+              )}
+            </div>
+            <span className="px-4 py-2 rounded-lg text-[13.5px] border border-kxblue bg-kxblue/10 text-kxblue font-medium shrink-0">
+              $20/mo — Pro
             </span>
           </div>
 
-          <Button variant="glow" className="w-full sm:w-auto min-h-[44px]" onClick={payWithPaystack} loading={proLoading}>Pay with Paystack <ExternalLink size={13} /></Button>
+          <div className="flex flex-col sm:flex-row gap-2 mt-5">
+            <Button variant="glow" className="min-h-[44px]" onClick={payWithPaystack} loading={proLoading}>
+              {planInfo.active ? 'Renew (card)' : 'Pay $20 with card'} <ExternalLink size={13} />
+            </Button>
+            <Button
+              variant="subtle"
+              className="min-h-[44px]"
+              onClick={payFromWallet}
+              loading={walletLoading}
+              disabled={!canRenewFromWallet}
+            >
+              {canRenewFromWallet ? 'Pay $20 from wallet' : 'Add funds to renew Pro'}
+            </Button>
+          </div>
+
+          {planInfo.active && (
+            <div className="flex gap-2 mt-4">
+              {profile.plan_cancel_at_period_end ? (
+                <Button variant="subtle" onClick={resumePlan} loading={planLoading}>Resume plan</Button>
+              ) : (
+                <Button variant="subtle" onClick={cancelPlan} loading={planLoading}>Cancel plan</Button>
+              )}
+            </div>
+          )}
+
           {proError && <p className="text-[11.5px] text-red-400 mt-2 break-words">{proError}</p>}
+          {walletError && <p className="text-[11.5px] text-red-400 mt-2 break-words">{walletError}</p>}
+          {planError && <p className="text-[11.5px] text-red-400 mt-2 break-words">{planError}</p>}
         </Card>
       )}
 
@@ -159,7 +280,7 @@ export default function Billing() {
       {/* Transaction history */}
       <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1">Transaction history</h2>
-        <p className="text-[13px] text-kxmist mb-5">Real, processed webhook events — empty until a real payment confirms.</p>
+        <p className="text-[13px] text-kxmist mb-5">Processed payment events and wallet activity.</p>
         {txns === null && <p className="text-sm text-kxmist">Loading…</p>}
         {txns !== null && (
           <ExpandableList
@@ -181,7 +302,6 @@ export default function Billing() {
           />
         )}
       </Card>
-
     </DashboardShell>
   );
 }

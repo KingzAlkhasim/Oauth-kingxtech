@@ -23,6 +23,7 @@ const envSchema = z.object({
   PAYSTACK_SECRET_KEY: z.string().min(1).optional(),
   PAYSTACK_PLAN_AMOUNT_KOBO: z.coerce.number().int().positive().default(3000000),
   PAYSTACK_CALLBACK_URL: z.string().url().optional(),
+  CRON_SECRET: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1),
   OPENAI_API_KEY: z.string().min(1),
   GEMINI_API_KEY: z.string().min(1),
