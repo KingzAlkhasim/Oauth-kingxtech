@@ -1,3 +1,5 @@
+begin;
+
 -- Pro plan lifecycle, payment intents, and wallet renewal.
 -- This migration is additive and idempotent. Do NOT apply it automatically to
 -- the production database from this PR; review/run it in Supabase SQL Editor.
@@ -151,6 +153,7 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+#variable_conflict use_column
 declare
   v_expiry timestamptz;
   v_balance numeric(10,2);
@@ -237,3 +240,5 @@ grant execute on function public.pay_pro_from_wallet(uuid, text, numeric) to ser
 -- Expiry is scheduled by Vercel Cron in core/vercel.json rather than pg_cron.
 -- This avoids assuming the production database has pg_cron enabled and keeps
 -- the migration safe to review without installing an extension.
+
+commit;
