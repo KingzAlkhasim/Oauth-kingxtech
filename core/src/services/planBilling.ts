@@ -60,7 +60,7 @@ export function applyPlanPayment(
     ...state,
     plan,
     isProMember: true,
-    planExpiresAt: extendPlanExpiry(now, state.planExpiresAt).toISOString(),
+    planExpiresAt: extendPlanExpiry(now, state.planExpiresAt ? new Date(state.planExpiresAt) : null).toISOString(),
     lastPaymentReference: reference,
   };
 }
