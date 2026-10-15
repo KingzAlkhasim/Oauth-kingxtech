@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
@@ -10,6 +10,9 @@ const REDIRECT_DELAY_MS = 2200;
 export default function Confirmed() {
   useSeo({ title: 'Account confirmed — KingxTech', noindex: true });
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get('redirect');
+  const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : null;
   const [status, setStatus] = useState('checking'); // checking | confirmed | failed
 
   useEffect(() => {
@@ -21,7 +24,9 @@ export default function Confirmed() {
         setStatus('confirmed');
         localStorage.removeItem('kx_pending_verification_email');
         redirectTimer = setTimeout(() => {
-          window.location.href = 'https://auth.kingxtech.name.ng/welcome';
+          window.location.href = safeRedirect
+            ? `https://auth.kingxtech.name.ng${safeRedirect}`
+            : 'https://auth.kingxtech.name.ng/welcome';
         }, REDIRECT_DELAY_MS);
       } else {
         setStatus('failed');
