@@ -273,7 +273,7 @@ export default function SignUp() {
 
       {(step === 0 || error.includes('already registered')) && (
         <p className="text-center text-sm text-kxmist mt-7">
-          Already have an account? <Link to="/login" className="text-white hover:underline">Sign in</Link>
+          Already have an account? <Link to={safeRedirect ? `/login?redirect=${encodeURIComponent(safeRedirect)}` : '/login'} className="text-white hover:underline">Sign in</Link>
         </p>
       )}
     </AuthLayout>
