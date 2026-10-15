@@ -46,7 +46,7 @@ export default function TwoFactor() {
     }
 
     logActivity('Signed in', `${navigator.userAgent.slice(0, 50)} (2FA)`);
-    if (redirect) { redirectWithSession(redirect); return; }
+    if (redirect) {\n      if (redirect.startsWith('/') && !redirect.startsWith('//')) navigate(redirect, { replace: true });\n      else redirectWithSession(redirect);\n      return;\n    }
     navigate('/welcome');
   };
 
