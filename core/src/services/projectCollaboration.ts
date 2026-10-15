@@ -229,8 +229,7 @@ export async function createProjectInvite(userId: string, projectId: string, ema
         console.error('[project-invite-email] Resend rejected invitation email:', response.status);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown email delivery error';
-      console.error('[project-invite-email] invitation email failed:', message.slice(0, 240));
+      console.error('[project-invite-email] invitation email failed; invite link remains available.');
     }
   }
 
