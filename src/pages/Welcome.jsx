@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
@@ -12,18 +12,24 @@ import { redirectWithSession } from '../lib/ssoHandoff';
 export default function Welcome() {
   useSeo({ title: 'Welcome — KingxTech', noindex: true });
   useRequireAuth();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get('redirect');
   const [projects, setProjects] = useState(null);
   const [mfaEnabled, setMfaEnabled] = useState(null); // null = still checking
   const [dismissed, setDismissed] = useState(false);
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    if (redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
+      window.location.replace(redirect);
+      return;
+    }
     listProjects().then(({ data, error }) => setProjects(error ? [] : data.slice(0, 3)));
     supabase.auth.mfa.listFactors().then(({ data }) => {
       setMfaEnabled(!!data?.totp?.find((f) => f.status === 'verified'));
     });
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
-  }, []);
+  }, [redirect]);
 
   const displayName = user?.user_metadata?.full_name || user?.user_metadata?.user_name || user?.email?.split('@')[0];
   // last_sign_in_at sits within a couple seconds of created_at on the very
