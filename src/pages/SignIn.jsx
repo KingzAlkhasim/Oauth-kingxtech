@@ -93,7 +93,7 @@ export default function SignIn() {
       </form>
 
       <p className="text-center text-sm text-kxmist mt-7">
-        Don't have an account? <Link to="/signup" className="text-white hover:underline">Create account</Link>
+        Don't have an account? <Link to={redirect ? `/signup?redirect=${encodeURIComponent(redirect)}` : '/signup'} className="text-white hover:underline">Create account</Link>
       </p>
     </AuthLayout>
   );
