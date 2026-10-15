@@ -32,6 +32,15 @@ test('early renewal extends from the current expiry', () => {
   assert.equal(extendPlanExpiry(now, expiry).toISOString(), '2026-11-23T12:00:00.000Z');
 });
 
+test('plan payment converts the state expiry string to a Date before extending', () => {
+  const now = new Date('2026-10-14T12:00:00.000Z');
+  const paid = applyPlanPayment({
+    ...baseState,
+    planExpiresAt: '2026-10-24T12:00:00.000Z',
+  }, now, 'ref-date');
+  assert.equal(paid.planExpiresAt, '2026-11-23T12:00:00.000Z');
+});
+
 test('repeated payment reference is a no-op', () => {
   const now = new Date('2026-10-14T12:00:00.000Z');
   const paid = applyPlanPayment(baseState, now, 'ref-1');
