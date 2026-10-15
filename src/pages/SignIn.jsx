@@ -40,7 +40,10 @@ export default function SignIn() {
       navigate(`/2fa?factorId=${factorId}` + (redirect ? `&redirect=${encodeURIComponent(redirect)}` : ''));
     } else {
       logActivity('Signed in', navigator.userAgent.slice(0, 60));
-      if (redirect) { redirectWithSession(redirect); } else { navigate('/welcome'); }
+      if (redirect) {
+        if (redirect.startsWith('/') && !redirect.startsWith('//')) navigate(redirect, { replace: true });
+        else redirectWithSession(redirect);
+      } else { navigate('/welcome'); }
     }
   };
 
