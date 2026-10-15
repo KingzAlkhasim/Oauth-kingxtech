@@ -35,7 +35,7 @@ export default function Confirmed() {
 
     const t = setTimeout(check, 300);
     return () => { clearTimeout(t); clearTimeout(redirectTimer); };
-  }, [navigate]);
+  }, [navigate, safeRedirect]);
 
   return (
     <AuthLayout side={<SidePanelDefault />}>
