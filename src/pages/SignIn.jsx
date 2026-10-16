@@ -4,7 +4,6 @@ import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import { Button, Input, Checkbox, Divider, SocialButtons } from '../components/ui';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
-import { redirectWithSession } from '../lib/ssoHandoff';
 import { safeInternalPath } from '../lib/safeRedirect';
 import { logActivity } from '../lib/activity';
 
@@ -43,7 +42,6 @@ export default function SignIn() {
     } else {
       logActivity('Signed in', navigator.userAgent.slice(0, 60));
       if (safeRedirect) navigate(safeRedirect, { replace: true });
-      else if (redirect) redirectWithSession(redirect);
       else navigate('/welcome');
     }
   };
