@@ -130,7 +130,7 @@ export default function SignUp() {
     setError('');
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `https://auth.kingxtech.name.ng/welcome${safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ''}` },
+      options: { redirectTo: `https://auth.kingxtech.name.ng/welcome${redirectTarget ? `?redirect=${encodeURIComponent(redirectTarget)}` : ''}` },
     });
     if (oauthError) setError(oauthError.message);
   };
