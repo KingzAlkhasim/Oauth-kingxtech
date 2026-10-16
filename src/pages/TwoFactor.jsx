@@ -4,7 +4,8 @@ import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import { Button, OTPInput } from '../components/ui';
 import { ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { safeInternalPath } from '../lib/safeRedirect';
+import { safeInternalPath, safeSsoTarget } from '../lib/safeRedirect';
+import { redirectWithSession } from '../lib/ssoHandoff';
 import { logActivity } from '../lib/activity';
 
 export default function TwoFactor() {
@@ -14,7 +15,9 @@ export default function TwoFactor() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const redirect = params.get('redirect');
-  const safeRedirect = safeInternalPath(redirect);
+  const safeInternal = safeInternalPath(redirect);
+  const safeSso = safeSsoTarget(redirect);
+  const redirectTarget = safeInternal || safeSso;
   const factorId = params.get('factorId');
 
   const submit = async (e) => {
@@ -47,8 +50,12 @@ export default function TwoFactor() {
     }
 
     logActivity('Signed in', `${navigator.userAgent.slice(0, 50)} (2FA)`);
-    if (safeRedirect) {
-      navigate(safeRedirect, { replace: true });
+    if (safeInternal) {
+      navigate(safeInternal, { replace: true });
+      return;
+    }
+    if (safeSso) {
+      await redirectWithSession(safeSso);
       return;
     }
     navigate('/welcome');
