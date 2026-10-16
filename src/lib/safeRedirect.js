@@ -1,5 +1,11 @@
 const AUTH_ORIGIN = 'https://auth.kingxtech.name.ng';
-const UNSAFE_CHARACTERS = /[\\\u0000-\u001f\u007f\s]/;
+const UNSAFE_CHARACTERS = /[\\\\\u0000-\u001f\u007f\s]/;
+const SSO_HOSTS = new Set([
+  'kingxtech.name.ng',
+  'kxpertai.kingxtech.name.ng',
+  'synthcode.kingxtech.name.ng',
+  'auth.kingxtech.name.ng',
+]);
 
 export function safeInternalPath(value) {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return null;
@@ -23,7 +29,7 @@ export function safeSsoTarget(value) {
       url.username ||
       url.password ||
       url.port ||
-      !(url.hostname === 'kingxtech.name.ng' || url.hostname.endsWith('.kingxtech.name.ng'))
+      !SSO_HOSTS.has(url.hostname)
     ) {
       return null;
     }
