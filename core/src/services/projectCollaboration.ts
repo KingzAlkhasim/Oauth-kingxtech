@@ -211,6 +211,7 @@ export async function createProjectInvite(userId: string, projectId: string, ema
       });
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
+        signal: AbortSignal.timeout(8000),
         headers: {
           Authorization: `Bearer ${env.RESEND_API_KEY}`,
           'Content-Type': 'application/json',
@@ -229,7 +230,8 @@ export async function createProjectInvite(userId: string, projectId: string, ema
         console.error('[project-invite-email] Resend rejected invitation email:', response.status);
       }
     } catch (error) {
-      console.error('[project-invite-email] invitation email failed; invite link remains available.');
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
+      console.error('[project-invite-email] invitation email failed:', errorName);
     }
   }
 
