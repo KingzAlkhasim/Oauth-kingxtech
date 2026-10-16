@@ -6,7 +6,7 @@ import { Button, Input, Divider, SocialButtons } from '../components/ui';
 import { ArrowLeft, Check } from 'lucide-react';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
-import { safeInternalPath } from '../lib/safeRedirect';
+import { safeInternalPath, safeSsoTarget } from '../lib/safeRedirect';
 
 const ROLES = ['Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'Mobile Developer', 'AI Engineer', 'Machine Learning Engineer', 'DevOps Engineer', 'Security Engineer', 'Data Scientist', 'Game Developer', 'Student', 'Researcher', 'Designer', 'Entrepreneur', 'Other'];
 const STACK = ['JavaScript', 'TypeScript', 'Python', 'PHP', 'Rust', 'C++', 'Java', 'Go', 'React', 'Vue', 'Angular', 'Node.js', 'Laravel', 'Next.js', 'Django', 'Flask', 'Docker', 'Kubernetes', 'TensorFlow', 'PyTorch', 'HuggingFace', 'Unsloth', 'PostgreSQL', 'MySQL', 'MongoDB'];
@@ -63,7 +63,9 @@ export default function SignUp() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect');
-  const safeRedirect = safeInternalPath(redirect);
+  const safeInternal = safeInternalPath(redirect);
+  const safeSso = safeSsoTarget(redirect);
+  const redirectTarget = safeInternal || safeSso;
   const [form, setForm] = useState({
     email: '', password: '', confirmPassword: '',
     fullName: '', username: '',
@@ -89,7 +91,7 @@ export default function SignUp() {
       email: form.email,
       password: form.password,
       options: {
-        emailRedirectTo: `https://auth.kingxtech.name.ng/confirmed${safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ''}`,
+        emailRedirectTo: `https://auth.kingxtech.name.ng/confirmed${redirectTarget ? `?redirect=${encodeURIComponent(redirectTarget)}` : ''}`,
         data: {
           full_name: form.fullName,
           username: form.username,
@@ -274,7 +276,7 @@ export default function SignUp() {
 
       {(step === 0 || error.includes('already registered')) && (
         <p className="text-center text-sm text-kxmist mt-7">
-          Already have an account? <Link to={safeRedirect ? `/login?redirect=${encodeURIComponent(safeRedirect)}` : '/login'} className="text-white hover:underline">Sign in</Link>
+          Already have an account? <Link to={redirectTarget ? `/login?redirect=${encodeURIComponent(redirectTarget)}` : '/login'} className="text-white hover:underline">Sign in</Link>
         </p>
       )}
     </AuthLayout>
