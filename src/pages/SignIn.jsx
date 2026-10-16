@@ -5,6 +5,7 @@ import { Button, Input, Checkbox, Divider, SocialButtons } from '../components/u
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
 import { redirectWithSession } from '../lib/ssoHandoff';
+import { safeInternalPath } from '../lib/safeRedirect';
 import { logActivity } from '../lib/activity';
 
 export default function SignIn() {
@@ -19,6 +20,7 @@ export default function SignIn() {
   const notice = location.state?.notice;
   const [params] = useSearchParams();
   const redirect = params.get('redirect');
+  const safeRedirect = safeInternalPath(redirect);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -37,20 +39,19 @@ export default function SignIn() {
     if (aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
       const { data: factors } = await supabase.auth.mfa.listFactors();
       const factorId = factors?.totp?.[0]?.id;
-      navigate(`/2fa?factorId=${factorId}` + (redirect ? `&redirect=${encodeURIComponent(redirect)}` : ''));
+      navigate(`/2fa?factorId=${factorId}` + (safeRedirect ? `&redirect=${encodeURIComponent(safeRedirect)}` : ''));
     } else {
       logActivity('Signed in', navigator.userAgent.slice(0, 60));
-      if (redirect) {
-        if (redirect.startsWith('/') && !redirect.startsWith('//')) navigate(redirect, { replace: true });
-        else redirectWithSession(redirect);
-      } else { navigate('/welcome'); }
+      if (safeRedirect) navigate(safeRedirect, { replace: true });
+      else if (redirect) redirectWithSession(redirect);
+      else navigate('/welcome');
     }
   };
 
   const socialSignIn = async (provider) => {
     setError('');
-    const redirectTo = redirect
-      ? `https://auth.kingxtech.name.ng/welcome?redirect=${encodeURIComponent(redirect)}`
+    const redirectTo = safeRedirect
+      ? `https://auth.kingxtech.name.ng/welcome?redirect=${encodeURIComponent(safeRedirect)}`
       : 'https://auth.kingxtech.name.ng/welcome';
     const { error: oauthError } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo } });
     if (oauthError) setError(oauthError.message);
@@ -93,7 +94,7 @@ export default function SignIn() {
       </form>
 
       <p className="text-center text-sm text-kxmist mt-7">
-        Don't have an account? <Link to={redirect ? `/signup?redirect=${encodeURIComponent(redirect)}` : '/signup'} className="text-white hover:underline">Create account</Link>
+        Don't have an account? <Link to={safeRedirect ? `/signup?redirect=${encodeURIComponent(safeRedirect)}` : '/signup'} className="text-white hover:underline">Create account</Link>
       </p>
     </AuthLayout>
   );
