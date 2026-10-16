@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
+import { safeInternalPath } from '../lib/safeRedirect';
 import { CheckCircle2, XCircle } from 'lucide-react';
 
 const REDIRECT_DELAY_MS = 2200;
@@ -12,7 +13,7 @@ export default function Confirmed() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect');
-  const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : null;
+  const safeRedirect = safeInternalPath(redirect);
   const [status, setStatus] = useState('checking'); // checking | confirmed | failed
 
   useEffect(() => {
