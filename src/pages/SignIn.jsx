@@ -41,7 +41,7 @@ export default function SignIn() {
     if (aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
       const { data: factors } = await supabase.auth.mfa.listFactors();
       const factorId = factors?.totp?.[0]?.id;
-      navigate(`/2fa?factorId=${factorId}` + (safeRedirect ? `&redirect=${encodeURIComponent(redirectTarget)}` : ''));
+      navigate(`/2fa?factorId=${factorId}` + (redirectTarget ? `&redirect=${encodeURIComponent(redirectTarget)}` : ''));
     } else {
       logActivity('Signed in', navigator.userAgent.slice(0, 60));
       if (safeInternal) navigate(safeInternal, { replace: true });
