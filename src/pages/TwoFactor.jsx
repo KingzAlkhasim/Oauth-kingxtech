@@ -4,7 +4,6 @@ import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import { Button, OTPInput } from '../components/ui';
 import { ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { redirectWithSession } from '../lib/ssoHandoff';
 import { safeInternalPath } from '../lib/safeRedirect';
 import { logActivity } from '../lib/activity';
 
@@ -50,10 +49,6 @@ export default function TwoFactor() {
     logActivity('Signed in', `${navigator.userAgent.slice(0, 50)} (2FA)`);
     if (safeRedirect) {
       navigate(safeRedirect, { replace: true });
-      return;
-    }
-    if (redirect) {
-      redirectWithSession(redirect);
       return;
     }
     navigate('/welcome');
