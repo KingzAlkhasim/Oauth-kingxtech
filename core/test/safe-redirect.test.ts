@@ -15,10 +15,19 @@ test('safeInternalPath accepts valid internal paths', () => {
   assert.equal(safeInternalPath('/projects'), '/projects');
 });
 
-test('safeSsoTarget accepts KingxTech product hosts and normalizes to HTTPS', () => {
-  assert.equal(safeSsoTarget('kxpertai.kingxtech.name.ng'), 'https://kxpertai.kingxtech.name.ng/');
-  assert.equal(safeSsoTarget('https://synthcode.kingxtech.name.ng/app?x=1'), 'https://synthcode.kingxtech.name.ng/app?x=1');
-  assert.equal(safeSsoTarget('kingxtech.name.ng'), 'https://kingxtech.name.ng/');
+test('safeSsoTarget accepts only the exact approved product hosts', () => {
+  const hosts = [
+    'kingxtech.name.ng',
+    'kxpertai.kingxtech.name.ng',
+    'synthcode.kingxtech.name.ng',
+    'auth.kingxtech.name.ng',
+  ];
+
+  for (const host of hosts) {
+    assert.equal(safeSsoTarget(host), \`https://\${host}/\`);
+    assert.equal(safeSsoTarget(\`https://\${host}\`), \`https://\${host}/\`);
+    assert.equal(safeSsoTarget(\`https://\${host}/some/path?x=1\`), \`https://\${host}/some/path?x=1\`);
+  }
 });
 
 test('safeSsoTarget rejects non-allowlisted hosts and unsafe URLs', () => {
@@ -33,7 +42,11 @@ test('safeSsoTarget rejects non-allowlisted hosts and unsafe URLs', () => {
     'kingxtech.name.ng\\@evil.com',
     'kxpertai.kingxtech.name.ng\t/evil.com',
     'kxpertai.kingxtech.name.ng\n/evil.com',
+    'site.kingxtech.name.ng',
+    'https://site.kingxtech.name.ng/evil/',
+    'anything.kingxtech.name.ng',
+    'x.kxpertai.kingxtech.name.ng',
   ]) {
-    assert.equal(safeSsoTarget(value), null, `expected rejection for ${JSON.stringify(value)}`);
+    assert.equal(safeSsoTarget(value), null, \`expected rejection for \${JSON.stringify(value)}\`);
   }
 });
