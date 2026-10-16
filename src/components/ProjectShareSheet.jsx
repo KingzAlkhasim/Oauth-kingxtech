@@ -10,6 +10,7 @@ export default function ProjectShareSheet({ projectId, open, onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [inviteLink, setInviteLink] = useState('');
+  const [inviteStatus, setInviteStatus] = useState('');
 
   const load = async () => {
     if (!projectId || !open) return;
@@ -28,10 +29,13 @@ export default function ProjectShareSheet({ projectId, open, onClose }) {
   const invite = async (event) => {
     event.preventDefault();
     if (!email.trim()) return;
-    setBusy(true); setError(''); setInviteLink('');
+    setBusy(true); setError(''); setInviteLink(''); setInviteStatus('');
     try {
       const result = await inviteProjectMember(projectId, email.trim(), role);
       setInviteLink(result.inviteLink || '');
+      const [localPart, domain = ''] = email.trim().split('@');
+      const maskedEmail = localPart && domain ? `${localPart.slice(0, 2)}•••@${domain}` : 'that address';
+      setInviteStatus(result.emailSent ? `Invitation emailed to ${maskedEmail}` : 'Email could not be sent, copy the link below');
       setEmail('');
       await load();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
@@ -68,7 +72,8 @@ export default function ProjectShareSheet({ projectId, open, onClose }) {
           <button disabled={busy || used + pending.length >= cap} className="min-h-11 rounded-xl px-4 bg-white text-black font-medium disabled:opacity-50">Invite</button>
         </div>
         <div className="text-xs text-kxmist mt-2">{used} of {cap} member slots used. Upgrade the project owner plan for more members.</div>
-        {inviteLink && <div className="mt-3 rounded-xl bg-black/20 p-3 text-xs text-kxmist break-all">Invite link: <span className="text-white">{inviteLink}</span></div>}
+        {inviteStatus && <p role="status" className="mt-3 text-xs text-kxmist">{inviteStatus}</p>}
+        {inviteLink && <div className="mt-2 rounded-xl bg-black/20 p-3 text-xs text-kxmist break-all"><div>Invite link: <span className="text-white">{inviteLink}</span></div><button type="button" onClick={() => navigator.clipboard?.writeText(inviteLink)} className="mt-2 min-h-9 rounded-lg border border-white/10 px-3 text-white">Copy link</button></div>}
       </form>}
 
       <div className="space-y-2">

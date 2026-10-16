@@ -64,6 +64,10 @@ const envSchema = z.object({
   ACME_DIRECTORY_URL: z.string().url().default('https://acme-v02.api.letsencrypt.org/directory'),
   ACME_CHALLENGE_TYPE: z.enum(['http-01', 'dns-01']).default('http-01'),
 
+  // --- Project collaboration invitations ---
+  APP_ORIGIN: z.string().url().default('https://auth.kingxtech.name.ng').transform((value) => value.replace(/\/+$/, '')),
+  RESEND_API_KEY: z.string().min(1).optional(),
+
   // --- CORS ---
   ALLOWED_ORIGINS: z.string().default('https://kingxtech.name.ng,https://auth.kingxtech.name.ng').transform((val) => val.split(',').map((s) => s.trim())),
 });

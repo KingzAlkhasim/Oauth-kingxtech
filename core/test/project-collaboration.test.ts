@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROJECT_MEMBER_CAPS } from '../src/config/projectCollaboration';
+import { buildProjectInviteEmail, buildProjectInviteLink, escapeHtml } from '../src/services/projectInviteEmail';
 import {
   roleAtLeast,
   canInvite,
@@ -77,4 +78,24 @@ test('transfer state transitions only start from pending', () => {
   assert.equal(transferTransition('pending', 'decline'), 'declined');
   assert.equal(transferTransition('pending', 'cancel'), 'cancelled');
   assert.throws(() => transferTransition('accepted', 'cancel'));
+});
+
+test('invite links use the configured app origin and URL-encode tokens', () => {
+  assert.equal(buildProjectInviteLink('token/with spaces', 'https://auth.kingxtech.name.ng/'), 'https://auth.kingxtech.name.ng/invite/token%2Fwith%20spaces');
+});
+
+test('invitation email escapes user-controlled HTML and includes text fallback details', () => {
+  assert.equal(escapeHtml('<script a="b">&\''), '&lt;script a=&quot;b&quot;&gt;&amp;&#39;');
+  const email = buildProjectInviteEmail({
+    inviterName: '<Admin>',
+    projectName: 'Website & "API"',
+    role: 'editor',
+    inviteLink: 'https://auth.kingxtech.name.ng/invite/abc',
+    expiryDays: 7,
+  });
+  assert.match(email.html, /&lt;Admin&gt;/);
+  assert.match(email.html, /Website &amp; &quot;API&quot;/);
+  assert.doesNotMatch(email.html, /<Admin>/);
+  assert.match(email.text, /expires in 7 days/);
+  assert.match(email.text, /https:\/\/auth\.kingxtech\.name\.ng\/invite\/abc/);
 });

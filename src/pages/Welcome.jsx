@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
@@ -8,22 +8,36 @@ import { supabase } from '../lib/supabase';
 import { Card, Badge, Button } from '../components/ui';
 import { ArrowUpRight, User, Settings as SettingsIcon, FolderKanban, Plus, ShieldAlert, X } from 'lucide-react';
 import { redirectWithSession } from '../lib/ssoHandoff';
+import { safeInternalPath, safeSsoTarget } from '../lib/safeRedirect';
 
 export default function Welcome() {
   useSeo({ title: 'Welcome — KingxTech', noindex: true });
   useRequireAuth();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const redirect = searchParams.get('redirect');
+  const safeInternal = safeInternalPath(redirect);
+  const safeSso = safeSsoTarget(redirect);
   const [projects, setProjects] = useState(null);
   const [mfaEnabled, setMfaEnabled] = useState(null); // null = still checking
   const [dismissed, setDismissed] = useState(false);
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    if (safeInternal) {
+      navigate(safeInternal, { replace: true });
+      return;
+    }
+    if (safeSso) {
+      void redirectWithSession(safeSso);
+      return;
+    }
     listProjects().then(({ data, error }) => setProjects(error ? [] : data.slice(0, 3)));
     supabase.auth.mfa.listFactors().then(({ data }) => {
       setMfaEnabled(!!data?.totp?.find((f) => f.status === 'verified'));
     });
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
-  }, []);
+  }, [navigate, safeInternal, safeSso]);
 
   const displayName = user?.user_metadata?.full_name || user?.user_metadata?.user_name || user?.email?.split('@')[0];
   // last_sign_in_at sits within a couple seconds of created_at on the very

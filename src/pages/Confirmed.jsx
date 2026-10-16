@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
+import { safeInternalPath, safeSsoTarget } from '../lib/safeRedirect';
+import { redirectWithSession } from '../lib/ssoHandoff';
 import { CheckCircle2, XCircle } from 'lucide-react';
 
 const REDIRECT_DELAY_MS = 2200;
@@ -10,6 +12,10 @@ const REDIRECT_DELAY_MS = 2200;
 export default function Confirmed() {
   useSeo({ title: 'Account confirmed — KingxTech', noindex: true });
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get('redirect');
+  const safeInternal = safeInternalPath(redirect);
+  const safeSso = safeSsoTarget(redirect);
   const [status, setStatus] = useState('checking'); // checking | confirmed | failed
 
   useEffect(() => {
@@ -21,7 +27,9 @@ export default function Confirmed() {
         setStatus('confirmed');
         localStorage.removeItem('kx_pending_verification_email');
         redirectTimer = setTimeout(() => {
-          window.location.href = 'https://auth.kingxtech.name.ng/welcome';
+          if (safeInternal) navigate(safeInternal, { replace: true });
+          else if (safeSso) void redirectWithSession(safeSso);
+          else navigate('/welcome', { replace: true });
         }, REDIRECT_DELAY_MS);
       } else {
         setStatus('failed');
@@ -30,7 +38,7 @@ export default function Confirmed() {
 
     const t = setTimeout(check, 300);
     return () => { clearTimeout(t); clearTimeout(redirectTimer); };
-  }, [navigate]);
+  }, [navigate, safeInternal, safeSso]);
 
   return (
     <AuthLayout side={<SidePanelDefault />}>

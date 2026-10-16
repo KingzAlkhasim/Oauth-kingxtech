@@ -9,6 +9,7 @@ import {
   type ProjectRole,
 } from '../config/projectCollaboration';
 import { env } from '../config/env';
+import { buildProjectInviteEmail, buildProjectInviteLink } from './projectInviteEmail';
 
 export class ProjectRoleError extends Error {
   status = 403;
@@ -76,10 +77,6 @@ function maskEmail(email: string): string {
   if (!local || !domain) return 'hidden email';
   const visible = local.length <= 2 ? local[0] : local.slice(0, 2);
   return `${visible}${'•'.repeat(Math.max(1, Math.min(5, local.length - visible.length)))}@${domain}`;
-}
-
-function appOrigin(): string {
-  return env.ALLOWED_ORIGINS[0] || 'https://auth.kingxtech.name.ng';
 }
 
 async function audit(userId: string, projectId: string, action: string, detail: Record<string, unknown> = {}): Promise<void> {
@@ -189,11 +186,60 @@ export async function createProjectInvite(userId: string, projectId: string, ema
     });
   }
   await audit(userId, projectId, 'Project member invited', { invite_id: inviteId, role });
+  const inviteLink = buildProjectInviteLink(rawToken, env.APP_ORIGIN);
+  let emailSent = false;
+
+  if (env.RESEND_API_KEY) {
+    try {
+      const [{ data: project }, { data: inviter }] = await Promise.all([
+        supabaseAdmin.from('projects').select('name').eq('id', projectId).maybeSingle(),
+        supabaseAdmin.auth.admin.getUserById(userId),
+      ]);
+      const metadata = inviter.user?.user_metadata as Record<string, unknown> | undefined;
+      const inviterName = typeof metadata?.full_name === 'string' && metadata.full_name.trim()
+        ? metadata.full_name.trim()
+        : typeof metadata?.name === 'string' && metadata.name.trim()
+          ? metadata.name.trim()
+          : inviter.user?.email || 'A KingxTech member';
+      const projectName = typeof project?.name === 'string' && project.name.trim() ? project.name.trim() : 'a KingxTech project';
+      const email = buildProjectInviteEmail({
+        inviterName,
+        projectName,
+        role,
+        inviteLink,
+        expiryDays: PROJECT_INVITE_EXPIRY_DAYS,
+      });
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        signal: AbortSignal.timeout(8000),
+        headers: {
+          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'KingxTech <noreply@kingxtech.name.ng>',
+          to: [normalizedEmail],
+          subject: email.subject,
+          html: email.html,
+          text: email.text,
+        }),
+      });
+      if (response.ok) {
+        emailSent = true;
+      } else {
+        console.error('[project-invite-email] Resend rejected invitation email:', response.status);
+      }
+    } catch (error) {
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
+      console.error('[project-invite-email] invitation email failed:', errorName);
+    }
+  }
+
   return {
     id: inviteId,
     expiresAt,
-    inviteLink: `${appOrigin()}/invite/${encodeURIComponent(rawToken)}`,
-    emailDelivery: 'copy_link' as const,
+    inviteLink,
+    emailSent,
   };
 }
 

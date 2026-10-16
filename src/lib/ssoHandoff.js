@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { safeSsoTarget } from './safeRedirect';
 
 /**
  * Redirects the browser to another KingxTech product, handing off the current
@@ -13,11 +14,13 @@ import { supabase } from './supabase';
  * turn them into its own local session.
  */
 export async function redirectWithSession(target) {
+  const safeTarget = safeSsoTarget(target);
+  if (!safeTarget) return;
+
   const { data } = await supabase.auth.getSession();
   const session = data.session;
 
-  const normalized = target.startsWith('http') ? target : `https://${target}`;
-  const url = new URL(normalized);
+  const url = new URL(safeTarget);
   if (session) {
     url.hash =
       `access_token=${session.access_token}` +
