@@ -31,8 +31,8 @@ test('safeSsoTarget rejects non-allowlisted hosts and unsafe URLs', () => {
     'https://x.kingxtech.name.ng:8443',
     'javascript:alert(1)',
     'kingxtech.name.ng\\@evil.com',
-    'kxpertai.kingxtech.name.ng\\t/evil.com',
-    'kxpertai.kingxtech.name.ng\\n/evil.com',
+    'kxpertai.kingxtech.name.ng\t/evil.com',
+    'kxpertai.kingxtech.name.ng\n/evil.com',
   ]) {
     assert.equal(safeSsoTarget(value), null, `expected rejection for ${JSON.stringify(value)}`);
   }
