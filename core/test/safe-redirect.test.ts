@@ -24,9 +24,9 @@ test('safeSsoTarget accepts only the exact approved product hosts', () => {
   ];
 
   for (const host of hosts) {
-    assert.equal(safeSsoTarget(host), \`https://\${host}/\`);
-    assert.equal(safeSsoTarget(\`https://\${host}\`), \`https://\${host}/\`);
-    assert.equal(safeSsoTarget(\`https://\${host}/some/path?x=1\`), \`https://\${host}/some/path?x=1\`);
+    assert.equal(safeSsoTarget(host), `https://${host}/`);
+    assert.equal(safeSsoTarget(`https://${host}`), `https://${host}/`);
+    assert.equal(safeSsoTarget(`https://${host}/some/path?x=1`), `https://${host}/some/path?x=1`);
   }
 });
 
@@ -47,6 +47,6 @@ test('safeSsoTarget rejects non-allowlisted hosts and unsafe URLs', () => {
     'anything.kingxtech.name.ng',
     'x.kxpertai.kingxtech.name.ng',
   ]) {
-    assert.equal(safeSsoTarget(value), null, \`expected rejection for \${JSON.stringify(value)}\`);
+    assert.equal(safeSsoTarget(value), null, `expected rejection for ${JSON.stringify(value)}`);
   }
 });
