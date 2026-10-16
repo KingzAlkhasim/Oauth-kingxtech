@@ -1,5 +1,5 @@
 const AUTH_ORIGIN = 'https://auth.kingxtech.name.ng';
-const UNSAFE_CHARACTERS = /[\\\\\u0000-\u001f\u007f\s]/;
+const UNSAFE_CHARACTERS = /[\\\u0000-\u001f\u007f\s]/;
 const SSO_HOSTS = new Set([
   'kingxtech.name.ng',
   'kxpertai.kingxtech.name.ng',
