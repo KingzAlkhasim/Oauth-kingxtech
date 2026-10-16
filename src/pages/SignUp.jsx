@@ -6,6 +6,7 @@ import { Button, Input, Divider, SocialButtons } from '../components/ui';
 import { ArrowLeft, Check } from 'lucide-react';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
+import { safeInternalPath } from '../lib/safeRedirect';
 
 const ROLES = ['Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'Mobile Developer', 'AI Engineer', 'Machine Learning Engineer', 'DevOps Engineer', 'Security Engineer', 'Data Scientist', 'Game Developer', 'Student', 'Researcher', 'Designer', 'Entrepreneur', 'Other'];
 const STACK = ['JavaScript', 'TypeScript', 'Python', 'PHP', 'Rust', 'C++', 'Java', 'Go', 'React', 'Vue', 'Angular', 'Node.js', 'Laravel', 'Next.js', 'Django', 'Flask', 'Docker', 'Kubernetes', 'TensorFlow', 'PyTorch', 'HuggingFace', 'Unsloth', 'PostgreSQL', 'MySQL', 'MongoDB'];
@@ -62,7 +63,7 @@ export default function SignUp() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect');
-  const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : null;
+  const safeRedirect = safeInternalPath(redirect);
   const [form, setForm] = useState({
     email: '', password: '', confirmPassword: '',
     fullName: '', username: '',
@@ -110,10 +111,6 @@ export default function SignUp() {
       return;
     }
 
-    // Supabase returns a "successful" response with no error even when the
-    // email is already registered (an anti-enumeration measure) — the giveaway
-    // is an empty identities array. Without this check, re-testing with the
-    // same email looks like signup "does nothing".
     if (signUpData?.user && signUpData.user.identities?.length === 0) {
       setError('That email is already registered. Try signing in instead, or use "Forgot password" if you need to reset it.');
       return;
@@ -162,34 +159,22 @@ export default function SignUp() {
           <div className="flex flex-col gap-4">
             <Input label="Email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} required />
             <Input label="Password" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} required />
-            <Input
-              label="Confirm password" type="password" value={form.confirmPassword}
-              onChange={(e) => set('confirmPassword', e.target.value)}
-              error={form.confirmPassword && form.confirmPassword !== form.password ? "Passwords don't match" : undefined}
-              required
-            />
+            <Input label="Confirm password" type="password" value={form.confirmPassword} onChange={(e) => set('confirmPassword', e.target.value)} error={form.confirmPassword && form.confirmPassword !== form.password ? "Passwords don't match" : undefined} required />
           </div>
         )}
-
         {step === 1 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium">What should we call you?</h2>
             <Input label="Full name" value={form.fullName} onChange={(e) => set('fullName', e.target.value)} required />
-            <Input
-              label="Username" value={form.username}
-              onChange={(e) => set('username', e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              hint="Lowercase, 3–20 characters." required minLength={3} maxLength={20}
-            />
+            <Input label="Username" value={form.username} onChange={(e) => set('username', e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} hint="Lowercase, 3–20 characters." required minLength={3} maxLength={20} />
           </div>
         )}
-
         {step === 2 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium">What's your role?</h2>
             <RadioGrid options={ROLES} value={form.role} onChange={(v) => set('role', v)} />
           </div>
         )}
-
         {step === 3 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium">Your tech stack</h2>
@@ -197,76 +182,43 @@ export default function SignUp() {
             <ChipMultiSelect options={STACK} values={form.stack} onToggle={toggleStack} />
           </div>
         )}
-
         {step === 4 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium">Experience level</h2>
             <RadioGrid options={EXPERIENCE} value={form.experience} onChange={(v) => set('experience', v)} columns={1} />
           </div>
         )}
-
         {step === 5 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium">How would you describe yourself?</h2>
             <RadioGrid options={USER_TYPES} value={form.userType} onChange={(v) => set('userType', v)} />
           </div>
         )}
-
         {step === 6 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium">Company</h2>
             <Input label="Company name (optional)" value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Leave blank if not applicable" />
           </div>
         )}
-
         {step === 7 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium">Link your GitHub</h2>
-            <Input
-              label="GitHub profile URL (optional)" value={form.github}
-              onChange={(e) => set('github', e.target.value)}
-              placeholder="https://github.com/yourname"
-              error={!githubValid ? 'Enter a valid GitHub profile URL' : undefined}
-            />
+            <Input label="GitHub profile URL (optional)" value={form.github} onChange={(e) => set('github', e.target.value)} placeholder="https://github.com/yourname" error={!githubValid ? 'Enter a valid GitHub profile URL' : undefined} />
           </div>
         )}
-
         {step === 8 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-display text-lg font-medium mb-1">Review &amp; confirm</h2>
             {[
-              ['Full name', form.fullName || '—'],
-              ['Username', form.username ? `@${form.username}` : '—'],
-              ['Email', form.email || '—'],
-              ['Role', form.role || '—'],
-              ['Tech stack', form.stack.length ? form.stack.join(', ') : '—'],
-              ['Experience', form.experience || '—'],
-              ['Account type', form.userType || '—'],
-              ['Company', form.company || '—'],
-              ['GitHub', form.github || '—'],
+              ['Full name', form.fullName || '—'], ['Username', form.username ? `@${form.username}` : '—'], ['Email', form.email || '—'], ['Role', form.role || '—'], ['Tech stack', form.stack.length ? form.stack.join(', ') : '—'], ['Experience', form.experience || '—'], ['Account type', form.userType || '—'], ['Company', form.company || '—'], ['GitHub', form.github || '—'],
             ].map(([k, v]) => (
               <div key={k} className="flex items-start justify-between gap-4 py-2.5 border-b border-white/8 text-sm">
-                <span className="text-kxmist">{k}</span>
-                <span className="text-right max-w-[60%]">{v}</span>
+                <span className="text-kxmist">{k}</span><span className="text-right max-w-[60%]">{v}</span>
               </div>
             ))}
           </div>
         )}
-
-        <Button
-          type="submit"
-          variant="glow"
-          className="w-full mt-1"
-          loading={step === TOTAL_STEPS - 1 && loading}
-          disabled={
-            (step === 0 && (!form.email || !form.password || form.password !== form.confirmPassword)) ||
-            (step === 1 && (!form.fullName || form.username.length < 3)) ||
-            (step === 2 && !form.role) ||
-            (step === 4 && !form.experience) ||
-            (step === 5 && !form.userType) ||
-            (step === 7 && !githubValid)
-          }
-        >
+        <Button type="submit" variant="glow" className="w-full mt-1" loading={step === TOTAL_STEPS - 1 && loading} disabled={(step === 0 && (!form.email || !form.password || form.password !== form.confirmPassword)) || (step === 1 && (!form.fullName || form.username.length < 3)) || (step === 2 && !form.role) || (step === 4 && !form.experience) || (step === 5 && !form.userType) || (step === 7 && !githubValid)}>
           {step === TOTAL_STEPS - 1 ? (<><Check size={16} /> Create account</>) : 'Continue'}
         </Button>
       </form>
