@@ -9,7 +9,7 @@
   "crons": [
     {
       "path": "/api/internal/cron/expire-plans",
-      "schedule": "0 * * * *"
+      "schedule": "0 3 * * *"
     }
   ],
   "rewrites": [
