@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ProjectWorkspace from '../pages/ProjectWorkspace';
-import ProjectShareSheet from './ProjectShareSheet';
 import { acceptTransfer, declineTransfer, getPendingTransfers, getProjectMembers } from '../lib/projectCollaboration';
 import { supabase } from '../lib/supabase';
 
 export default function ProjectCollaborationOverlay() {
   const { id } = useParams();
-  const [shareOpen, setShareOpen] = useState(false);
   const [transfers, setTransfers] = useState([]);
   const [viewOnly, setViewOnly] = useState(false);
 
@@ -53,9 +51,6 @@ export default function ProjectCollaborationOverlay() {
         .kx-view-only-project button[title*="GitHub"],
         .kx-view-only-project button[title*="Security"] { display: none !important; }
       ` : ''}</style>
-      <div className="fixed right-4 bottom-[calc(80px+env(safe-area-inset-bottom))] z-40 md:right-6">
-        <button type="button" onClick={() => setShareOpen(true)} className="min-h-11 min-w-11 rounded-full bg-white text-black px-4 shadow-xl font-medium" aria-label="Share project">Share</button>
-      </div>
       {transfers.map((transfer) => (
         <div key={transfer.id} className="fixed left-3 right-3 top-[calc(12px+env(safe-area-inset-top))] z-50 rounded-2xl border border-white/10 bg-kxbg p-4 shadow-2xl md:left-auto md:right-6 md:max-w-md">
           <div className="text-sm font-semibold text-white">Ownership transfer pending</div>
@@ -66,7 +61,6 @@ export default function ProjectCollaborationOverlay() {
           </div>
         </div>
       ))}
-      <ProjectShareSheet projectId={id} open={shareOpen} onClose={() => setShareOpen(false)} />
     </div>
   );
 }
