@@ -6,6 +6,13 @@ import { listDomains, listDomainProjects, addDomain, removeDomain, verifyDomain 
 import { Card, Button, Input, Badge } from '../components/ui';
 import { Plus, Trash2, CheckCircle2, RefreshCw, Globe } from 'lucide-react';
 
+// Vercel "verified" only proves ownership; Active also needs DNS really pointing here.
+// A null dns_configured (never checked) is treated as not active.
+function domainStatus(d) {
+  if (!d.verified) return 'pending';
+  return d.dns_configured === true ? 'active' : 'misconfigured';
+}
+
 export default function Domains() {
   useSeo({ title: 'Domains — KingxTech', noindex: true });
   useRequireAuth();
@@ -96,7 +103,7 @@ export default function Domains() {
               <div className="flex items-center gap-3 flex-wrap">
                 <Globe size={18} className="text-kxmist" />
                 <p className="font-mono text-sm">{d.domain}</p>
-                <Badge tone={d.verified ? 'live' : 'default'}>{d.verified ? 'Verified' : 'Pending DNS'}</Badge>
+                <Badge tone={domainStatus(d) === 'active' ? 'live' : 'default'}>{domainStatus(d) === 'active' ? 'Active' : domainStatus(d) === 'misconfigured' ? 'DNS not pointing here' : 'Pending DNS'}</Badge>
                 {d.projects?.name && <span className="text-[12px] text-kxmist">→ {d.projects.name}</span>}
               </div>
               <div className="flex items-center gap-3">
@@ -106,8 +113,10 @@ export default function Domains() {
             </div>
             <div className="rounded-lg border border-white/10 bg-black/20 px-4 py-3">
               <p className="text-[12px] font-mono text-kxmist mb-1.5">DNS setup</p>
-              {d.verified ? (
-                <p className="text-[13px] text-emerald-300">Vercel has verified this domain. HTTPS will be served automatically.</p>
+              {domainStatus(d) === 'active' ? (
+                <p className="text-[13px] text-emerald-300">DNS points to KingxTech. HTTPS is served automatically.</p>
+              ) : domainStatus(d) === 'misconfigured' ? (
+                <p className="text-[13px] text-amber-300">Ownership is confirmed, but this domain's DNS does not point to KingxTech yet. Add a CNAME to <span className="font-mono">{d.target_cname || 'cname.vercel-dns.com'}</span> (or the A record your DNS host requires for a root domain), then tap Verify DNS.</p>
               ) : Array.isArray(d.verification) && d.verification.length ? (
                 <div className="space-y-2">
                   {d.verification.map((record, index) => (
@@ -122,7 +131,7 @@ export default function Domains() {
                 <p className="text-[13px] text-kxmist">Vercel is preparing the DNS verification instructions. Try Verify DNS in a moment.</p>
               )}
             </div>
-            {d.verified && <p className="flex items-center gap-2 text-[12.5px] text-emerald-300 mt-3"><CheckCircle2 size={14} /> DNS verified</p>}
+            {domainStatus(d) === 'active' && <p className="flex items-center gap-2 text-[12.5px] text-emerald-300 mt-3"><CheckCircle2 size={14} /> DNS verified</p>}
           </Card>
         ))}
       </div>
