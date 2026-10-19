@@ -372,6 +372,10 @@ function TerminalTab({ projectId, publishedUrl }) {
   );
 }
 
+function SettingsGroupLabel({ children }) {
+  return <h2 className="pt-2 text-[11px] font-mono uppercase tracking-wider text-kxmist">{children}</h2>;
+}
+
 function SiteSettingsTab({ projectId }) {
   const [vars, setVars] = useState(null);
   const [error, setError] = useState('');
@@ -505,6 +509,7 @@ function SiteSettingsTab({ projectId }) {
     <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
       <ShareSettingsCard projectId={projectId} />
 
+      <SettingsGroupLabel>App &amp; install</SettingsGroupLabel>
       <Card className="p-4 rounded-xl">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -521,9 +526,9 @@ function SiteSettingsTab({ projectId }) {
         <div className="mt-3 text-[11px] text-kxmist">
           {pwaLoading ? 'Loading PWA setting…' : pwaEnabled ? 'Enabled for this project.' : 'Disabled — the published site stays a normal website.'}
         </div>
-      </Card>
 
-      <Card className="p-4 rounded-xl">
+        <div className="my-4 border-t border-white/10" />
+
         <div className="flex flex-col gap-3 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-[14px] font-semibold min-w-0">Custom PWA icon</h3>
@@ -555,30 +560,29 @@ function SiteSettingsTab({ projectId }) {
         }} />
       </Card>
 
+      <SettingsGroupLabel>Secrets &amp; environment</SettingsGroupLabel>
       <Card className="p-4 rounded-xl">
-        <div className="flex items-start gap-2 text-[12px] text-kxmist leading-relaxed">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-[14px] font-semibold">Environment variables &amp; secrets</h3>
+            <p className="text-[11.5px] text-kxmist mt-0.5">Private by default, hidden until you reveal them. Injected into this project's runtime.</p>
+          </div>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-kxmist">Project only</span>
+        </div>
+
+        <div className="flex items-start gap-2 text-[12px] text-kxmist leading-relaxed mb-3">
           <Info size={13} className="mt-0.5 shrink-0" />
           <p>
             Variables belong only to this project. Public variables are exposed to the published site through{' '}
             <code className="text-white">window.KX_ENV</code>. Never mark a secret as public.
           </p>
         </div>
-      </Card>
 
-      {error && (
-        <p className="text-[12.5px] text-red-400 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2">
-          {error}
-        </p>
-      )}
-
-      <Card className="p-4 rounded-xl">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div>
-            <h3 className="text-[14px] font-semibold">Environment variables</h3>
-            <p className="text-[11.5px] text-kxmist mt-0.5">Private by default. Injected into this project's runtime.</p>
-          </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-kxmist">Project only</span>
-        </div>
+        {error && (
+          <p className="text-[12.5px] text-red-400 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 mb-3">
+            {error}
+          </p>
+        )}
 
         <div className="flex flex-col gap-2 mb-4">
           {vars === null && <p className="text-[13px] text-kxmist">Loading…</p>}
@@ -612,6 +616,7 @@ function SiteSettingsTab({ projectId }) {
         </div>
       </Card>
 
+      <SettingsGroupLabel>Security</SettingsGroupLabel>
       <Card className="p-4 rounded-xl">
         <div className="flex items-center gap-2 mb-1">
           <Shield size={15} className="text-kxblue" />

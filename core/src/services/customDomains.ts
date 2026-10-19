@@ -1,6 +1,7 @@
 import { env } from '../config/env';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { assertProjectOwnership } from './projectFs';
+import { dnsConfiguredFromVercel } from './domainStatus';
 
 // Production Vercel project receiving customer custom domains.
 const VERCEL_PROJECT = 'neurocore';
@@ -25,6 +26,17 @@ type VercelDomainResponse = {
   verification?: VercelVerification[];
   [key: string]: unknown;
 };
+
+// Asks Vercel whether DNS actually points at us. Any failure means "unknown" (null),
+// which the UI never shows as success.
+async function checkDnsConfigured(domain: string): Promise<boolean | null> {
+  try {
+    const config = await vercelRequest(`/v6/domains/${encodeURIComponent(domain)}/config`);
+    return dnsConfiguredFromVercel(config as { misconfigured?: unknown });
+  } catch {
+    return null;
+  }
+}
 
 function normalizeDomain(value: string): string {
   return value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.$/, '');
@@ -122,6 +134,7 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
     verified: vercel.verified === true,
     target_cname: 'cname.vercel-dns.com',
     verification: vercel.verification ?? [],
+    dns_configured: await checkDnsConfigured(domain),
     last_checked_at: new Date().toISOString(),
   };
 
@@ -169,6 +182,7 @@ export async function verifyCustomDomain(userId: string, id: string) {
     .update({
       verified: vercel.verified === true,
       verification: vercel.verification ?? [],
+      dns_configured: await checkDnsConfigured(record.domain),
       last_checked_at: new Date().toISOString(),
     })
     .eq('id', id)

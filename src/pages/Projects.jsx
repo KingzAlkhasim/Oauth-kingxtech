@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
+import ClampedText from '../components/ClampedText';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input, Badge } from '../components/ui';
@@ -170,7 +171,7 @@ export default function Projects() {
                   <Badge tone="default">{p.role}</Badge>
                 </div>
                 <p className="text-xs text-kxmist">Owner: <span className="text-white/80">{p.ownerName}</span></p>
-                {p.description && <p className="text-[13px] text-kxmist leading-relaxed">{p.description}</p>}
+                <ClampedText text={p.description} className="text-[13px] text-kxmist leading-relaxed" />
                 <Link to={`/projects/${p.id}/workspace`} className="min-h-11 inline-flex items-center gap-1.5 text-[13px] text-kxpurple hover:text-white w-fit">
                   <Code2 size={13} /> Open workspace
                 </Link>
@@ -198,7 +199,7 @@ export default function Projects() {
               </div>
               <Badge tone={p.status === 'active' ? 'live' : p.status === 'paused' ? 'beta' : 'default'}>{p.status}</Badge>
             </div>
-            {p.description && <p className="text-[13.5px] text-kxmist leading-relaxed">{p.description}</p>}
+            <ClampedText text={p.description} className="text-[13.5px] text-kxmist leading-relaxed" />
             <Link
               to={`/projects/${p.id}/workspace`}
               className="min-h-11 inline-flex items-center gap-1.5 text-[13px] text-kxpurple hover:text-white w-fit"
