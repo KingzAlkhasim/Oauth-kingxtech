@@ -11,6 +11,10 @@ const RESERVED_KINGXTECH_SUBDOMAINS = new Set([
   'auth', 'site', 'api', 'www', 'docs', 'admin', 'console', 'mail', 'status', 'app', 'cdn', 'static',
 ]);
 
+// Errors whose message is safe and useful to show to the user (validation, Vercel's own
+// domain errors). Anything else stays generic so internals never leak.
+export class DomainError extends Error {}
+
 type VercelVerification = {
   type?: string;
   domain?: string;
@@ -36,6 +40,12 @@ async function checkDnsConfigured(domain: string): Promise<boolean | null> {
   } catch {
     return null;
   }
+}
+
+// Tolerates a database that has not had migration 033 applied yet: the domain still saves,
+// it just has no DNS result until the column exists.
+function isMissingDnsColumn(error: { message?: string } | null): boolean {
+  return !!error && /dns_configured/i.test(error.message || '');
 }
 
 function normalizeDomain(value: string): string {
@@ -72,7 +82,7 @@ async function vercelRequest(path: string, init: RequestInit = {}): Promise<Verc
   try { data = JSON.parse(text); } catch { data = { message: text }; }
 
   if (!response.ok) {
-    throw new Error(data.error?.message || data.message || `Vercel API failed with HTTP ${response.status}`);
+    throw new DomainError(data.error?.message || data.message || `Vercel API failed with HTTP ${response.status}`);
   }
   return data;
 }
@@ -81,17 +91,17 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
   await assertProjectOwnership(userId, projectId);
   const domain = normalizeDomain(rawDomain);
 
-  if (!domain || !domain.includes('.') || domain.length > 253) throw new Error('Enter a valid domain name.');
+  if (!domain || !domain.includes('.') || domain.length > 253) throw new DomainError('Enter a valid domain name.');
 
   if (domain === KINGXTECH_BASE_DOMAIN) {
-    throw new Error('kingxtech.name.ng itself cannot be connected as a project domain.');
+    throw new DomainError('kingxtech.name.ng itself cannot be connected as a project domain.');
   }
 
   if (domain.endsWith(`.${KINGXTECH_BASE_DOMAIN}`)) {
     const slug = domain.slice(0, -(KINGXTECH_BASE_DOMAIN.length + 1));
 
     if (!isDnsSafeSlug(slug) || RESERVED_KINGXTECH_SUBDOMAINS.has(slug)) {
-      throw new Error('This KingxTech subdomain must use a lowercase DNS-safe project slug.');
+      throw new DomainError('This KingxTech subdomain must use a lowercase DNS-safe project slug.');
     }
 
     const { data: project, error: projectError } = await supabaseAdmin
@@ -103,7 +113,7 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
 
     if (projectError) throw new Error(`Project lookup failed: ${projectError.message}`);
     if (!project?.slug || project.slug !== slug) {
-      throw new Error("You can only use the KingxTech subdomain matching this project's own slug.");
+      throw new DomainError("You can only use the KingxTech subdomain matching this project's own slug.");
     }
   }
 
@@ -121,7 +131,7 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
     existingDomain &&
     (existingDomain.user_id !== userId || existingDomain.project_id !== projectId)
   ) {
-    throw new Error('This domain is already connected to another project.');
+    throw new DomainError('This domain is already connected to another project.');
   }
 
   const vercel = await vercelRequest(`/v10/projects/${encodeURIComponent(VERCEL_PROJECT)}/domains`, {
@@ -138,24 +148,26 @@ export async function addCustomDomain(userId: string, projectId: string, rawDoma
     last_checked_at: new Date().toISOString(),
   };
 
-  const { data, error } = existingDomain
-    ? await supabaseAdmin
+  const save = (values: Record<string, unknown>) => (existingDomain
+    ? supabaseAdmin
       .from('custom_domains')
-      .update(domainValues)
+      .update(values)
       .eq('domain', domain)
       .eq('user_id', userId)
       .eq('project_id', projectId)
       .select('*, projects(id, name)')
       .single()
-    : await supabaseAdmin
+    : supabaseAdmin
       .from('custom_domains')
-      .insert({
-        user_id: userId,
-        project_id: projectId,
-        ...domainValues,
-      })
+      .insert({ user_id: userId, project_id: projectId, ...values })
       .select('*, projects(id, name)')
-      .single();
+      .single());
+
+  let { data, error } = await save(domainValues);
+  if (isMissingDnsColumn(error)) {
+    const { dns_configured: _skip, ...withoutDns } = domainValues;
+    ({ data, error } = await save(withoutDns));
+  }
 
   if (error) throw new Error(`custom domain save failed: ${error.message}`);
   return { domain: data, vercel };
@@ -169,7 +181,7 @@ export async function verifyCustomDomain(userId: string, id: string) {
     .eq('user_id', userId)
     .single();
 
-  if (lookupError || !record) throw new Error('Domain not found.');
+  if (lookupError || !record) throw new DomainError('Domain not found.');
   await assertProjectOwnership(userId, record.project_id);
 
   const vercel = await vercelRequest(
@@ -177,18 +189,25 @@ export async function verifyCustomDomain(userId: string, id: string) {
     { method: 'POST' },
   );
 
-  const { data, error } = await supabaseAdmin
+  const verifyValues = {
+    verified: vercel.verified === true,
+    verification: vercel.verification ?? [],
+    dns_configured: await checkDnsConfigured(record.domain),
+    last_checked_at: new Date().toISOString(),
+  };
+  const saveVerify = (values: Record<string, unknown>) => supabaseAdmin
     .from('custom_domains')
-    .update({
-      verified: vercel.verified === true,
-      verification: vercel.verification ?? [],
-      dns_configured: await checkDnsConfigured(record.domain),
-      last_checked_at: new Date().toISOString(),
-    })
+    .update(values)
     .eq('id', id)
     .eq('user_id', userId)
     .select('*, projects(id, name)')
     .single();
+
+  let { data, error } = await saveVerify(verifyValues);
+  if (isMissingDnsColumn(error)) {
+    const { dns_configured: _skip, ...withoutDns } = verifyValues;
+    ({ data, error } = await saveVerify(withoutDns));
+  }
 
   if (error) throw new Error(`custom domain verification save failed: ${error.message}`);
   return { domain: data, vercel };
@@ -202,7 +221,7 @@ export async function removeCustomDomain(userId: string, id: string) {
     .eq('user_id', userId)
     .single();
 
-  if (lookupError || !record) throw new Error('Domain not found.');
+  if (lookupError || !record) throw new DomainError('Domain not found.');
   await assertProjectOwnership(userId, record.project_id);
 
   try {

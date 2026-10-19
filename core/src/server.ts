@@ -50,7 +50,7 @@ import {
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
-import { getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
+import { DomainError, getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { getProjectRole } from './services/projectCollaboration';
 import { authorizeProjectAi } from './services/projectCollaborationLogic';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
@@ -1363,6 +1363,10 @@ app.post('/api/domains', requireAuth, async (req: AuthedRequest, res) => {
     const result = await addCustomDomain(req.user!.id, projectId, domain);
     res.json({ success: true, ...result });
   } catch (error) {
+    if (error instanceof DomainError) {
+      res.status(400).json({ success: false, error: error.message });
+      return;
+    }
     await reportError(res, 400, 'Failed to connect domain', error, 'Domain add error:');
   }
 });
@@ -1372,6 +1376,10 @@ app.post('/api/domains/:id/verify', requireAuth, async (req: AuthedRequest, res)
     const result = await verifyCustomDomain(req.user!.id, req.params.id);
     res.json({ success: true, ...result });
   } catch (error) {
+    if (error instanceof DomainError) {
+      res.status(400).json({ success: false, error: error.message });
+      return;
+    }
     await reportError(res, 400, 'Failed to verify domain', error, 'Domain verify error:');
   }
 });
