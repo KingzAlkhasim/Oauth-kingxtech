@@ -15,6 +15,7 @@ import { getBillingProfile } from '../lib/billing';
 import { siteUrl } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import { getProjectPwa, setProjectPwa, uploadProjectPwaIcon, removeProjectPwaIcon } from '../lib/projectPwa';
+import ShareSettingsCard from '../components/ShareSettingsCard';
 import CodeMirror from '@uiw/react-codemirror';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
@@ -502,6 +503,8 @@ function SiteSettingsTab({ projectId }) {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
+      <ShareSettingsCard projectId={projectId} />
+
       <Card className="p-4 rounded-xl">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
