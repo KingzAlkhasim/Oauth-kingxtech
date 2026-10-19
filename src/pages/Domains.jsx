@@ -103,7 +103,7 @@ export default function Domains() {
               <div className="flex items-center gap-3 flex-wrap">
                 <Globe size={18} className="text-kxmist" />
                 <p className="font-mono text-sm">{d.domain}</p>
-                <Badge tone={domainStatus(d) === 'active' ? 'live' : 'default'}>{domainStatus(d) === 'active' ? 'Active' : domainStatus(d) === 'misconfigured' ? 'DNS not pointing here' : 'Pending DNS'}</Badge>
+                <Badge tone={domainStatus(d) === 'active' ? 'live' : 'default'}>{domainStatus(d) === 'active' ? 'Active' : domainStatus(d) === 'misconfigured' ? 'Waiting for DNS' : 'Pending DNS'}</Badge>
                 {d.projects?.name && <span className="text-[12px] text-kxmist">→ {d.projects.name}</span>}
               </div>
               <div className="flex items-center gap-3">
@@ -116,7 +116,22 @@ export default function Domains() {
               {domainStatus(d) === 'active' ? (
                 <p className="text-[13px] text-emerald-300">DNS points to KingxTech. HTTPS is served automatically.</p>
               ) : domainStatus(d) === 'misconfigured' ? (
-                <p className="text-[13px] text-amber-300">Ownership is confirmed, but this domain's DNS does not point to KingxTech yet. Add a CNAME to <span className="font-mono">{d.target_cname || 'cname.vercel-dns.com'}</span> (or the A record your DNS host requires for a root domain), then tap Verify DNS.</p>
+                <div className="space-y-3">
+                  <p className="text-[13px] text-amber-300">
+                    Added to KingxTech, but this domain isn't pointing here yet. You must own <span className="font-mono">{d.domain}</span> (buy it from a registrar such as Namecheap, Qservers or GoDaddy), then add ONE of these records in that registrar's DNS settings and tap Verify DNS.
+                  </p>
+                  <div className="space-y-2 text-[13px] font-mono">
+                    <div className="rounded-md border border-white/10 px-3 py-2">
+                      <p className="text-[11px] text-kxmist font-sans mb-1">Subdomain such as www.{d.domain.replace(/^www\./, '')} or app.…</p>
+                      <div className="flex flex-wrap gap-x-5 gap-y-1"><span><span className="text-kxmist">Type</span> CNAME</span><span><span className="text-kxmist">Name</span> www (or your subdomain)</span><span className="break-all"><span className="text-kxmist">Value</span> {d.target_cname || 'cname.vercel-dns.com'}</span></div>
+                    </div>
+                    <div className="rounded-md border border-white/10 px-3 py-2">
+                      <p className="text-[11px] text-kxmist font-sans mb-1">Root domain such as {d.domain.replace(/^www\./, '')}</p>
+                      <div className="flex flex-wrap gap-x-5 gap-y-1"><span><span className="text-kxmist">Type</span> A</span><span><span className="text-kxmist">Name</span> @</span><span><span className="text-kxmist">Value</span> 76.76.21.21</span></div>
+                    </div>
+                  </div>
+                  <p className="text-[12px] text-kxmist">DNS can take a few minutes to a few hours to update.</p>
+                </div>
               ) : Array.isArray(d.verification) && d.verification.length ? (
                 <div className="space-y-2">
                   {d.verification.map((record, index) => (
