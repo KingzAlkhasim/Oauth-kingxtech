@@ -50,6 +50,8 @@ import {
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
+import { getAccountSuspension, isProjectOwnerSuspended, forgetSuspensionCache } from './services/accountSuspension';
+import { createAccountExport } from './services/accountExport';
 import { DomainError, getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { getProjectRole } from './services/projectCollaboration';
 import { authorizeProjectAi } from './services/projectCollaborationLogic';
@@ -1234,6 +1236,10 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   return htmlWithIcon.replace(/<body[^>]*>/i, (match) => snippet + match);
 }
 async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
+  if (await isProjectOwnerSuspended(projectId)) {
+    res.status(503).type('text/plain').send('This site is unavailable.');
+    return;
+  }
   let filePath = requestedPath || 'index.html';
   if (filePath === '') filePath = 'index.html';
 
@@ -1335,6 +1341,34 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   }
   res.type(MIME_TYPES[ext.toLowerCase()] || 'text/plain; charset=utf-8').send(content);
 }
+
+// Account status and data export. Both stay reachable for suspended accounts (see
+// isAllowedWhenSuspended) so people can see why they are blocked and take their work.
+app.get('/api/account/status', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    forgetSuspensionCache(req.user!.id);
+    const status = await getAccountSuspension(req.user!.id);
+    res.json({ success: true, ...status });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to load account status', error, 'Account status error:');
+  }
+});
+
+const lastExportAt = new Map<string, number>();
+app.post('/api/account/export', requireAuth, async (req: AuthedRequest, res) => {
+  const previous = lastExportAt.get(req.user!.id) ?? 0;
+  if (Date.now() - previous < 60_000) {
+    res.status(429).json({ success: false, error: 'Please wait a minute before preparing another export.' });
+    return;
+  }
+  lastExportAt.set(req.user!.id, Date.now());
+  try {
+    const result = await createAccountExport(req.user!.id, req.user!.email);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to prepare your export', error, 'Account export error:');
+  }
+});
 
 // Custom domain management. Vercel registration/verification stays server-side so the
 // Vercel API token is never exposed to the browser.

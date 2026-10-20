@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
 import { Card, Button, Badge } from '../components/ui';
+import { adminListAccounts, adminSetSuspension } from '../lib/account';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import useIsAdmin, {
@@ -110,6 +111,76 @@ function SupportInbox() {
   );
 }
 
+function AccountRow({ account, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const change = async (suspend) => {
+    if (suspend && reason.trim().length < 3) { setError('Give a reason first.'); return; }
+    if (suspend && !window.confirm(`Suspend ${account.email}? They will be blocked and their sites go offline.`)) return;
+    setBusy(true); setError('');
+    const { error: e } = await adminSetSuspension(account.user_id, suspend, reason.trim());
+    setBusy(false);
+    if (e) { setError(e.message); return; }
+    setReason(''); setOpen(false); onChanged();
+  };
+
+  return (
+    <Card className="p-4 rounded-xl">
+      <button type="button" onClick={() => setOpen(!open)} className="w-full text-left flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium break-words">{account.full_name || account.email}</p>
+          <p className="text-[12px] text-kxmist break-words">{account.email} · {account.plan} · {account.project_count} project{Number(account.project_count) === 1 ? '' : 's'} · {account.ai_requests_30d} AI requests (30d)</p>
+        </div>
+        <Badge tone={account.suspended ? 'beta' : 'default'}>{account.suspended ? 'suspended' : 'active'}</Badge>
+      </button>
+      {open && (
+        <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-3 text-[12.5px]">
+          <p className="text-kxmist">Joined {new Date(account.created_at).toLocaleDateString()} · Last sign-in {account.last_sign_in_at ? new Date(account.last_sign_in_at).toLocaleString() : 'never'}</p>
+          {account.suspended ? (
+            <>
+              <p className="break-words">Suspended {account.suspended_at ? new Date(account.suspended_at).toLocaleString() : ''}. Reason: {account.suspended_reason}</p>
+              <Button variant="subtle" className="self-start" onClick={() => change(false)} loading={busy} disabled={busy}>Reinstate account</Button>
+            </>
+          ) : (
+            <>
+              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} placeholder="Reason for suspension (shown to the user)" className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue resize-none" />
+              <Button variant="glow" className="self-start" onClick={() => change(true)} loading={busy} disabled={busy}>Suspend account</Button>
+            </>
+          )}
+          {error && <p className="text-red-400">{error}</p>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Accounts() {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const refresh = useCallback(async () => {
+    const { data, error: e } = await adminListAccounts();
+    if (e) setError(e.message); else setRows(data || []);
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const q = query.trim().toLowerCase();
+  const visible = (rows || []).filter((r) => !q || `${r.email} ${r.full_name || ''}`.toLowerCase().includes(q));
+
+  return (
+    <div className="flex flex-col gap-3">
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or email" className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue" />
+      {error && <p className="text-[12.5px] text-red-400">{error}</p>}
+      {rows === null && !error && <p className="text-sm text-kxmist">Loading accounts…</p>}
+      {rows && visible.length === 0 && <p className="text-[13px] text-kxmist">No accounts match.</p>}
+      {visible.map((a) => <AccountRow key={a.user_id} account={a} onChanged={refresh} />)}
+    </div>
+  );
+}
+
 function AuditLog() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
@@ -149,11 +220,11 @@ export default function Admin() {
         <h1 className="font-display text-2xl">Admin</h1>
       </div>
       <div className="flex gap-2 mb-5">
-        {[['support', 'Support inbox'], ['audit', 'Audit log']].map(([key, text]) => (
+        {[['support', 'Support inbox'], ['accounts', 'Accounts'], ['audit', 'Audit log']].map(([key, text]) => (
           <button key={key} type="button" onClick={() => setTab(key)} className={`min-h-11 px-4 rounded-full text-[13px] border ${tab === key ? 'border-kxblue text-white bg-white/5' : 'border-white/10 text-kxmist'}`}>{text}</button>
         ))}
       </div>
-      {tab === 'support' ? <SupportInbox /> : <AuditLog />}
+      {tab === 'support' ? <SupportInbox /> : tab === 'accounts' ? <Accounts /> : <AuditLog />}
     </DashboardShell>
   );
 }

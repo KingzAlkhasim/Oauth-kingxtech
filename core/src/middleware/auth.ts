@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { createHash } from 'crypto';
 import { env } from '../config/env';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { getAccountSuspension, isAllowedWhenSuspended } from '../services/accountSuspension';
 
 export interface AuthedRequest extends Request {
   user?: { id: string; email?: string };
@@ -57,6 +58,21 @@ async function tryApiKeyAuth(req: AuthedRequest, token: string): Promise<boolean
  *
  * Expects: Authorization: Bearer <supabase_access_token | kx_live_/kx_test_ API key>
  */
+// Suspended accounts are stopped here for every authenticated route except the few that
+// let them see their status and download their own data.
+async function continueUnlessSuspended(req: AuthedRequest, res: Response, next: NextFunction) {
+  const suspension = await getAccountSuspension(req.user!.id);
+  if (suspension.suspended && !isAllowedWhenSuspended(req.originalUrl || req.path)) {
+    res.status(403).json({
+      success: false,
+      code: 'account_suspended',
+      error: 'This account is suspended. Contact support at hello@kingxtech.name.ng.',
+    });
+    return;
+  }
+  next();
+}
+
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
 
@@ -69,7 +85,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
 
   try {
     if (await tryApiKeyAuth(req, token)) {
-      next();
+      await continueUnlessSuspended(req, res, next);
       return;
     }
 
@@ -88,7 +104,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     const user = (await resp.json()) as { id: string; email?: string };
     req.user = { id: user.id, email: user.email };
     req.authMethod = 'session';
-    next();
+    await continueUnlessSuspended(req, res, next);
   } catch (err) {
     res.status(503).json({ success: false, error: 'Could not verify session (auth service unreachable).' });
   }
