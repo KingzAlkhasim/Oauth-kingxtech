@@ -15,6 +15,7 @@ import Confirmed from './pages/Confirmed';
 import Billing from './pages/Billing';
 import Domains from './pages/Domains';
 import Help from './pages/Help';
+import Admin from './pages/Admin';
 import ProjectInvite from './pages/ProjectInvite';
 
 function LegacySettingsRedirect() {
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/store" element={<Navigate to="/billing" replace />} />
         <Route path="/domains" element={<Domains />} />
         <Route path="/help" element={<Help />} />
+        <Route path="/admin" element={<Admin />} />
       </Routes>
     </BrowserRouter>
   );

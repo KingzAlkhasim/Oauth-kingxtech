@@ -14,3 +14,16 @@ export async function createTicket({ category, subject, message }) {
     .select()
     .single();
 }
+
+export async function listReplies(ticketId) {
+  return supabase.from('support_replies').select('*').eq('ticket_id', ticketId).order('created_at', { ascending: true });
+}
+
+export async function addFollowUp(ticketId, body) {
+  const { data: userData } = await supabase.auth.getUser();
+  return supabase
+    .from('support_replies')
+    .insert({ ticket_id: ticketId, author_id: userData.user.id, is_admin: false, body })
+    .select()
+    .single();
+}
