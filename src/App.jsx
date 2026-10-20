@@ -16,6 +16,8 @@ import Billing from './pages/Billing';
 import Domains from './pages/Domains';
 import Help from './pages/Help';
 import Admin from './pages/Admin';
+import Suspended from './pages/Suspended';
+import SuspensionGate from './components/SuspensionGate';
 import ProjectInvite from './pages/ProjectInvite';
 
 function LegacySettingsRedirect() {
@@ -29,6 +31,7 @@ function LegacySettingsRedirect() {
 export default function App() {
   return (
     <BrowserRouter>
+      <SuspensionGate />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<SignIn />} />
@@ -57,6 +60,7 @@ export default function App() {
         <Route path="/domains" element={<Domains />} />
         <Route path="/help" element={<Help />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/suspended" element={<Suspended />} />
       </Routes>
     </BrowserRouter>
   );
