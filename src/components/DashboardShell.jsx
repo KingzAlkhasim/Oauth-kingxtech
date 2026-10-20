@@ -4,8 +4,9 @@ import Logo from './Logo';
 import CommandPalette from './CommandPalette';
 import { supabase } from '../lib/supabase';
 import useCurrentUser, { initials } from '../lib/useCurrentUser';
-import { LayoutDashboard, FolderKanban, Settings, LifeBuoy, LogOut, Menu, X, Search, TerminalSquare, Wallet, Globe } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Settings, LifeBuoy, LogOut, Menu, X, Search, TerminalSquare, Wallet, Globe, ShieldCheck } from 'lucide-react';
 import KXpertDrawer from './KXpertDrawer';
+import useIsAdmin from '../lib/admin';
 
 const NAV = [
   { to: '/welcome', label: 'Dashboard', icon: LayoutDashboard },
@@ -21,6 +22,7 @@ export default function DashboardShell({ children, fullWidth = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useCurrentUser();
+  const isAdmin = useIsAdmin();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const signOut = async () => {
@@ -43,7 +45,7 @@ export default function DashboardShell({ children, fullWidth = false }) {
       </button>
 
       <nav className="flex-1 flex flex-col gap-1 px-3">
-        {NAV.map(({ to, label, icon: Icon }) => {
+        {[...NAV, ...(isAdmin ? [{ to: '/admin', label: 'Admin', icon: ShieldCheck }] : [])].map(({ to, label, icon: Icon }) => {
           const active = location.pathname === to || (to === '/account/profile' && location.pathname.startsWith('/account/'));
           return (
             <Link

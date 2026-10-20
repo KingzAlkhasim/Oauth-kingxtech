@@ -4,8 +4,57 @@ import DashboardShell from '../components/DashboardShell';
 import { Card, Button, Input, Badge } from '../components/ui';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
-import { listTickets, createTicket, TICKET_CATEGORIES } from '../lib/tickets';
+import { listTickets, createTicket, listReplies, addFollowUp, TICKET_CATEGORIES } from '../lib/tickets';
 import { logActivity } from '../lib/activity';
+
+function TicketRow({ ticket }) {
+  const [open, setOpen] = useState(false);
+  const [replies, setReplies] = useState(null);
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const load = async () => {
+    const { data, error: e } = await listReplies(ticket.id);
+    if (e) setErr(e.message); else setReplies(data || []);
+  };
+  const toggle = () => { const next = !open; setOpen(next); if (next && replies === null) load(); };
+  const send = async () => {
+    if (!body.trim()) return;
+    setBusy(true); setErr('');
+    const { error: e } = await addFollowUp(ticket.id, body.trim());
+    setBusy(false);
+    if (e) { setErr(e.message); return; }
+    setBody(''); load();
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3.5 min-w-0">
+      <button type="button" onClick={toggle} className="w-full text-left flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 min-w-0">
+        <div className="min-w-0"><p className="text-sm font-medium break-words">{ticket.subject}</p><p className="text-[12px] text-kxmist">{ticket.category} · {new Date(ticket.created_at).toLocaleDateString()}</p></div>
+        <Badge tone={ticket.status === 'open' ? 'beta' : 'default'}>{String(ticket.status || 'open').replace('_', ' ')}</Badge>
+      </button>
+      {open && (
+        <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-2.5">
+          <p className="text-[13px] text-kxmist whitespace-pre-wrap break-words">{ticket.message}</p>
+          {replies?.map((r) => (
+            <div key={r.id} className={`rounded-lg px-3 py-2 text-[13px] whitespace-pre-wrap break-words ${r.is_admin ? 'bg-kxpurple/10 border border-kxpurple/20' : 'bg-white/[0.03] border border-white/10'}`}>
+              <p className="text-[11px] text-kxmist mb-1">{r.is_admin ? 'KingxTech support' : 'You'} · {new Date(r.created_at).toLocaleString()}</p>
+              {r.body}
+            </div>
+          ))}
+          {ticket.status !== 'closed' && (
+            <>
+              <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} maxLength={5000} placeholder="Add a follow-up…" className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue resize-none" />
+              <Button variant="subtle" className="self-start" onClick={send} loading={busy} disabled={busy || !body.trim()}>Send follow-up</Button>
+            </>
+          )}
+          {err && <p className="text-[12.5px] text-red-400">{err}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Help() {
   useSeo({ title: 'Help — KingxTech', noindex: true });
@@ -77,12 +126,7 @@ export default function Help() {
           <h2 className="font-display text-[16px] font-medium mb-4">Your tickets</h2>
           {tickets === null && !error && <p className="text-sm text-kxmist">Loading tickets…</p>}
           {tickets?.length === 0 && <p className="text-[13px] text-kxmist">No tickets yet.</p>}
-          <div className="flex flex-col gap-2.5">{tickets?.map((ticket) => (
-            <div key={ticket.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3.5 min-w-0">
-              <div className="min-w-0"><p className="text-sm font-medium break-words">{ticket.subject}</p><p className="text-[12px] text-kxmist">{ticket.category} · {new Date(ticket.created_at).toLocaleDateString()}</p></div>
-              <Badge tone={ticket.status === 'open' ? 'beta' : 'default'}>{String(ticket.status || 'open').replace('_', ' ')}</Badge>
-            </div>
-          ))}</div>
+          <div className="flex flex-col gap-2.5">{tickets?.map((ticket) => <TicketRow key={ticket.id} ticket={ticket} />)}</div>
         </Card>
       </div>
     </DashboardShell>
