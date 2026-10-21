@@ -17,6 +17,8 @@ import Domains from './pages/Domains';
 import Help from './pages/Help';
 import Admin from './pages/Admin';
 import Suspended from './pages/Suspended';
+import Restored from './pages/Restored';
+import Terms from './pages/Terms';
 import SuspensionGate from './components/SuspensionGate';
 import ProjectInvite from './pages/ProjectInvite';
 
@@ -61,6 +63,8 @@ export default function App() {
         <Route path="/help" element={<Help />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/suspended" element={<Suspended />} />
+        <Route path="/restored" element={<Restored />} />
+        <Route path="/terms" element={<Terms />} />
       </Routes>
     </BrowserRouter>
   );

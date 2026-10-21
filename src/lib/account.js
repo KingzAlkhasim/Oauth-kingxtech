@@ -4,14 +4,14 @@ import { apiUrl } from './apiBase';
 // Own suspension row (RLS lets a user read only their own).
 export async function getMyAccountStatus() {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { suspended: false, reason: null };
+  if (!user) return { suspended: false, reason: null, restoredNotice: false };
   const { data, error } = await supabase
     .from('account_status')
-    .select('suspended, reason')
+    .select('suspended, reason, restored_notice_pending')
     .eq('user_id', user.id)
     .maybeSingle();
-  if (error) return { suspended: false, reason: null }; // never lock someone out by mistake
-  return { suspended: data?.suspended === true, reason: data?.reason || null };
+  if (error) return { suspended: false, reason: null, restoredNotice: false }; // never lock someone out by mistake
+  return { suspended: data?.suspended === true, reason: data?.reason || null, restoredNotice: data?.restored_notice_pending === true };
 }
 
 // Builds the big zip on the server and returns a short-lived download link.
@@ -31,3 +31,5 @@ export const adminListAccounts = () => supabase.rpc('admin_list_accounts');
 
 export const adminSetSuspension = (userId, suspended, reason) =>
   supabase.rpc('admin_set_suspension', { p_user: userId, p_suspended: suspended, p_reason: reason || null });
+
+export const acknowledgeRestoration = () => supabase.rpc('acknowledge_restoration');
