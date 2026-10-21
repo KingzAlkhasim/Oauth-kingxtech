@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { getMyAccountStatus } from '../lib/account';
 
 // Public pages stay open; everything signed-in redirects suspended accounts to /suspended.
-const OPEN_PATHS = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/confirmed', '/suspended', '/help'];
+const OPEN_PATHS = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/confirmed', '/suspended', '/restored', '/terms', '/help'];
 
 export default function SuspensionGate() {
   const location = useLocation();
@@ -16,7 +16,9 @@ export default function SuspensionGate() {
     supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session || !alive) return;
       const status = await getMyAccountStatus();
-      if (alive && status.suspended) navigate('/suspended', { replace: true });
+      if (!alive) return;
+      if (status.suspended) navigate('/suspended', { replace: true });
+      else if (status.restoredNotice) navigate('/restored', { replace: true });
     });
     return () => { alive = false; };
   }, [location.pathname, navigate]);

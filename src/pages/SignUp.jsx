@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import Stepper from '../components/Stepper';
 import { Button, Input, Divider, SocialButtons } from '../components/ui';
+import { TERMS_VERSION, TERMS_PATH } from '../lib/terms';
 import { ArrowLeft, Check } from 'lucide-react';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
@@ -79,6 +80,7 @@ export default function SignUp() {
   const next = () => setStep((s) => Math.min(s + 1, TOTAL_STEPS - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
+  const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -101,6 +103,8 @@ export default function SignUp() {
           user_type: form.userType,
           company_name: form.company || null,
           github_url: form.github || null,
+          terms_version: TERMS_VERSION,
+          terms_accepted_at: new Date().toISOString(),
         },
       },
     });
@@ -256,6 +260,15 @@ export default function SignUp() {
           </div>
         )}
 
+        {step === TOTAL_STEPS - 1 && (
+          <label className="flex items-start gap-3 text-[13px] text-kxmist leading-relaxed cursor-pointer">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1 w-4 h-4 shrink-0" />
+            <span>
+              I agree to the <a href={TERMS_PATH} target="_blank" rel="noreferrer" className="text-kxblue underline">Terms of Service</a>, including the rules on acceptable use of KingxTech and its AI tools.
+            </span>
+          </label>
+        )}
+
         <Button
           type="submit"
           variant="glow"
@@ -267,7 +280,8 @@ export default function SignUp() {
             (step === 2 && !form.role) ||
             (step === 4 && !form.experience) ||
             (step === 5 && !form.userType) ||
-            (step === 7 && !githubValid)
+            (step === 7 && !githubValid) ||
+            (step === TOTAL_STEPS - 1 && !agreed)
           }
         >
           {step === TOTAL_STEPS - 1 ? (<><Check size={16} /> Create account</>) : 'Continue'}
