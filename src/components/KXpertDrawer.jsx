@@ -28,6 +28,7 @@ const VIEW_TIPS = {
 
 const STEP_ICONS = {
   webSearch: Globe,
+  checkLiveSite: Globe,
   executeTerminalCommand: Terminal,
   listProjectFiles: FileEdit,
   readProjectFile: FileEdit,
@@ -38,6 +39,7 @@ const STEP_ICONS = {
 
 const PHASE_LABELS = {
   webSearch: 'Searching the web',
+  checkLiveSite: 'Checking the live site',
   executeTerminalCommand: 'Running command',
   listProjectFiles: 'Checking project files',
   readProjectFile: 'Reading file',
