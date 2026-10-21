@@ -32,8 +32,11 @@ async function reviewMatch(match: AbuseMatch, context: string): Promise<{ verdic
     });
     const block = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
     return parseReviewVerdict(block?.text ?? '');
-  } catch {
-    return { verdict: null, reason: null };
+  } catch (error) {
+    // Make a failing review visible to the admin (status code only, never message text).
+    const status = (error as { status?: number })?.status;
+    console.error('Abuse review call failed:', status ?? '', error instanceof Error ? error.message : error);
+    return { verdict: null, reason: `AI review unavailable (${status ?? 'network error'})` };
   }
 }
 
