@@ -52,6 +52,7 @@ import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { getAccountSuspension, isProjectOwnerSuspended, forgetSuspensionCache } from './services/accountSuspension';
 import { createAccountExport } from './services/accountExport';
+import { scanPromptInBackground, scanPublishedProjectInBackground } from './services/abuseFlags';
 import { DomainError, getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
 import { getProjectRole } from './services/projectCollaboration';
 import { authorizeProjectAi } from './services/projectCollaborationLogic';
@@ -387,6 +388,9 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
       return;
     }
   }
+
+  // Abuse review: record pattern matches for admins. Fire-and-forget, never blocks the request.
+  scanPromptInBackground(userId, activeProjectId, cleanPrompt);
 
   // Plan gate — free-plan users can only use the genuinely-free open-weights
   // models. Everything else (Gemini, Claude, GPT) needs a paid plan, since
@@ -802,6 +806,7 @@ app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequ
   try {
     const slug = await publishProject(req.user!.id, req.params.projectId);
     await buildProjectForPublish(req.user!.id, req.params.projectId);
+    scanPublishedProjectInBackground(req.user!.id, req.params.projectId);
     // KingxTech's canonical published URL is path-based on the public site host.
     // Keep /site/:slug/ as a legacy backend route, but never advertise the Vercel
     // function URL to users as the published address.

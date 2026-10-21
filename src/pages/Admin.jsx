@@ -4,6 +4,7 @@ import { ShieldCheck } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
 import { Card, Button, Badge } from '../components/ui';
 import { adminListAccounts, adminSetSuspension } from '../lib/account';
+import { adminListFlags, adminResolveFlag } from '../lib/abuse';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import useIsAdmin, {
@@ -181,6 +182,102 @@ function Accounts() {
   );
 }
 
+const SEVERITY_TONE = { high: 'beta', medium: 'default', low: 'default' };
+const VERDICT_TEXT = { likely_abuse: 'AI: likely abuse', likely_fine: 'AI: likely fine', unclear: 'AI: unclear' };
+
+function FlagCard({ flag, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [reason, setReason] = useState('');
+  const [suspending, setSuspending] = useState(false);
+
+  const resolve = async (decision) => {
+    setBusy(true); setError('');
+    const { error: e } = await adminResolveFlag(flag.id, decision, '');
+    setBusy(false);
+    if (e) { setError(e.message); return; }
+    onChanged();
+  };
+
+  const suspend = async () => {
+    if (reason.trim().length < 3) { setError('Give a reason first.'); return; }
+    setBusy(true); setError('');
+    const { error: e1 } = await adminSetSuspension(flag.user_id, true, reason.trim());
+    if (e1) { setBusy(false); setError(e1.message); return; }
+    const { error: e2 } = await adminResolveFlag(flag.id, 'confirmed', `Suspended: ${reason.trim()}`);
+    setBusy(false);
+    if (e2) { setError(e2.message); return; }
+    onChanged();
+  };
+
+  const isNew = flag.status === 'new';
+  return (
+    <Card className="p-4 rounded-xl flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={SEVERITY_TONE[flag.severity]}>{flag.severity}</Badge>
+        <span className="text-[13px] font-medium">{String(flag.category).replace('_', ' ')}</span>
+        <span className="text-[11.5px] text-kxmist">{flag.source === 'ai_prompt' ? 'AI prompt' : 'Published site'}{flag.hit_count > 1 ? ` · seen ${flag.hit_count}x` : ''}</span>
+        {flag.ai_verdict && <span className="text-[11.5px] text-kxpurple">{VERDICT_TEXT[flag.ai_verdict]}</span>}
+        {!isNew && <span className="text-[11.5px] text-kxmist">· {String(flag.status).replace('_', ' ')}</span>}
+      </div>
+      <p className="text-[12.5px] text-kxmist break-words">
+        {flag.user_name || flag.user_email} · {flag.user_email}{flag.project_name ? ` · project: ${flag.project_name}` : ''} · {new Date(flag.last_seen_at).toLocaleString()}
+        {Number(flag.user_open_flags) > 1 ? ` · ${flag.user_open_flags} open flags for this user` : ''}{flag.user_suspended ? ' · already suspended' : ''}
+      </p>
+      {flag.excerpt ? (
+        <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12.5px] font-mono whitespace-pre-wrap break-words">{flag.excerpt}</p>
+      ) : (
+        <p className="text-[12px] text-kxmist">Text not stored for this category.</p>
+      )}
+      {flag.ai_reason && <p className="text-[12.5px] break-words">{flag.ai_reason}</p>}
+      {isNew && (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={busy} onClick={() => resolve('dismissed')} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-white/10 text-kxmist hover:text-white disabled:opacity-50">Dismiss (false alarm)</button>
+            <button type="button" disabled={busy} onClick={() => resolve('confirmed')} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-white/10 text-kxmist hover:text-white disabled:opacity-50">Confirm abuse</button>
+            {!flag.user_suspended && (
+              <button type="button" disabled={busy} onClick={() => setSuspending(!suspending)} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-red-500/30 text-red-300 hover:text-red-200 disabled:opacity-50">Suspend account…</button>
+            )}
+          </div>
+          {suspending && (
+            <>
+              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} placeholder="Reason (shown to the user)" className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue resize-none" />
+              <Button variant="glow" className="self-start" onClick={suspend} loading={busy} disabled={busy}>Suspend and confirm flag</Button>
+            </>
+          )}
+        </div>
+      )}
+      {error && <p className="text-[12.5px] text-red-400">{error}</p>}
+    </Card>
+  );
+}
+
+function Flags() {
+  const [view, setView] = useState('open');
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+  const refresh = useCallback(async () => {
+    const { data, error: e } = await adminListFlags(view);
+    if (e) setError(e.message); else { setError(''); setRows(data || []); }
+  }, [view]);
+  useEffect(() => { setRows(null); refresh(); }, [refresh]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-2">
+        {[['open', 'Needs review'], ['all', 'All']].map(([key, text]) => (
+          <button key={key} type="button" onClick={() => setView(key)} className={`min-h-11 px-4 rounded-full text-[12.5px] border ${view === key ? 'border-kxblue text-white bg-white/5' : 'border-white/10 text-kxmist'}`}>{text}</button>
+        ))}
+      </div>
+      <p className="text-[12px] text-kxmist leading-relaxed">Flags come from automatic checks on AI prompts and published sites. A flag is a reason to look, not proof. Items the AI judged harmless and low-risk are tucked under "All".</p>
+      {error && <p className="text-[12.5px] text-red-400">{error}</p>}
+      {rows === null && !error && <p className="text-sm text-kxmist">Loading flags…</p>}
+      {rows?.length === 0 && <p className="text-[13px] text-kxmist">Nothing to review.</p>}
+      {rows?.map((f) => <FlagCard key={f.id} flag={f} onChanged={refresh} />)}
+    </div>
+  );
+}
+
 function AuditLog() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
@@ -220,11 +317,11 @@ export default function Admin() {
         <h1 className="font-display text-2xl">Admin</h1>
       </div>
       <div className="flex gap-2 mb-5">
-        {[['support', 'Support inbox'], ['accounts', 'Accounts'], ['audit', 'Audit log']].map(([key, text]) => (
+        {[['support', 'Support inbox'], ['flags', 'Flags'], ['accounts', 'Accounts'], ['audit', 'Audit log']].map(([key, text]) => (
           <button key={key} type="button" onClick={() => setTab(key)} className={`min-h-11 px-4 rounded-full text-[13px] border ${tab === key ? 'border-kxblue text-white bg-white/5' : 'border-white/10 text-kxmist'}`}>{text}</button>
         ))}
       </div>
-      {tab === 'support' ? <SupportInbox /> : tab === 'accounts' ? <Accounts /> : <AuditLog />}
+      {tab === 'support' ? <SupportInbox /> : tab === 'flags' ? <Flags /> : tab === 'accounts' ? <Accounts /> : <AuditLog />}
     </DashboardShell>
   );
 }
