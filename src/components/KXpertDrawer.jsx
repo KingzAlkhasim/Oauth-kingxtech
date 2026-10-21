@@ -7,8 +7,7 @@ import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
-  FileEdit, FolderPlus, FileX, Check, Undo2, Info, MoreHorizontal, ChevronDown,
-} from 'lucide-react';
+  FileEdit, FolderPlus, FileX, Check, Undo2, Info, MoreHorizontal, ChevronDown, Globe } from 'lucide-react';
 
 const VIEW_LABELS = {
   '/welcome': 'Dashboard',
@@ -28,6 +27,7 @@ const VIEW_TIPS = {
 };
 
 const STEP_ICONS = {
+  webSearch: Globe,
   executeTerminalCommand: Terminal,
   listProjectFiles: FileEdit,
   readProjectFile: FileEdit,
@@ -37,6 +37,7 @@ const STEP_ICONS = {
 };
 
 const PHASE_LABELS = {
+  webSearch: 'Searching the web',
   executeTerminalCommand: 'Running command',
   listProjectFiles: 'Checking project files',
   readProjectFile: 'Reading file',
