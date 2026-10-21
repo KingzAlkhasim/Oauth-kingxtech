@@ -62,7 +62,7 @@ async function recordMatches(
     const since = new Date(Date.now() - DEDUPE_HOURS * 3600_000).toISOString();
     let existing = supabaseAdmin
       .from('abuse_flags')
-      .select('id, hit_count')
+      .select('id, hit_count, ai_verdict, status')
       .eq('user_id', userId)
       .eq('source', source)
       .eq('rule', match.rule)
@@ -71,9 +71,15 @@ async function recordMatches(
     existing = projectId ? existing.eq('project_id', projectId) : existing.is('project_id', null);
     const { data: dup } = await existing.maybeSingle();
     if (dup) {
-      await supabaseAdmin.from('abuse_flags')
-        .update({ hit_count: (dup.hit_count ?? 1) + 1, last_seen_at: new Date().toISOString() })
-        .eq('id', dup.id);
+      const update: Record<string, unknown> = { hit_count: (dup.hit_count ?? 1) + 1, last_seen_at: new Date().toISOString() };
+      // A flag whose AI review failed earlier gets another try the next time it is seen.
+      if (!dup.ai_verdict && match.category !== 'child_safety' && (await reviewsToday(userId)) < MAX_REVIEWS_PER_USER_PER_DAY) {
+        const retry = await reviewMatch(match, context);
+        update.ai_verdict = retry.verdict;
+        update.ai_reason = retry.reason;
+        if (retry.verdict === 'likely_fine' && match.severity !== 'high' && dup.status === 'new') update.status = 'auto_dismissed';
+      }
+      await supabaseAdmin.from('abuse_flags').update(update).eq('id', dup.id);
       continue;
     }
 
