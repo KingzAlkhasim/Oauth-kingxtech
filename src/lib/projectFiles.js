@@ -75,14 +75,28 @@ export function previewUrl(projectId) {
   return siteUrl(`/preview/${projectId}/`);
 }
 
+export class PublishError extends Error {
+  constructor(message, { status = 0, network = false } = {}) {
+    super(message);
+    this.name = 'PublishError';
+    this.status = status;
+    this.network = network;
+  }
+}
+
 export async function publishProject(projectId) {
   const headers = await authHeaders(true);
-  const res = await fetch(apiUrl(`/api/projects/${projectId}/publish`), {
-    method: 'POST',
-    headers,
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Failed to publish project');
+  let res;
+  try {
+    res = await fetch(apiUrl(`/api/projects/${projectId}/publish`), { method: 'POST', headers });
+  } catch (err) {
+    throw new PublishError(err?.message || 'Failed to fetch', { network: true });
+  }
+  // A gateway timeout returns an HTML page, not JSON, so never assume the body parses.
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || !data.success) {
+    throw new PublishError(data?.error || `Publish failed (${res.status})`, { status: res.status });
+  }
   // Always use KingxTech's canonical public-site origin for the UI.
   // This prevents an old backend/Vercel hostname from leaking into Publish/Copy link.
   const url = data.slug ? siteUrl(`/${data.slug}/`) : (data.url.startsWith('http') ? data.url : apiUrl(data.url));

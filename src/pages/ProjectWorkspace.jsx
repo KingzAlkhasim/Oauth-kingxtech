@@ -6,8 +6,9 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input } from '../components/ui';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
-  previewUrl, publishProject, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
+  previewUrl, publishProject, PublishError, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
 } from '../lib/projectFiles';
+import { friendlyPublishError } from '../lib/publishErrors';
 import { getProjectRepoLink, pushProjectToGithub, importRepoFromGithub } from '../lib/github';
 import { listProjectEnvVars, setProjectEnvVar, deleteProjectEnvVar } from '../lib/projectEnvVars';
 import { runSecurityCheck } from '../lib/securityCheck';
@@ -685,6 +686,8 @@ export default function ProjectWorkspace() {
   const [copied, setCopied] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState(null);
   const [publishedAt, setPublishedAt] = useState(null);
+  const [publishNotice, setPublishNotice] = useState(null); // { kind: 'success', url } | { kind: 'error', title, hint, details }
+  const [publishSeconds, setPublishSeconds] = useState(0);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -870,22 +873,47 @@ export default function ProjectWorkspace() {
     }
   };
 
+  useEffect(() => {
+    if (!isPublishing) return undefined;
+    setPublishSeconds(0);
+    const timer = setInterval(() => setPublishSeconds((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [isPublishing]);
+
   const publish = async () => {
     setIsPublishing(true);
+    setPublishNotice(null);
     setError('');
-    try {
-      const { url: hostedUrl } = await publishProject(projectId);
-      setPublishedUrl(hostedUrl);
-
+    const startedAt = Date.now();
+    const loadPublishedAt = async () => {
       const { data, error: publishedAtError } = await supabase
         .from('projects')
-        .select('published_at')
+        .select('published_at, slug')
         .eq('id', projectId)
         .maybeSingle();
       if (publishedAtError) throw publishedAtError;
-      setPublishedAt(data?.published_at || null);
+      return data;
+    };
+    try {
+      const { url: hostedUrl } = await publishProject(projectId);
+      setPublishedUrl(hostedUrl);
+      const row = await loadPublishedAt().catch(() => null);
+      if (row) setPublishedAt(row.published_at || null);
+      setPublishNotice({ kind: 'success', url: hostedUrl });
     } catch (err) {
-      setError(err.message);
+      // If the connection dropped or timed out, the server may still have finished. Check before reporting failure.
+      if (err instanceof PublishError && (err.network || err.status >= 502)) {
+        const row = await loadPublishedAt().catch(() => null);
+        if (row?.slug && row.published_at && new Date(row.published_at).getTime() >= startedAt - 5000) {
+          const recoveredUrl = siteUrl(`/${row.slug}/`);
+          setPublishedUrl(recoveredUrl);
+          setPublishedAt(row.published_at);
+          setPublishNotice({ kind: 'success', url: recoveredUrl });
+          setIsPublishing(false);
+          return;
+        }
+      }
+      setPublishNotice({ kind: 'error', ...friendlyPublishError({ message: err?.message, status: err?.status, network: err?.network }) });
     } finally {
       setIsPublishing(false);
     }
@@ -1062,17 +1090,17 @@ export default function ProjectWorkspace() {
           <button
             onClick={publish}
             disabled={isPublishing}
-            className={
+            className={`min-h-11 ${
               publishedUrl
                 ? hasUnpublishedChanges
                   ? 'flex items-center gap-1 text-[12.5px] font-medium text-amber-300 hover:text-amber-200 px-2 py-1 rounded-md bg-amber-500/10 border border-amber-400/20'
                   : 'flex items-center gap-1 text-[12.5px] text-kxmist hover:text-white px-2 py-1 rounded-md'
                 : 'flex items-center gap-1 text-[12.5px] text-kxpurple hover:text-white'
-            }
+            }`}
           >
             <Rocket size={13} />
             {isPublishing
-              ? 'Publishing…'
+              ? `Publishing… ${publishSeconds}s`
               : publishedUrl
                 ? hasUnpublishedChanges
                   ? 'Publish changes'
@@ -1085,6 +1113,41 @@ export default function ProjectWorkspace() {
         </div>
       </Card>
 
+      {isPublishing && (
+        <Card className="p-3 mb-4 rounded-xl border border-kxpurple/30 bg-kxpurple/10 text-[13px]" role="status">
+          <p className="flex items-center gap-2 text-white"><Loader2 size={14} className="animate-spin shrink-0" /> Building and publishing your site ({publishSeconds}s)</p>
+          <p className="text-kxmist mt-1">Keep this page open. The first publish of a project with packages can take a few minutes.</p>
+        </Card>
+      )}
+      {!isPublishing && publishNotice?.kind === 'success' && (
+        <Card className="p-3 mb-4 rounded-xl border border-emerald-400/30 bg-emerald-400/10 text-[13px]" role="status">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-emerald-200 font-medium">Published. Your site is live.</p>
+              <a href={publishNotice.url} target="_blank" rel="noreferrer" className="text-kxblue underline break-all">{publishNotice.url}</a>
+            </div>
+            <button type="button" onClick={() => setPublishNotice(null)} aria-label="Dismiss" className="min-h-11 min-w-11 -mt-2 -mr-2 text-kxmist hover:text-white">✕</button>
+          </div>
+        </Card>
+      )}
+      {!isPublishing && publishNotice?.kind === 'error' && (
+        <Card className="p-3 mb-4 rounded-xl border border-red-500/30 bg-red-500/10 text-[13px]" role="alert">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-red-200 font-medium">{publishNotice.title}</p>
+              <p className="text-red-200/80 mt-1">{publishNotice.hint}</p>
+            </div>
+            <button type="button" onClick={() => setPublishNotice(null)} aria-label="Dismiss" className="min-h-11 min-w-11 -mt-2 -mr-2 text-red-200/70 hover:text-white">✕</button>
+          </div>
+          {publishNotice.details && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-red-200/70 min-h-8">Technical details</summary>
+              <pre className="mt-1 whitespace-pre-wrap break-words text-[12px] text-red-200/80 font-mono">{publishNotice.details}</pre>
+            </details>
+          )}
+          <button type="button" onClick={publish} className="mt-3 min-h-11 px-3 rounded-lg border border-red-300/30 text-red-100 hover:text-white">Try again</button>
+        </Card>
+      )}
       {error && (
         <Card className="p-3 mb-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-300 text-[13px]">
           {error}
