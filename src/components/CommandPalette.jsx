@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, LayoutDashboard, FolderKanban, Settings, Monitor, LogOut, Plus, TerminalSquare, Activity as ActivityIcon, Wallet, Globe } from 'lucide-react';
+import { Search, LayoutDashboard, FolderKanban, Settings, Monitor, LogOut, Plus, TerminalSquare, Activity as ActivityIcon, Wallet, Globe, Gauge } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function CommandPalette() {
@@ -16,6 +16,7 @@ export default function CommandPalette() {
     { id: 'console', label: 'Go to console', icon: TerminalSquare, run: () => navigate('/console') },
     { id: 'domains', label: 'Go to domains', icon: Globe, run: () => navigate('/domains') },
     { id: 'billing', label: 'Go to billing', icon: Wallet, run: () => navigate('/billing') },
+    { id: 'usage', label: 'Go to usage & storage', icon: Gauge, run: () => navigate('/usage') },
     { id: 'activity', label: 'Go to activity', icon: ActivityIcon, run: () => navigate('/activity') },
     { id: 'settings', label: 'Go to settings', icon: Settings, run: () => navigate('/settings') },
     { id: 'sessions', label: 'Go to sessions', icon: Monitor, run: () => navigate('/sessions') },
