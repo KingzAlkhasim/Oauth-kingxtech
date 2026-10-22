@@ -825,34 +825,36 @@ function EnvVarsSubTab() {
   }
 
   return (
-    <Section title="Environment variables" desc="Real key/value config, scoped to your account. Stored as-is in Postgres — not column-encrypted, so treat this like a .env file, not a secrets vault. Vars marked 'Public' are exposed to anyone viewing a published project's pages (via window.KX_ENV) — never mark a real secret public.">
+    <Section title="Environment variables" desc="Key/value settings for your account, like a .env file. They are stored as plain text in the database, so this is not a vault for secrets. A variable marked Public can be seen by anyone who opens your published site (as window.KX_ENV), so never mark a real secret as Public.">
       <Notice error={error && error !== 'SETUP' ? error : ''} />
 
       <div className="flex flex-col gap-2.5 mb-5">
         {vars === null && <p className="text-sm text-kxmist">Loading…</p>}
-        {vars !== null && vars.length === 0 && <p className="text-[13px] text-kxmist">No variables set yet.</p>}
+        {vars !== null && vars.length === 0 && <p className="text-[13px] text-kxmist">No variables yet. Add your first one below.</p>}
         {vars?.map((v) => (
-          <div key={v.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">
-            <div className="font-mono text-[13px] flex items-center gap-2">
+          <div key={v.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">
+            <div className="font-mono text-[13px] flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 break-all">
               <span className="text-kxblue">{v.key}</span>
               <span className="text-kxmist"> = </span>
               <span>{revealed[v.id] ? v.value : '••••••••'}</span>
               {v.is_public && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-sans">Public</span>}
             </div>
-            <div className="flex items-center gap-3 text-kxmist">
-              <button onClick={() => toggleReveal(v.id)} className="text-[12px] hover:text-white">{revealed[v.id] ? 'Hide' : 'Reveal'}</button>
-              <button onClick={() => remove(v.id)} className="hover:text-red-400"><Trash2 size={14} /></button>
+            <div className="flex items-center gap-1 text-kxmist shrink-0">
+              <button onClick={() => toggleReveal(v.id)} className="min-h-11 px-2 text-[12px] hover:text-white">{revealed[v.id] ? 'Hide' : 'Reveal'}</button>
+              <button onClick={() => remove(v.id)} aria-label={`Delete ${v.key}`} className="min-h-11 min-w-11 inline-flex items-center justify-center hover:text-red-400"><Trash2 size={14} /></button>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="flex items-end gap-3 flex-wrap">
-        <Input label="Key" value={key} onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))} placeholder="MY_API_KEY" containerClassName="flex-1" />
-        <Input label="Value" value={value} onChange={(e) => setValue(e.target.value)} containerClassName="flex-1" />
-        <label className="flex items-center gap-1.5 text-[12.5px] text-kxmist pb-2.5 cursor-pointer select-none">
-          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-          Public
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Input label="Key" value={key} onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))} placeholder="MY_API_KEY" />
+        <Input label="Value" value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" />
+      </div>
+      <div className="flex items-center justify-between gap-3 flex-wrap mt-3">
+        <label className="flex items-center gap-2 text-[12.5px] text-kxmist cursor-pointer select-none min-h-11">
+          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="h-4 w-4" />
+          Public (visible on your published site)
         </label>
         <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
       </div>

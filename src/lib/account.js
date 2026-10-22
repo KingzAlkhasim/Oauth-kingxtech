@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { apiUrl } from './apiBase';
+import { TERMS_VERSION } from './terms';
 
 // Own suspension row (RLS lets a user read only their own).
 export async function getMyAccountStatus() {
@@ -33,3 +34,27 @@ export const adminSetSuspension = (userId, suspended, reason) =>
   supabase.rpc('admin_set_suspension', { p_user: userId, p_suspended: suspended, p_reason: reason || null });
 
 export const acknowledgeRestoration = () => supabase.rpc('acknowledge_restoration');
+
+// Has this person accepted the current Terms? Sign-ups with the checkbox carry the version in
+// their profile; everyone else (existing users, Google/GitHub sign-ups) uses terms_acceptances.
+// Any error counts as accepted so a hiccup never traps someone on the acceptance screen.
+let termsAcceptedFor = null;
+export async function hasAcceptedCurrentTerms() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return true;
+  if (termsAcceptedFor === user.id) return true;
+  const accepted = () => { termsAcceptedFor = user.id; return true; };
+  if (user.user_metadata?.terms_version === TERMS_VERSION) return accepted();
+  const { data, error } = await supabase.from('terms_acceptances').select('version').eq('user_id', user.id).maybeSingle();
+  if (error) return true;
+  return data?.version === TERMS_VERSION ? accepted() : false;
+}
+
+export async function acceptCurrentTerms() {
+  const res = await supabase.rpc('accept_terms', { p_version: TERMS_VERSION });
+  if (!res.error) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) termsAcceptedFor = user.id;
+  }
+  return res;
+}

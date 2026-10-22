@@ -50,6 +50,7 @@ import {
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
+import { warnFlagOwner, WarningError } from './services/abuseWarning';
 import { getAccountSuspension, isProjectOwnerSuspended, forgetSuspensionCache } from './services/accountSuspension';
 import { createAccountExport } from './services/accountExport';
 import { scanPromptInBackground, scanPublishedProjectInBackground } from './services/abuseFlags';
@@ -1346,6 +1347,18 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   }
   res.type(MIME_TYPES[ext.toLowerCase()] || 'text/plain; charset=utf-8').send(content);
 }
+
+// Admin-only: email the owner of a flag a clear warning. Recorded in the audit log.
+app.post('/api/admin/flags/:id/warn', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const note = typeof req.body?.note === 'string' ? req.body.note : undefined;
+    const result = await warnFlagOwner(req.user!.id, String(req.params.id), note);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    if (error instanceof WarningError) { res.status(error.status).json({ success: false, error: error.message }); return; }
+    await reportError(res, 500, 'Failed to send the warning', error, 'Flag warning error:');
+  }
+});
 
 // Account status and data export. Both stay reachable for suspended accounts (see
 // isAllowedWhenSuspended) so people can see why they are blocked and take their work.

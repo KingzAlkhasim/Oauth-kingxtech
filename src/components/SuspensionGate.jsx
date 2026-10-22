@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { getMyAccountStatus } from '../lib/account';
+import { getMyAccountStatus, hasAcceptedCurrentTerms } from '../lib/account';
 
 // Public pages stay open; everything signed-in redirects suspended accounts to /suspended.
-const OPEN_PATHS = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/confirmed', '/suspended', '/restored', '/terms', '/help'];
+const OPEN_PATHS = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/confirmed', '/suspended', '/restored', '/terms', '/terms/accept', '/help'];
 
 export default function SuspensionGate() {
   const location = useLocation();
@@ -19,6 +19,7 @@ export default function SuspensionGate() {
       if (!alive) return;
       if (status.suspended) navigate('/suspended', { replace: true });
       else if (status.restoredNotice) navigate('/restored', { replace: true });
+      else if (!(await hasAcceptedCurrentTerms()) && alive) navigate('/terms/accept', { replace: true });
     });
     return () => { alive = false; };
   }, [location.pathname, navigate]);
