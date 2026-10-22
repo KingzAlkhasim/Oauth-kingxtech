@@ -138,7 +138,7 @@ export default function Projects() {
         <p className="text-[12.5px] text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2 mb-5">{error}</p>
       )}
 
-      <div className="flex items-center gap-2 mb-6 overflow-x-auto">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {['All', ...PRODUCTS].map((p) => (
           <button
             key={p}
