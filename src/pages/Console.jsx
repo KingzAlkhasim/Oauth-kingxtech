@@ -825,7 +825,7 @@ function EnvVarsSubTab() {
   }
 
   return (
-    <Section title="Environment variables" desc="Account-wide settings, stored as plain text (not a vault for secrets). Only variables marked Public do anything: they appear on your published sites as window.KX_ENV, so never mark a real secret as Public. For private values your project needs while it builds or runs, use Site Settings inside the project.">
+    <Section title="Environment variables" desc="Settings shared by all your projects. They are available to your project builds and server code (process.env.NAME). Stored as plain text, so this is not a vault. A variable marked Public is also visible to anyone who opens your published sites (as window.KX_ENV), so never mark a real secret as Public. A variable with the same name set inside a project overrides this one.">
       <Notice error={error && error !== 'SETUP' ? error : ''} />
 
       <div className="flex flex-col gap-2.5 mb-5">
