@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { assertProjectOwnership } from './projectFs';
+import { mergeRuntimeEnv } from './envMerge';
 
 export interface ProjectEnvVar {
   id: string;
@@ -37,17 +38,26 @@ export async function upsertProjectEnvVar(
   if (error) throw new Error(`upsertProjectEnvVar failed: ${error.message}`);
 }
 
-/** Private project variables for sandbox/build processes. Never expose these from public routes. */
+/**
+ * Variables for sandbox/build processes: the owner's account-wide variables (Console → KX Cloud)
+ * plus this project's own, with the project's winning on the same key.
+ * assertProjectOwnership means only the owner ever gets these, never an invited editor.
+ * Never expose these from public routes.
+ */
 export async function getProjectEnvVarsForRuntime(userId: string, projectId: string): Promise<Record<string, string>> {
   await assertProjectOwnership(userId, projectId);
-  const { data, error } = await supabaseAdmin
-    .from('project_env_vars')
-    .select('key, value')
-    .eq('project_id', projectId)
-    .eq('user_id', userId);
+  const [projectResult, accountResult] = await Promise.all([
+    supabaseAdmin.from('project_env_vars').select('key, value').eq('project_id', projectId).eq('user_id', userId),
+    supabaseAdmin.from('env_vars').select('key, value').eq('user_id', userId),
+  ]);
 
-  if (error) throw new Error(`getProjectEnvVarsForRuntime failed: ${error.message}`);
-  return Object.fromEntries((data ?? []).map((row) => [row.key, row.value]));
+  if (projectResult.error) throw new Error(`getProjectEnvVarsForRuntime failed: ${projectResult.error.message}`);
+  // A missing account table (migration not run) must never break builds.
+  if (accountResult.error) console.error('[getProjectEnvVarsForRuntime] account vars skipped:', accountResult.error.message);
+
+  const toMap = (rows: Array<{ key: string; value: string }> | null | undefined) =>
+    Object.fromEntries((rows ?? []).map((row) => [row.key, row.value]));
+  return mergeRuntimeEnv(toMap(accountResult.error ? [] : accountResult.data), toMap(projectResult.data));
 }
 
 export async function deleteProjectEnvVar(userId: string, projectId: string, id: string): Promise<void> {
