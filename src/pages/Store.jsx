@@ -5,6 +5,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { getBillingProfile, initializePaystackCheckout, initializePaystackTopup } from '../lib/billing';
 import { Card, Button, Badge } from '../components/ui';
 import { Wallet, ExternalLink } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 const TOPUP_PRESETS = [5, 10, 25, 50];
 
@@ -25,7 +26,7 @@ export default function Store() {
 
   const refresh = async () => {
     const { data, error: profileErr } = await getBillingProfile();
-    if (profileErr) { setError(profileErr.message); return; }
+    if (profileErr) { setError(friendlyError(profileErr)); return; }
     setProfile(data);
   };
 
@@ -37,7 +38,7 @@ export default function Store() {
     try {
       window.location.href = await initializePaystackCheckout();
     } catch (err) {
-      setProError(err.message);
+      setProError(friendlyError(err));
       setProLoading(false);
     }
   };
@@ -49,7 +50,7 @@ export default function Store() {
     try {
       window.location.href = await initializePaystackTopup(amount);
     } catch (err) {
-      setTopupError(err.message);
+      setTopupError(friendlyError(err));
       setTopupLoading(false);
     }
   };

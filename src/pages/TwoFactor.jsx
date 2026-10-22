@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { safeInternalPath, safeSsoTarget } from '../lib/safeRedirect';
 import { redirectWithSession } from '../lib/ssoHandoff';
 import { logActivity } from '../lib/activity';
+import { friendlyError } from '../lib/errors';
 
 export default function TwoFactor() {
   const [code, setCode] = useState('');
@@ -33,7 +34,7 @@ export default function TwoFactor() {
     const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
     if (challengeError) {
       setLoading(false);
-      setError(challengeError.message);
+      setError(friendlyError(challengeError));
       return;
     }
 
@@ -45,7 +46,7 @@ export default function TwoFactor() {
 
     setLoading(false);
     if (verifyError) {
-      setError(verifyError.message);
+      setError(friendlyError(verifyError));
       return;
     }
 

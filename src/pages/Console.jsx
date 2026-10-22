@@ -24,6 +24,7 @@ import {
   Plus, Copy, Trash2, Check, X, Lock, Database,
   TerminalSquare, Table2, Play, KeyRound,
 } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 function GithubIcon({ size = 16 }) {
   return (
@@ -142,7 +143,7 @@ function GithubPushTab() {
         setLinks(Object.fromEntries(linkEntries));
       }
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
 
@@ -156,7 +157,7 @@ function GithubPushTab() {
       setToken('');
       await refresh();
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setSaving(false);
     }
@@ -169,7 +170,7 @@ function GithubPushTab() {
       setConnected(false);
       setRepos(null);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
 
@@ -178,7 +179,7 @@ function GithubPushTab() {
       await linkProjectRepo(projectId, repoFullName, branch);
       setLinks((l) => ({ ...l, [projectId]: { repo_full_name: repoFullName, branch } }));
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
   const filteredProjects = (projects || []).filter((project) => project.name.toLowerCase().includes(projectSearch.trim().toLowerCase()));
@@ -382,7 +383,7 @@ function ApiKeyVault() {
     setError(''); setCreating(true);
     const { data, error: createError } = await createApiKey({ name: newName || 'Untitled key' });
     setCreating(false);
-    if (createError) { setError(createError.message); return; }
+    if (createError) { setError(friendlyError(createError)); return; }
     setRevealed({ name: data.name, fullKey: data.fullKey });
     setNewName(''); setShowForm(false);
     logActivity('API key created', data.name);
@@ -526,7 +527,7 @@ function OAuthLinkers() {
 
   const refresh = async () => {
     const { data, error: idError } = await getLinkedIdentities();
-    if (idError) { setError(idError.message); return; }
+    if (idError) { setError(friendlyError(idError)); return; }
     setIdentities(data.identities);
   };
   useEffect(() => { refresh(); }, []);
@@ -542,7 +543,7 @@ function OAuthLinkers() {
     setError(''); setBusy(identity.provider);
     const { error: unlinkError } = await unlinkProvider(identity);
     setBusy('');
-    if (unlinkError) { setError(unlinkError.message); return; }
+    if (unlinkError) { setError(friendlyError(unlinkError)); return; }
     refresh();
   };
 
@@ -608,7 +609,7 @@ function WebhookManager() {
     setError(''); setSaving(true);
     const { error: createError } = await createWebhook({ url, events });
     setSaving(false);
-    if (createError) { setError(createError.message); return; }
+    if (createError) { setError(friendlyError(createError)); return; }
     logActivity('Webhook added', url);
     setUrl(''); setEvents([]); setShowForm(false);
     refresh();
@@ -806,7 +807,7 @@ function EnvVarsSubTab() {
     setError(''); setSaving(true);
     const { error: saveError } = await upsertEnvVar(key.trim(), value, isPublic);
     setSaving(false);
-    if (saveError) { setError(saveError.message); return; }
+    if (saveError) { setError(friendlyError(saveError)); return; }
     setKey(''); setValue(''); setIsPublic(false);
     refresh();
   };

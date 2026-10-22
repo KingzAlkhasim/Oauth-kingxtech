@@ -53,6 +53,7 @@ import {
   Lock,
   Loader2,
 } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 function Github({ size = 14 }) {
   return (
@@ -213,7 +214,7 @@ function TerminalTab({ projectId, publishedUrl }) {
         setRuntimeError('');
         setLines((l) => [...l, { type: 'out', text: `Sandbox ready: ${result.framework} / ${result.packageManager}` }]);
       })
-      .catch((err) => setRuntimeError(err.message));
+      .catch((err) => setRuntimeError(friendlyError(err)));
   }, [projectId]);
 
   useEffect(() => {
@@ -228,7 +229,7 @@ function TerminalTab({ projectId, publishedUrl }) {
       setRuntime(result);
       setLines((l) => [...l, { type: 'out', text: `Runtime started: ${result.url}` }]);
     } catch (err) {
-      setRuntimeError(err.message);
+      setRuntimeError(friendlyError(err));
       setLines((l) => [...l, { type: 'err', text: err.message }]);
     } finally {
       setRuntimeLoading(false);
@@ -245,7 +246,7 @@ function TerminalTab({ projectId, publishedUrl }) {
       setRuntime(refreshed);
       setLines((l) => [...l, { type: 'out', text: `Preview: ${refreshed.url}` }]);
     } catch (err) {
-      setRuntimeError(err.message);
+      setRuntimeError(friendlyError(err));
       setLines((l) => [...l, { type: 'err', text: err.message }]);
     } finally {
       setRuntimeLoading(false);
@@ -403,7 +404,7 @@ function SiteSettingsTab({ projectId }) {
         setPwaEnabled(!!pwa?.enabled);
         setPwaIconUrl(pwa?.customIconUrl || null);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(friendlyError(e)))
       .finally(() => setPwaLoading(false));
   }, [projectId]);
 
@@ -418,7 +419,7 @@ function SiteSettingsTab({ projectId }) {
       await setProjectPwa(projectId, enabled);
       setPwaEnabled(enabled);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setPwaSaving(false);
     }
@@ -441,7 +442,7 @@ function SiteSettingsTab({ projectId }) {
       const data = await uploadProjectPwaIcon(projectId, file);
       setPwaIconUrl((data.customIconUrl || '') + '?v=' + Date.now());
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setPwaIconBusy(false);
     }
@@ -455,7 +456,7 @@ function SiteSettingsTab({ projectId }) {
       await removeProjectPwaIcon(projectId);
       setPwaIconUrl(null);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setPwaIconBusy(false);
     }
@@ -468,14 +469,14 @@ function SiteSettingsTab({ projectId }) {
       const result = await runSecurityCheck(projectId);
       setScResult(result);
     } catch (err) {
-      setScError(err.message);
+      setScError(friendlyError(err));
     } finally {
       setScRunning(false);
     }
   };
 
   const refresh = useCallback(() => {
-    listProjectEnvVars(projectId).then(setVars).catch((e) => setError(e.message));
+    listProjectEnvVars(projectId).then(setVars).catch((e) => setError(friendlyError(e)));
   }, [projectId]);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -491,7 +492,7 @@ function SiteSettingsTab({ projectId }) {
       setIsPublic(false);
       refresh();
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setSaving(false);
     }
@@ -502,7 +503,7 @@ function SiteSettingsTab({ projectId }) {
       await deleteProjectEnvVar(projectId, id);
       refresh();
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
 
@@ -721,7 +722,7 @@ export default function ProjectWorkspace() {
       const data = await listFiles(projectId);
       setFiles(data);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setIsLoadingFiles(false);
     }
@@ -770,7 +771,7 @@ export default function ProjectWorkspace() {
       setDirty(false);
       setMobileView('workspace');
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
 
@@ -782,7 +783,7 @@ export default function ProjectWorkspace() {
       setDirty(false);
       await refreshFiles();
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setIsSaving(false);
     }
@@ -797,7 +798,7 @@ export default function ProjectWorkspace() {
       await openFile(selectedPath);
       await refreshFiles();
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setIsUndoing(false);
     }
@@ -811,7 +812,7 @@ export default function ProjectWorkspace() {
       await refreshFiles();
       openFile(path);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
 
@@ -822,7 +823,7 @@ export default function ProjectWorkspace() {
       await createFolder(projectId, path);
       await refreshFiles();
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
 
@@ -836,7 +837,7 @@ export default function ProjectWorkspace() {
       }
       await refreshFiles();
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     }
   };
 
@@ -852,7 +853,7 @@ export default function ProjectWorkspace() {
       setTab('preview');
     } catch (err) {
       // Fall back to the classic preview for simple HTML/CSS/JS projects.
-      setPreviewError(err.message);
+      setPreviewError(friendlyError(err));
       setRuntimePreviewUrl(null);
       setPreviewKey((k) => k + 1);
       setTab('preview');
@@ -885,7 +886,7 @@ export default function ProjectWorkspace() {
       if (publishedAtError) throw publishedAtError;
       setPublishedAt(data?.published_at || null);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setIsPublishing(false);
     }
@@ -903,7 +904,7 @@ export default function ProjectWorkspace() {
       await refreshFiles();
       alert(`Imported ${filesImported} file(s).${skipped.length ? `\n\nSkipped ${skipped.length}:\n${skipped.slice(0, 10).join('\n')}${skipped.length > 10 ? '\n…' : ''}` : ''}`);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setIsImporting(false);
       setImportStatus(null);

@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { getBillingProfile } from '../lib/billing';
 import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
+import { friendlyError } from '../lib/errors';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
   FileEdit, FolderPlus, FileX, Check, Undo2, Info, MoreHorizontal, ChevronDown, Globe } from 'lucide-react';
@@ -353,7 +354,7 @@ export default function KXpertDrawer() {
         );
       }
     } catch (err) {
-      setHistory((h) => [...h, { role: 'system', text: 'Error: ' + err.message, type: 'text' }]);
+      setHistory((h) => [...h, { role: 'system', text: friendlyError(err, 'K-XpertAI could not finish that request.'), type: 'text' }]);
     } finally {
       refreshUsage();
       setIsLoading(false);

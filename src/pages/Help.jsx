@@ -6,6 +6,7 @@ import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { listTickets, createTicket, listReplies, addFollowUp, TICKET_CATEGORIES } from '../lib/tickets';
 import { logActivity } from '../lib/activity';
+import { friendlyError } from '../lib/errors';
 
 function TicketRow({ ticket }) {
   const [open, setOpen] = useState(false);
@@ -16,7 +17,7 @@ function TicketRow({ ticket }) {
 
   const load = async () => {
     const { data, error: e } = await listReplies(ticket.id);
-    if (e) setErr(e.message); else setReplies(data || []);
+    if (e) setErr(friendlyError(e)); else setReplies(data || []);
   };
   const toggle = () => { const next = !open; setOpen(next); if (next && replies === null) load(); };
   const send = async () => {
@@ -24,7 +25,7 @@ function TicketRow({ ticket }) {
     setBusy(true); setErr('');
     const { error: e } = await addFollowUp(ticket.id, body.trim());
     setBusy(false);
-    if (e) { setErr(e.message); return; }
+    if (e) { setErr(friendlyError(e)); return; }
     setBody(''); load();
   };
 
@@ -84,12 +85,12 @@ export default function Help() {
     setError(''); setNotice(''); setSaving(true);
     try {
       const { error: createError } = await createTicket({ category, subject, message });
-      if (createError) { setError(createError.message); return; }
+      if (createError) { setError(friendlyError(createError)); return; }
       logActivity('Support ticket submitted', subject);
       setSubject(''); setMessage(''); setNotice('Ticket submitted.');
       await refresh();
     } catch (err) {
-      setError(err.message || 'Could not submit your ticket.');
+      setError(friendlyError(err, 'Could not submit your ticket.'));
     } finally {
       setSaving(false);
     }

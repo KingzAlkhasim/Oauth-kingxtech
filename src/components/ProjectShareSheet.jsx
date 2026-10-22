@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { changeProjectMemberRole, getProjectMembers, inviteProjectMember, offerProjectTransfer, removeProjectMember, revokeProjectInvite } from '../lib/projectCollaboration';
+import { friendlyError } from '../lib/errors';
 
 const ROLE_LABELS = { owner: 'Owner', editor: 'Editor', viewer: 'Viewer' };
 
@@ -14,7 +15,7 @@ export default function ProjectShareSheet({ projectId, open, onClose }) {
 
   const load = async () => {
     if (!projectId || !open) return;
-    try { setError(''); setData(await getProjectMembers(projectId)); } catch (e) { setError(e.message); }
+    try { setError(''); setData(await getProjectMembers(projectId)); } catch (e) { setError(friendlyError(e)); }
   };
   useEffect(() => { load(); }, [projectId, open]);
 
@@ -38,23 +39,23 @@ export default function ProjectShareSheet({ projectId, open, onClose }) {
       setInviteStatus(result.emailSent ? `Invitation emailed to ${maskedEmail}` : 'Email could not be sent, copy the link below');
       setEmail('');
       await load();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+    } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   };
 
   const updateRole = async (userId, nextRole) => {
     setBusy(true); setError('');
-    try { await changeProjectMemberRole(projectId, userId, nextRole); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    try { await changeProjectMemberRole(projectId, userId, nextRole); await load(); } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   };
 
   const remove = async (userId) => {
     setBusy(true); setError('');
-    try { await removeProjectMember(projectId, userId); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    try { await removeProjectMember(projectId, userId); await load(); } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   };
 
   const transfer = async (userId) => {
     if (!window.confirm('Offer ownership of this project to this member? You will become an editor when they accept.')) return;
     setBusy(true); setError('');
-    try { await offerProjectTransfer(projectId, userId); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    try { await offerProjectTransfer(projectId, userId); await load(); } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   };
 
   return <div className="fixed inset-0 z-[80] bg-black/60 flex items-end md:items-center justify-center p-0 md:p-6" role="dialog" aria-modal="true" aria-label="Share project">

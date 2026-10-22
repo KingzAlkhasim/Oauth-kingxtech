@@ -5,6 +5,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { listDomains, listDomainProjects, addDomain, removeDomain, verifyDomain } from '../lib/domains';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { Plus, Trash2, CheckCircle2, RefreshCw, Globe } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 // Vercel "verified" only proves ownership; Active also needs DNS really pointing here.
 // A null dns_configured (never checked) is treated as not active.
@@ -30,7 +31,7 @@ export default function Domains() {
       listDomainProjects(),
     ]);
     if (listError) { setError(/relation .*custom_domains.* does not exist/i.test(listError.message || '') ? 'SETUP' : listError.message); return; }
-    if (projectError) { setError(projectError.message); return; }
+    if (projectError) { setError(friendlyError(projectError)); return; }
     setDomains(data);
     setProjects(projectData || []);
     if (!projectId && projectData?.[0]?.id) setProjectId(projectData[0].id);
@@ -43,7 +44,7 @@ export default function Domains() {
     setError(''); setAdding(true);
     const { error: addError } = await addDomain(newDomain.trim().toLowerCase(), projectId);
     setAdding(false);
-    if (addError) { setError(addError.message); return; }
+    if (addError) { setError(friendlyError(addError)); return; }
     setNewDomain('');
     refresh();
   };
@@ -54,7 +55,7 @@ export default function Domains() {
     setError(''); setVerifying(d.id);
     const { error: verifyError } = await verifyDomain(d.id);
     setVerifying(null);
-    if (verifyError) { setError(verifyError.message); return; }
+    if (verifyError) { setError(friendlyError(verifyError)); return; }
     refresh();
   };
 

@@ -5,6 +5,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Badge, Button } from '../components/ui';
 import { supabase } from '../lib/supabase';
 import { Laptop } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 function detectDevice() {
   const ua = navigator.userAgent;
@@ -24,7 +25,7 @@ export default function Sessions() {
     setError(''); setNotice(''); setBusy(true);
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
     setBusy(false);
-    if (signOutError) { setError(signOutError.message); return; }
+    if (signOutError) { setError(friendlyError(signOutError)); return; }
     setNotice('Signed out of all other sessions.');
   };
 

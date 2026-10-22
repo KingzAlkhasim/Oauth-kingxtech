@@ -10,6 +10,7 @@ import { logActivity } from '../lib/activity';
 import { supabase } from '../lib/supabase';
 import { getProjectMembers, getPendingTransfers, acceptTransfer, declineTransfer } from '../lib/projectCollaboration';
 import { Plus, ExternalLink, Pencil, Trash2, X, FolderKanban, Code2, Users, Check, XCircle } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 const EMPTY_FORM = { name: '', product: 'K-XpertAI', status: 'active', description: '', external_url: '' };
 
@@ -73,7 +74,7 @@ export default function Projects() {
     if (!confirm('Delete this project?')) return;
     const target = projects?.find((p) => p.id === id);
     const { error: delError } = await deleteProject(id);
-    if (delError) { setError(delError.message); return; }
+    if (delError) { setError(friendlyError(delError)); return; }
     logActivity('Project deleted', target?.name);
     refresh();
   };
@@ -87,7 +88,7 @@ export default function Projects() {
       setPendingTransfers((items) => items.filter((item) => item.id !== id));
       await refresh();
     } catch (err) {
-      setError(err.message || 'Unable to update the transfer.');
+      setError(friendlyError(err, 'Unable to update the transfer.'));
     }
   };
 
@@ -252,7 +253,7 @@ function ProjectFormModal({ initial, onClose, onSaved }) {
       ? await updateProject(initial.id, payload)
       : await createProject(payload);
     setSaving(false);
-    if (saveError) { setError(saveError.message); return; }
+    if (saveError) { setError(friendlyError(saveError)); return; }
     logActivity(initial ? 'Project updated' : 'Project created', form.name);
     onSaved();
   };

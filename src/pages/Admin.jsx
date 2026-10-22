@@ -10,6 +10,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import useIsAdmin, {
   TICKET_STATUSES, adminListTickets, adminListReplies, adminReply, adminSetStatus, adminAuditLog,
 } from '../lib/admin';
+import { friendlyError } from '../lib/errors';
 
 const label = (s) => String(s || '').replace('_', ' ');
 
@@ -21,7 +22,7 @@ function TicketThread({ ticket, onChanged }) {
 
   const load = useCallback(async () => {
     const { data, error: e } = await adminListReplies(ticket.id);
-    if (e) setError(e.message); else setReplies(data || []);
+    if (e) setError(friendlyError(e)); else setReplies(data || []);
   }, [ticket.id]);
   useEffect(() => { load(); }, [load]);
 
@@ -30,7 +31,7 @@ function TicketThread({ ticket, onChanged }) {
     setBusy(true); setError('');
     const { error: e } = await adminReply(ticket.id, body.trim());
     setBusy(false);
-    if (e) { setError(e.message); return; }
+    if (e) { setError(friendlyError(e)); return; }
     setBody(''); await load(); onChanged();
   };
 
@@ -38,7 +39,7 @@ function TicketThread({ ticket, onChanged }) {
     setBusy(true); setError('');
     const { error: e } = await adminSetStatus(ticket.id, status);
     setBusy(false);
-    if (e) { setError(e.message); return; }
+    if (e) { setError(friendlyError(e)); return; }
     onChanged();
   };
 
@@ -80,7 +81,7 @@ function SupportInbox() {
 
   const refresh = useCallback(async () => {
     const { data, error: e } = await adminListTickets();
-    if (e) setError(e.message); else setTickets(data || []);
+    if (e) setError(friendlyError(e)); else setTickets(data || []);
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -124,7 +125,7 @@ function AccountRow({ account, onChanged }) {
     setBusy(true); setError('');
     const { error: e } = await adminSetSuspension(account.user_id, suspend, reason.trim());
     setBusy(false);
-    if (e) { setError(e.message); return; }
+    if (e) { setError(friendlyError(e)); return; }
     setReason(''); setOpen(false); onChanged();
   };
 
@@ -164,7 +165,7 @@ function Accounts() {
   const [query, setQuery] = useState('');
   const refresh = useCallback(async () => {
     const { data, error: e } = await adminListAccounts();
-    if (e) setError(e.message); else setRows(data || []);
+    if (e) setError(friendlyError(e)); else setRows(data || []);
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -199,7 +200,7 @@ function FlagCard({ flag, onChanged }) {
     try {
       await warnFlagByEmail(flag.id, warnNote.trim());
       setWarned(true); setWarning(false); setWarnNote('');
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(friendlyError(e)); }
     setBusy(false);
   };
 
@@ -207,7 +208,7 @@ function FlagCard({ flag, onChanged }) {
     setBusy(true); setError('');
     const { error: e } = await adminResolveFlag(flag.id, decision, '');
     setBusy(false);
-    if (e) { setError(e.message); return; }
+    if (e) { setError(friendlyError(e)); return; }
     onChanged();
   };
 
@@ -215,10 +216,10 @@ function FlagCard({ flag, onChanged }) {
     if (reason.trim().length < 3) { setError('Give a reason first.'); return; }
     setBusy(true); setError('');
     const { error: e1 } = await adminSetSuspension(flag.user_id, true, reason.trim());
-    if (e1) { setBusy(false); setError(e1.message); return; }
+    if (e1) { setBusy(false); setError(friendlyError(e1)); return; }
     const { error: e2 } = await adminResolveFlag(flag.id, 'confirmed', `Suspended: ${reason.trim()}`);
     setBusy(false);
-    if (e2) { setError(e2.message); return; }
+    if (e2) { setError(friendlyError(e2)); return; }
     onChanged();
   };
 
@@ -278,7 +279,7 @@ function Flags() {
   const [error, setError] = useState('');
   const refresh = useCallback(async () => {
     const { data, error: e } = await adminListFlags(view);
-    if (e) setError(e.message); else { setError(''); setRows(data || []); }
+    if (e) setError(friendlyError(e)); else { setError(''); setRows(data || []); }
   }, [view]);
   useEffect(() => { setRows(null); refresh(); }, [refresh]);
 
@@ -302,7 +303,7 @@ function AuditLog() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    adminAuditLog().then(({ data, error: e }) => { if (e) setError(e.message); else setRows(data || []); });
+    adminAuditLog().then(({ data, error: e }) => { if (e) setError(friendlyError(e)); else setRows(data || []); });
   }, []);
   return (
     <div className="flex flex-col gap-2">
