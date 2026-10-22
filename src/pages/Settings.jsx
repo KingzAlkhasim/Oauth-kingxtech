@@ -29,9 +29,9 @@ export default function Settings() {
       <h1 className="font-display text-2xl font-semibold mb-2">Account</h1>
       <p className="text-kxmist text-sm mb-6">Manage your profile, sign-in security, sessions, and account activity.</p>
       <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-5 sm:gap-8 min-w-0">
-        <nav className="flex md:flex-col gap-1 overflow-x-auto rounded-[20px] border border-white/8 bg-white/[0.015] p-2 h-fit min-w-0">
+        <nav className="grid grid-cols-4 md:flex md:flex-col gap-1 rounded-[20px] border border-white/8 bg-white/[0.015] p-2 h-fit min-w-0">
           {TABS.map(({ id, label, icon: Icon }) => (
-            <Link key={id} to={`/account/${id}`} className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-[13.5px] whitespace-nowrap text-left transition-colors ${
+            <Link key={id} to={`/account/${id}`} className={`flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-2.5 min-h-12 px-1 md:px-3.5 py-2 md:py-2.5 rounded-2xl text-[11px] md:text-[13.5px] md:whitespace-nowrap text-center md:text-left transition-colors ${
               tab === id ? 'bg-white/8 text-white' : 'text-kxmist hover:text-white hover:bg-white/[0.03]'
             }`}>
               <Icon size={15} /> {label}

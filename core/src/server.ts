@@ -804,16 +804,32 @@ app.delete('/api/projects/:projectId/pwa/icon', requireAuth, async (req: AuthedR
 // --- Publish (permanent hosted URL) ----------------------------------------
 
 app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequest, res) => {
+  const projectId = req.params.projectId;
+  // Remember the state before publishing so a failed build never leaves a project
+  // looking "published" with nothing behind the link.
+  let previous: { slug: string | null; published_at: string | null } | null = null;
   try {
-    const slug = await publishProject(req.user!.id, req.params.projectId);
-    await buildProjectForPublish(req.user!.id, req.params.projectId);
-    scanPublishedProjectInBackground(req.user!.id, req.params.projectId);
+    const { data } = await supabaseAdmin.from('projects').select('slug, published_at').eq('id', projectId).maybeSingle();
+    previous = data ? { slug: data.slug ?? null, published_at: data.published_at ?? null } : null;
+  } catch { /* best effort */ }
+  let slug: string | null = null;
+  try {
+    slug = await publishProject(req.user!.id, projectId);
+    await buildProjectForPublish(req.user!.id, projectId);
+    scanPublishedProjectInBackground(req.user!.id, projectId);
     // KingxTech's canonical published URL is path-based on the public site host.
     // Keep /site/:slug/ as a legacy backend route, but never advertise the Vercel
     // function URL to users as the published address.
     const url = `https://site.kingxtech.name.ng/${slug}/`;
     res.json({ success: true, slug, url });
   } catch (error) {
+    if (slug && previous) {
+      try {
+        await supabaseAdmin.from('projects')
+          .update(previous.published_at ? { published_at: previous.published_at } : { slug: null, published_at: null })
+          .eq('id', projectId);
+      } catch { /* best effort */ }
+    }
     const status = error instanceof ProjectAccessError ? 403 : 500;
     const message = error instanceof Error && error.message ? error.message : String(error || 'Publish failed.');
     await reportError(res, status, message, error, 'Publish error:');
