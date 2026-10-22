@@ -18,6 +18,7 @@ import Help from './pages/Help';
 import Admin from './pages/Admin';
 import Suspended from './pages/Suspended';
 import Restored from './pages/Restored';
+import Usage from './pages/Usage';
 import AcceptTerms from './pages/AcceptTerms';
 import Terms from './pages/Terms';
 import SuspensionGate from './components/SuspensionGate';
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/activity" element={<Navigate to="/account/activity" replace />} />
         <Route path="/confirmed" element={<Confirmed />} />
         <Route path="/billing" element={<Billing />} />
+        <Route path="/usage" element={<Usage />} />
         <Route path="/store" element={<Navigate to="/billing" replace />} />
         <Route path="/domains" element={<Domains />} />
         <Route path="/help" element={<Help />} />
