@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import ClampedText from '../components/ClampedText';
 import useSeo from '../lib/useSeo';
@@ -7,6 +7,8 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { listProjects, createProject, updateProject, deleteProject, PRODUCTS, STATUSES } from '../lib/projects';
 import { logActivity } from '../lib/activity';
+import { writeFile } from '../lib/projectFiles';
+import { TEMPLATE_LIST, renderTemplate } from '../lib/templates';
 import { supabase } from '../lib/supabase';
 import { getProjectMembers, getPendingTransfers, acceptTransfer, declineTransfer } from '../lib/projectCollaboration';
 import { Plus, ExternalLink, Pencil, Trash2, X, FolderKanban, Code2, Users, Check, XCircle } from 'lucide-react';
@@ -234,7 +236,9 @@ export default function Projects() {
 }
 
 function ProjectFormModal({ initial, onClose, onSaved }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState(initial ? { ...initial } : EMPTY_FORM);
+  const [template, setTemplate] = useState('blank');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -249,19 +253,30 @@ function ProjectFormModal({ initial, onClose, onSaved }) {
       description: form.description || null,
       external_url: form.external_url || null,
     };
-    const { error: saveError } = initial
+    const { data: saved, error: saveError } = initial
       ? await updateProject(initial.id, payload)
       : await createProject(payload);
-    setSaving(false);
-    if (saveError) { setError(friendlyError(saveError)); return; }
+    if (saveError) { setSaving(false); setError(friendlyError(saveError)); return; }
     logActivity(initial ? 'Project updated' : 'Project created', form.name);
-    onSaved();
+
+    const files = !initial && saved?.id ? renderTemplate(template, form.name) : [];
+    if (files.length === 0) { setSaving(false); onSaved(); return; }
+    try {
+      for (const file of files) await writeFile(saved.id, file.path, file.content);
+    } catch (err) {
+      // The project exists; only the starter files failed. Say so instead of pretending it worked.
+      setSaving(false);
+      setError(`Your project was created, but the starter files could not be added: ${friendlyError(err)} Open the project and try again, or ask K-XpertAI to build it.`);
+      return;
+    }
+    setSaving(false);
+    navigate(`/projects/${saved.id}/workspace`);
   };
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
-        <Card className="p-6 rounded-[20px]">
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-[20px]">
+        <Card className="p-5 sm:p-6 rounded-[20px]">
           <div className="flex items-center justify-between mb-5">
             <h2 className="font-display text-lg font-medium">{initial ? 'Edit project' : 'New project'}</h2>
             <button onClick={onClose} className="min-w-11 min-h-11 inline-flex items-center justify-center text-kxmist hover:text-white"><X size={18} /></button>
@@ -273,6 +288,20 @@ function ProjectFormModal({ initial, onClose, onSaved }) {
 
           <form onSubmit={submit} className="flex flex-col gap-4">
             <Input label="Name" value={form.name} onChange={(e) => set('name', e.target.value)} required />
+            {!initial && (
+              <fieldset>
+                <legend className="block text-[13px] font-medium text-white/85 mb-1.5">Start from</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {TEMPLATE_LIST.map((t) => (
+                    <label key={t.id} className={`cursor-pointer rounded-xl border p-3 min-h-11 transition-colors ${template === t.id ? 'border-kxblue bg-kxblue/10' : 'border-white/12 hover:border-white/25'}`}>
+                      <input type="radio" name="template" value={t.id} checked={template === t.id} onChange={() => setTemplate(t.id)} className="sr-only" />
+                      <span className="block text-[13px] font-medium">{t.name}</span>
+                      <span className="block text-[11.5px] text-kxmist leading-snug mt-0.5">{t.description}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
             <label className="block">
               <span className="block text-[13px] font-medium text-white/85 mb-1.5">Product</span>
               <select value={form.product} onChange={(e) => set('product', e.target.value)} className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue">
@@ -290,7 +319,7 @@ function ProjectFormModal({ initial, onClose, onSaved }) {
               <span className="block text-[13px] font-medium text-white/85 mb-1.5">Description</span>
               <textarea value={form.description || ''} onChange={(e) => set('description', e.target.value)} rows={3} className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue resize-none" />
             </label>
-            <Button type="submit" variant="glow" className="w-full mt-1" loading={saving}>{initial ? 'Save changes' : 'Create project'}</Button>
+            <Button type="submit" variant="glow" className="w-full mt-1" loading={saving}>{initial ? 'Save changes' : template === 'blank' ? 'Create project' : 'Create from template'}</Button>
           </form>
         </Card>
       </div>
