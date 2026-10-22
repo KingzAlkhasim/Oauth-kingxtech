@@ -4,7 +4,7 @@ import { ShieldCheck } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
 import { Card, Button, Badge } from '../components/ui';
 import { adminListAccounts, adminSetSuspension } from '../lib/account';
-import { adminListFlags, adminResolveFlag } from '../lib/abuse';
+import { adminListFlags, adminResolveFlag, warnFlagByEmail } from '../lib/abuse';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import useIsAdmin, {
@@ -190,6 +190,18 @@ function FlagCard({ flag, onChanged }) {
   const [error, setError] = useState('');
   const [reason, setReason] = useState('');
   const [suspending, setSuspending] = useState(false);
+  const [warning, setWarning] = useState(false);
+  const [warnNote, setWarnNote] = useState('');
+  const [warned, setWarned] = useState(false);
+
+  const warn = async () => {
+    setBusy(true); setError('');
+    try {
+      await warnFlagByEmail(flag.id, warnNote.trim());
+      setWarned(true); setWarning(false); setWarnNote('');
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
 
   const resolve = async (decision) => {
     setBusy(true); setError('');
@@ -235,10 +247,18 @@ function FlagCard({ flag, onChanged }) {
           <div className="flex flex-wrap gap-2">
             <button type="button" disabled={busy} onClick={() => resolve('dismissed')} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-white/10 text-kxmist hover:text-white disabled:opacity-50">Dismiss (false alarm)</button>
             <button type="button" disabled={busy} onClick={() => resolve('confirmed')} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-white/10 text-kxmist hover:text-white disabled:opacity-50">Confirm abuse</button>
+            <button type="button" disabled={busy || warned} onClick={() => setWarning(!warning)} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-amber-500/30 text-amber-300 hover:text-amber-200 disabled:opacity-50">{warned ? 'Warning sent' : 'Warn by email…'}</button>
             {!flag.user_suspended && (
               <button type="button" disabled={busy} onClick={() => setSuspending(!suspending)} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-red-500/30 text-red-300 hover:text-red-200 disabled:opacity-50">Suspend account…</button>
             )}
           </div>
+          {warning && (
+            <>
+              <p className="text-[12px] text-kxmist">Sends a standard warning to {flag.user_email}. It never quotes their prompt. Add a note if you want.</p>
+              <textarea value={warnNote} onChange={(e) => setWarnNote(e.target.value)} rows={2} maxLength={500} placeholder="Optional note to include" className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue resize-none" />
+              <Button variant="glow" className="self-start" onClick={warn} loading={busy} disabled={busy}>Send warning</Button>
+            </>
+          )}
           {suspending && (
             <>
               <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} placeholder="Reason (shown to the user)" className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue resize-none" />
@@ -316,7 +336,7 @@ export default function Admin() {
         <ShieldCheck size={20} className="text-kxpurple" />
         <h1 className="font-display text-2xl">Admin</h1>
       </div>
-      <div className="flex gap-2 mb-5">
+      <div className="flex flex-wrap gap-2 mb-5">
         {[['support', 'Support inbox'], ['flags', 'Flags'], ['accounts', 'Accounts'], ['audit', 'Audit log']].map(([key, text]) => (
           <button key={key} type="button" onClick={() => setTab(key)} className={`min-h-11 px-4 rounded-full text-[13px] border ${tab === key ? 'border-kxblue text-white bg-white/5' : 'border-white/10 text-kxmist'}`}>{text}</button>
         ))}
