@@ -48,12 +48,12 @@ export default function Console() {
       <h1 className="font-display text-2xl font-semibold mb-1">Console</h1>
       <p className="text-kxmist text-sm mb-8">AI configuration, integrations, community, and cloud resources.</p>
 
-      <div className="flex gap-2 mb-8 overflow-x-auto rounded-[20px] border border-white/8 bg-white/[0.015] p-2">
+      <div className="grid grid-cols-4 sm:flex sm:gap-2 gap-1 mb-8 rounded-[20px] border border-white/8 bg-white/[0.015] p-1.5 sm:p-2">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-[13px] whitespace-nowrap transition-colors ${
+            className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 min-h-12 px-1 sm:px-3.5 py-2 sm:py-2.5 rounded-2xl text-[11px] sm:text-[13px] sm:whitespace-nowrap transition-colors ${
               tab === id ? 'bg-white/8 text-white' : 'text-kxmist hover:text-white hover:bg-white/[0.03]'
             }`}
           >
@@ -74,7 +74,7 @@ export default function Console() {
 
 function Section({ title, desc, children }) {
   return (
-    <Card className="p-6 mb-5 rounded-[20px]">
+    <Card className="p-4 sm:p-6 mb-5 rounded-[20px]">
       <div className="flex items-center gap-2.5 mb-1">
         <h2 className="font-display text-[16px] font-medium">{title}</h2>
       </div>
@@ -768,7 +768,7 @@ function CloudConsoleTab() {
   ];
   return (
     <>
-      <div className="flex gap-2 mb-5 overflow-x-auto">
+      <div className="flex flex-wrap gap-2 mb-5">
         {SUBS.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setSub(id)} className={`flex items-center gap-2 px-3 py-2 rounded-full text-[12.5px] whitespace-nowrap border transition-colors ${
             sub === id ? 'border-kxblue bg-kxblue/10 text-white' : 'border-white/12 text-kxmist hover:border-white/25'
@@ -825,7 +825,7 @@ function EnvVarsSubTab() {
   }
 
   return (
-    <Section title="Environment variables" desc="Key/value settings for your account, like a .env file. They are stored as plain text in the database, so this is not a vault for secrets. A variable marked Public can be seen by anyone who opens your published site (as window.KX_ENV), so never mark a real secret as Public.">
+    <Section title="Environment variables" desc="Account-wide settings, stored as plain text (not a vault for secrets). Only variables marked Public do anything: they appear on your published sites as window.KX_ENV, so never mark a real secret as Public. For private values your project needs while it builds or runs, use Site Settings inside the project.">
       <Notice error={error && error !== 'SETUP' ? error : ''} />
 
       <div className="flex flex-col gap-2.5 mb-5">
