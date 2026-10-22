@@ -39,8 +39,11 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
+  // Pages always revalidate with the server so a new deploy shows up on the next open.
+  // The saved copy is only used when the network genuinely fails.
+  const networkRequest = request.mode === 'navigate' ? new Request(request, { cache: 'no-cache' }) : request;
   event.respondWith(
-    fetch(request)
+    fetch(networkRequest)
       .then((response) => {
         if (response.ok && (request.mode === 'navigate' || response.type === 'basic')) {
           const copy = response.clone();
