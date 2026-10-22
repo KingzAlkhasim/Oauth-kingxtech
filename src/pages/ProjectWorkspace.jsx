@@ -51,6 +51,7 @@ import {
   PanelLeftClose,
   Shield,
   Lock,
+  Loader2,
 } from 'lucide-react';
 
 function Github({ size = 14 }) {
@@ -687,6 +688,7 @@ export default function ProjectWorkspace() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState(null); // { label, done, total }
   const [collapsedFolders, setCollapsedFolders] = useState(() => new Set());
   const [mobileView, setMobileView] = useState('workspace'); // 'files' | 'workspace' — mobile only, both shown side-by-side on desktop
   const folderInputRef = useRef(null);
@@ -894,6 +896,7 @@ export default function ProjectWorkspace() {
     if (!repoFullName) return;
     const branch = prompt('Branch:', 'main') || 'main';
     setIsImporting(true);
+    setImportStatus({ label: `Downloading ${repoFullName.trim()} from GitHub. Big repos can take a minute.`, done: 0, total: 0 });
     setError('');
     try {
       const { filesImported, skipped } = await importRepoFromGithub(projectId, repoFullName.trim(), branch.trim());
@@ -903,6 +906,7 @@ export default function ProjectWorkspace() {
       setError(err.message);
     } finally {
       setIsImporting(false);
+      setImportStatus(null);
     }
   };
 
@@ -916,7 +920,10 @@ export default function ProjectWorkspace() {
     let imported = 0;
     const importedPaths = [];
     const skipped = [];
+    let seen = 0;
     for (const file of selected) {
+      setImportStatus({ label: `Uploading ${file.name}`, done: seen, total: selected.length });
+      seen += 1;
       const ext = extensionOf(file.name);
       if (!ASSET_EXTS.has(ext)) { skipped.push(`${file.name} (unsupported type; use PNG, JPG/JPEG, GIF, WebP, AVIF, ICO, SVG, WOFF/WOFF2, TTF, OTF, or PDF)`); continue; }
       if (file.size > MAX_LOCAL_IMPORT_BYTES) { skipped.push(`${file.name} (over 5 MB; choose a smaller file)`); continue; }
@@ -937,6 +944,7 @@ export default function ProjectWorkspace() {
     await refreshFiles();
     if (importedPaths.length > 0) await openFile(importedPaths[importedPaths.length - 1]).catch(() => {});
     setIsImporting(false);
+    setImportStatus(null);
     if (skipped.length) setError(`Uploaded ${imported} file(s). ${skipped.length} file(s) were not uploaded: ${skipped.slice(0, 4).join('; ')}${skipped.length > 4 ? '; …' : ''}`);
   };
 
@@ -953,37 +961,52 @@ export default function ProjectWorkspace() {
 
     setIsImporting(true);
     setError('');
+    setImportStatus({ label: 'Reading your folder', done: 0, total: 0 });
     let imported = 0;
     const skipped = [];
+    const queue = [];
 
     for (const file of fileList) {
       const relPath = file.webkitRelativePath.split('/').slice(1).join('/') || file.name;
       if (relPath.split('/').some((part) => part === '.env' || part.startsWith('.env.'))) { skipped.push(`${relPath} (environment files are not imported)`); continue; }
       if (relPath.includes('node_modules/') || relPath.includes('.git/')) continue;
-
-      if (imported >= MAX_LOCAL_IMPORT_FILES) { skipped.push(`${relPath} (file limit reached)`); continue; }
+      if (queue.length >= MAX_LOCAL_IMPORT_FILES) { skipped.push(`${relPath} (file limit reached)`); continue; }
       const ext = extensionOf(relPath);
       if (file.size > MAX_LOCAL_IMPORT_BYTES) { skipped.push(`${relPath} (over 5 MB)`); continue; }
       if (UNSUPPORTED_BINARY_EXTS.has(ext)) { skipped.push(`${relPath} (unsupported binary type)`); continue; }
-
-      try {
-        let text;
-        if (BINARY_EXTS.has(ext)) text = BINARY_PREFIX + bytesToBase64(await file.arrayBuffer());
-        else {
-          const raw = await file.arrayBuffer();
-          if (isProbablyBinary(raw)) throw new Error('Unsupported binary type; import only text files and supported image/font/PDF assets.');
-          text = await file.text();
-          if (ext === 'svg' && isUnsafeSvg(text)) throw new Error('SVG contains unsafe script or event code.');
-        }
-        await writeFile(projectId, relPath, text);
-        imported += 1;
-      } catch (err) {
-        skipped.push(`${relPath} (${err.message})`);
-      }
+      queue.push({ file, relPath, ext });
     }
 
-    setIsImporting(false);
+    let done = 0;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < queue.length) {
+        const { file, relPath, ext } = queue[cursor]; cursor += 1;
+        setImportStatus({ label: `Importing ${relPath}`, done, total: queue.length });
+        try {
+          let text;
+          if (BINARY_EXTS.has(ext)) text = BINARY_PREFIX + bytesToBase64(await file.arrayBuffer());
+          else {
+            const raw = await file.arrayBuffer();
+            if (isProbablyBinary(raw)) throw new Error('Unsupported binary type; import only text files and supported image/font/PDF assets.');
+            text = await file.text();
+            if (ext === 'svg' && isUnsafeSvg(text)) throw new Error('SVG contains unsafe script or event code.');
+          }
+          await writeFile(projectId, relPath, text);
+          imported += 1;
+        } catch (err) {
+          skipped.push(`${relPath} (${err.message})`);
+        }
+        done += 1;
+        setImportStatus({ label: `Importing ${relPath}`, done, total: queue.length });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+
+    setImportStatus({ label: 'Refreshing files', done: queue.length, total: queue.length });
     await refreshFiles();
+    setIsImporting(false);
+    setImportStatus(null);
     alert(`Imported ${imported} file(s).${skipped.length ? `\n\nSkipped ${skipped.length}:\n${skipped.slice(0, 10).join('\n')}${skipped.length > 10 ? '\n…' : ''}` : ''}`);
   };
 
@@ -1112,7 +1135,20 @@ export default function ProjectWorkspace() {
               </button>
             </div>
           </div>
-          {isImporting && <p className="text-[11.5px] text-kxpurple px-1 mb-2 shrink-0">Importing…</p>}
+          {isImporting && (
+            <div className="px-1 mb-2 shrink-0" role="status" aria-live="polite">
+              <p className="flex items-center gap-2 text-[11.5px] text-kxpurple min-w-0">
+                <Loader2 size={12} className="animate-spin shrink-0" />
+                <span className="truncate">{importStatus?.label || 'Importing…'}</span>
+                {importStatus?.total > 0 && <span className="shrink-0 text-kxmist">{importStatus.done}/{importStatus.total}</span>}
+              </p>
+              {importStatus?.total > 0 && (
+                <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full bg-kxpurple transition-all duration-200" style={{ width: `${Math.round((importStatus.done / importStatus.total) * 100)}%` }} />
+                </div>
+              )}
+            </div>
+          )}
           {files.length === 0 && !isLoadingFiles && !isImporting && (
             <p className="text-[12.5px] text-kxmist px-1">
               No files yet — create one, import from GitHub/a local folder, or ask K-XpertAI to scaffold something.
