@@ -9,6 +9,7 @@ import { useEnsureAal2 } from '../lib/ensureAal2';
 import { Card, Button, Input, Badge } from '../components/ui';
 import { logActivity, listActivity } from '../lib/activity';
 import { User, ShieldCheck, Monitor, Laptop, Activity as ActivityIcon } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -115,10 +116,10 @@ function ProfileTab() {
     try {
       if (emailChanged && !(await ensureAal2())) return;
       const { error: updateError } = await supabase.auth.updateUser(updates);
-      if (updateError) { setBasicInfoError(updateError.message); return; }
+      if (updateError) { setBasicInfoError(friendlyError(updateError)); return; }
       setBasicInfoNotice(emailChanged ? 'Saved. Check your new email address to confirm the change.' : 'Profile updated.');
     } catch (err) {
-      setBasicInfoError(err.message || 'Could not save your profile changes.');
+      setBasicInfoError(friendlyError(err, 'Could not save your profile changes.'));
     } finally {
       setSaving(false);
     }
@@ -135,10 +136,10 @@ function ProfileTab() {
           github_url: form.github || null,
         },
       });
-      if (updateError) { setDeveloperError(updateError.message); return; }
+      if (updateError) { setDeveloperError(friendlyError(updateError)); return; }
       setDeveloperNotice('Developer profile updated.');
     } catch (err) {
-      setDeveloperError(err.message || 'Could not save your developer profile.');
+      setDeveloperError(friendlyError(err, 'Could not save your developer profile.'));
     } finally {
       setSaving(false);
     }
@@ -165,7 +166,7 @@ function ProfileTab() {
     const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
     const { error: updateError } = await supabase.auth.updateUser({ data: { avatar_url: pub.publicUrl } });
     setAvatarUploading(false);
-    if (updateError) { setAvatarError(updateError.message); return; }
+    if (updateError) { setAvatarError(friendlyError(updateError)); return; }
     set('avatarUrl', pub.publicUrl);
     setAvatarNotice('Profile picture updated.');
   };
@@ -253,12 +254,12 @@ function PasswordSection() {
       if (reauthError) { setError('Current password is incorrect.'); return; }
       if (!(await ensureAal2())) return;
       const { error: updateError } = await supabase.auth.updateUser({ password: next });
-      if (updateError) { setError(updateError.message); return; }
+      if (updateError) { setError(friendlyError(updateError)); return; }
       setNotice('Password updated.');
       logActivity('Password changed');
       setCurrent(''); setNext(''); setConfirm('');
     } catch (err) {
-      setError(err.message || 'Could not update your password.');
+      setError(friendlyError(err, 'Could not update your password.'));
     } finally {
       setSaving(false);
     }
@@ -294,7 +295,7 @@ function MfaSection() {
 
   const refresh = async () => {
     const { data, error: listError } = await supabase.auth.mfa.listFactors();
-    if (listError) { setError(listError.message); setStatus('disabled'); return; }
+    if (listError) { setError(friendlyError(listError)); setStatus('disabled'); return; }
     const totp = data.totp?.find((f) => f.status === 'verified');
     if (totp) { setFactorId(totp.id); setStatus('enabled'); }
     else setStatus('disabled');
@@ -306,7 +307,7 @@ function MfaSection() {
     setError(''); setNotice(''); setBusy(true);
     const { data, error: enrollError } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
     setBusy(false);
-    if (enrollError) { setError(enrollError.message); return; }
+    if (enrollError) { setError(friendlyError(enrollError)); return; }
     setFactorId(data.id);
     setQr(data.totp.qr_code);
     setSecret(data.totp.secret);
@@ -318,13 +319,13 @@ function MfaSection() {
     let cid = challengeId;
     if (!cid) {
       const { data, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
-      if (challengeError) { setBusy(false); setError(challengeError.message); return; }
+      if (challengeError) { setBusy(false); setError(friendlyError(challengeError)); return; }
       cid = data.id;
       setChallengeId(cid);
     }
     const { error: verifyError } = await supabase.auth.mfa.verify({ factorId, challengeId: cid, code });
     setBusy(false);
-    if (verifyError) { setError(verifyError.message); return; }
+    if (verifyError) { setError(friendlyError(verifyError)); return; }
     setNotice('Two-factor authentication enabled.');
     logActivity('2FA enabled');
     setStatus('enabled');
@@ -335,7 +336,7 @@ function MfaSection() {
     setError(''); setBusy(true);
     const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId });
     setBusy(false);
-    if (unenrollError) { setError(unenrollError.message); return; }
+    if (unenrollError) { setError(friendlyError(unenrollError)); return; }
     setStatus('disabled');
     setFactorId(null);
     setNotice('Two-factor authentication disabled.');
@@ -403,7 +404,7 @@ function SessionsTab() {
     setError(''); setNotice(''); setBusy(true);
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
     setBusy(false);
-    if (signOutError) { setError(signOutError.message); return; }
+    if (signOutError) { setError(friendlyError(signOutError)); return; }
     setNotice('Signed out of all other sessions.');
   };
 
@@ -438,7 +439,7 @@ function AccountActivityTab() {
         return;
       }
       setEntries(data || []);
-    }).catch((err) => setError(err.message || 'Could not load account activity.'));
+    }).catch((err) => setError(friendlyError(err, 'Could not load account activity.')));
   }, []);
   if (error === 'SETUP') {
     return <Section title="Account activity"><p className="text-[13px] text-kxmist">Activity logging isn't configured yet. Run <code className="text-white font-mono">supabase/migrations/007_activity_log.sql</code> in your Supabase SQL Editor to record account events.</p></Section>;

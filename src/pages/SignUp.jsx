@@ -8,6 +8,7 @@ import { ArrowLeft, Check } from 'lucide-react';
 import useSeo from '../lib/useSeo';
 import { supabase } from '../lib/supabase';
 import { safeInternalPath, safeSsoTarget } from '../lib/safeRedirect';
+import { friendlyError } from '../lib/errors';
 
 const ROLES = ['Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'Mobile Developer', 'AI Engineer', 'Machine Learning Engineer', 'DevOps Engineer', 'Security Engineer', 'Data Scientist', 'Game Developer', 'Student', 'Researcher', 'Designer', 'Entrepreneur', 'Other'];
 const STACK = ['JavaScript', 'TypeScript', 'Python', 'PHP', 'Rust', 'C++', 'Java', 'Go', 'React', 'Vue', 'Angular', 'Node.js', 'Laravel', 'Next.js', 'Django', 'Flask', 'Docker', 'Kubernetes', 'TensorFlow', 'PyTorch', 'HuggingFace', 'Unsloth', 'PostgreSQL', 'MySQL', 'MongoDB'];
@@ -113,7 +114,7 @@ export default function SignUp() {
 
     if (signUpError) {
       console.error('Supabase signUp error:', signUpError);
-      setError(signUpError.message);
+      setError(friendlyError(signUpError));
       return;
     }
 
@@ -136,7 +137,7 @@ export default function SignUp() {
       provider,
       options: { redirectTo: `https://auth.kingxtech.name.ng/welcome${redirectTarget ? `?redirect=${encodeURIComponent(redirectTarget)}` : ''}` },
     });
-    if (oauthError) setError(oauthError.message);
+    if (oauthError) setError(friendlyError(oauthError));
   };
 
   const githubValid = !form.github || /^https:\/\/(www\.)?github\.com\/[A-Za-z0-9-]+\/?$/.test(form.github);

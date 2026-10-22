@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { safeInternalPath, safeSsoTarget } from '../lib/safeRedirect';
 import { redirectWithSession } from '../lib/ssoHandoff';
 import { logActivity } from '../lib/activity';
+import { friendlyError } from '../lib/errors';
 
 export default function SignIn() {
   useSeo({ title: 'Sign in — KingxTech', noindex: false });
@@ -33,7 +34,7 @@ export default function SignIn() {
 
     setLoading(false);
     if (authError) {
-      setError(authError.message);
+      setError(friendlyError(authError));
       return;
     }
 
@@ -56,7 +57,7 @@ export default function SignIn() {
       ? `https://auth.kingxtech.name.ng/welcome?redirect=${encodeURIComponent(redirectTarget)}`
       : 'https://auth.kingxtech.name.ng/welcome';
     const { error: oauthError } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo } });
-    if (oauthError) setError(oauthError.message);
+    if (oauthError) setError(friendlyError(oauthError));
   };
 
   return (

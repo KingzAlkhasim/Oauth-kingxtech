@@ -13,6 +13,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { Card, Button, Badge, ExpandableList } from '../components/ui';
 import { Wallet, ExternalLink } from 'lucide-react';
+import { friendlyError } from '../lib/errors';
 
 const TOPUP_PRESETS = [5, 10, 25, 50];
 const PRO_PRICE_USD = 20;
@@ -104,7 +105,7 @@ export default function Billing() {
     try {
       window.location.href = await initializePaystackCheckout();
     } catch (err) {
-      setProError(err.message);
+      setProError(friendlyError(err));
       setProLoading(false);
     }
   };
@@ -120,7 +121,7 @@ export default function Billing() {
       await refresh();
       await refreshTransactions();
     } catch (err) {
-      setWalletError(err.message);
+      setWalletError(friendlyError(err));
     } finally {
       setWalletLoading(false);
     }
@@ -134,7 +135,7 @@ export default function Billing() {
       await cancelProPlan();
       await refresh();
     } catch (err) {
-      setPlanError(err.message);
+      setPlanError(friendlyError(err));
     } finally {
       setPlanLoading(false);
     }
@@ -147,7 +148,7 @@ export default function Billing() {
       await resumeProPlan();
       await refresh();
     } catch (err) {
-      setPlanError(err.message);
+      setPlanError(friendlyError(err));
     } finally {
       setPlanLoading(false);
     }
@@ -160,7 +161,7 @@ export default function Billing() {
     try {
       window.location.href = await initializePaystackTopup(amount);
     } catch (err) {
-      setTopupError(err.message);
+      setTopupError(friendlyError(err));
       setTopupLoading(false);
     }
   };

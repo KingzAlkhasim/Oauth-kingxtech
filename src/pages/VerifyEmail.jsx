@@ -4,6 +4,7 @@ import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import { Button } from '../components/ui';
 import { MailCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { friendlyError } from '../lib/errors';
 
 export default function VerifyEmail() {
   const [resending, setResending] = useState(false);
@@ -35,7 +36,7 @@ export default function VerifyEmail() {
     setResending(true);
     const { error: resendError } = await supabase.auth.resend({ type: 'signup', email });
     setResending(false);
-    if (resendError) { setError(resendError.message); return; }
+    if (resendError) { setError(friendlyError(resendError)); return; }
     setNotice('Email resent — check your inbox.');
   };
 

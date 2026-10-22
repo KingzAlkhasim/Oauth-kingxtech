@@ -4,6 +4,7 @@ import AuthLayout, { SidePanelDefault } from '../components/AuthLayout';
 import { Button, Input } from '../components/ui';
 import { supabase } from '../lib/supabase';
 import { useEnsureAal2 } from '../lib/ensureAal2';
+import { friendlyError } from '../lib/errors';
 
 function strengthOf(pw) {
   let score = 0;
@@ -81,12 +82,12 @@ export default function ResetPassword() {
         if (!verified) return;
         ({ error: updateError } = await supabase.auth.updateUser({ password: pw }));
       }
-      if (updateError) { setError(updateError.message || 'We couldn’t update your password. Please try again.'); return; }
+      if (updateError) { setError(friendlyError(updateError, 'We couldn’t update your password. Please try again.')); return; }
       sessionStorage.removeItem('kx_password_recovery');
       await supabase.auth.signOut();
       navigate('/login', { replace: true, state: { notice: 'Password updated. Sign in with your new password.' } });
     } catch (err) {
-      setError(err.message || 'We couldn’t update your password. Please try again.');
+      setError(friendlyError(err, 'We couldn’t update your password. Please try again.'));
     } finally {
       setLoading(false);
     }

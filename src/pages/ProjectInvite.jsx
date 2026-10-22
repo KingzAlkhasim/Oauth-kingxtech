@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { acceptProjectInvite } from '../lib/projectCollaboration';
+import { friendlyError } from '../lib/errors';
 
 export default function ProjectInvite() {
   const { token } = useParams();
@@ -29,7 +30,7 @@ export default function ProjectInvite() {
       } catch (error) {
         if (!alive) return;
         setStatus('error');
-        setMessage(error.message || 'This invitation is no longer available.');
+        setMessage(friendlyError(error, 'This invitation is no longer available.'));
       }
     }).catch(() => { if (alive) { setStatus('error'); setMessage('We could not verify your invitation. Please sign in again.'); } });
     return () => { alive = false; };

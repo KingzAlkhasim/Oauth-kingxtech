@@ -1,6 +1,7 @@
 import { createElement, useCallback, useRef, useState } from 'react';
 import { Button, Input } from '../components/ui';
 import { supabase } from './supabase';
+import { friendlyError } from './errors';
 
 export function useEnsureAal2() {
   const [open, setOpen] = useState(false);
@@ -35,7 +36,7 @@ export function useEnsureAal2() {
     const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
     setBusy(false);
     if (verifyError) {
-      setError(verifyError.message || 'That code could not be verified. Try again.');
+      setError(friendlyError(verifyError, 'That code could not be verified. Try again.'));
       return;
     }
     setOpen(false);

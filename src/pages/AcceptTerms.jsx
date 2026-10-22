@@ -8,6 +8,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { hasAcceptedCurrentTerms, acceptCurrentTerms } from '../lib/account';
 import { TERMS_PATH } from '../lib/terms';
 import { supabase } from '../lib/supabase';
+import { friendlyError } from '../lib/errors';
 
 export default function AcceptTerms() {
   useSeo({ title: 'Terms of Service — KingxTech', noindex: true });
@@ -30,7 +31,7 @@ export default function AcceptTerms() {
     setBusy(true); setError('');
     const { error: e } = await acceptCurrentTerms();
     setBusy(false);
-    if (e) { setError(e.message); return; }
+    if (e) { setError(friendlyError(e)); return; }
     navigate('/welcome', { replace: true });
   };
 

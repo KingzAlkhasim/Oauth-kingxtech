@@ -7,6 +7,7 @@ import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { supabase } from '../lib/supabase';
 import { getMyAccountStatus, requestDataExport } from '../lib/account';
+import { friendlyError } from '../lib/errors';
 
 export default function Suspended() {
   useSeo({ title: 'Account suspended — KingxTech', noindex: true });
@@ -31,7 +32,7 @@ export default function Suspended() {
       const result = await requestDataExport();
       setLink(result.url);
     } catch (err) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setBusy(false);
     }

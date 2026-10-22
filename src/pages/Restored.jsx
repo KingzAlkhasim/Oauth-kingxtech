@@ -7,6 +7,7 @@ import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { getMyAccountStatus, acknowledgeRestoration } from '../lib/account';
 import { TERMS_PATH } from '../lib/terms';
+import { friendlyError } from '../lib/errors';
 
 export default function Restored() {
   useSeo({ title: 'Account restored — KingxTech', noindex: true });
@@ -29,7 +30,7 @@ export default function Restored() {
     setBusy(true); setError('');
     const { error: e } = await acknowledgeRestoration();
     setBusy(false);
-    if (e) { setError(e.message); return; }
+    if (e) { setError(friendlyError(e)); return; }
     navigate('/welcome', { replace: true });
   };
 
