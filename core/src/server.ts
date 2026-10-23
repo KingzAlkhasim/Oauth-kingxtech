@@ -52,6 +52,7 @@ import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { warnFlagOwner, WarningError } from './services/abuseWarning';
 import { getUserStorage, StorageFullError } from './services/storageUsage';
+import { listSnapshots, saveSnapshot, restoreSnapshot, deleteSnapshot, snapshotAfterPublish, SnapshotError } from './services/projectSnapshots';
 import { recordSiteView, getSiteViewStats } from './services/siteViews';
 import { shouldCountView } from './services/siteViewsPolicy';
 import { getAccountSuspension, isProjectOwnerSuspended, forgetSuspensionCache } from './services/accountSuspension';
@@ -114,6 +115,10 @@ async function handleFsError(res: express.Response, error: unknown) {
   if (error instanceof ProjectAccessError) {
     // Expected access-control rejection, not a bug — no Sentry report.
     res.status(403).json({ success: false, error: error.message });
+    return;
+  }
+  if (error instanceof SnapshotError) {
+    res.status(error.status).json({ success: false, error: error.message });
     return;
   }
   if (error instanceof StorageFullError) {
@@ -825,6 +830,7 @@ app.post('/api/projects/:projectId/publish', requireAuth, async (req: AuthedRequ
     slug = await publishProject(req.user!.id, projectId);
     await buildProjectForPublish(req.user!.id, projectId);
     scanPublishedProjectInBackground(req.user!.id, projectId);
+    await snapshotAfterPublish(projectId); // restore point of exactly what went live (best effort)
     // KingxTech's canonical published URL is path-based on the public site host.
     // Keep /site/:slug/ as a legacy backend route, but never advertise the Vercel
     // function URL to users as the published address.
@@ -1393,6 +1399,30 @@ app.post('/api/admin/flags/:id/warn', requireAuth, async (req: AuthedRequest, re
     if (error instanceof WarningError) { res.status(error.status).json({ success: false, error: error.message }); return; }
     await reportError(res, 500, 'Failed to send the warning', error, 'Flag warning error:');
   }
+});
+
+// Restore points (whole-project snapshots).
+app.get('/api/projects/:projectId/snapshots', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, ...(await listSnapshots(req.user!.id, req.params.projectId)) });
+  } catch (error) { await handleFsError(res, error); }
+});
+app.post('/api/projects/:projectId/snapshots', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const label = typeof req.body?.label === 'string' ? req.body.label : undefined;
+    res.json({ success: true, ...(await saveSnapshot(req.user!.id, req.params.projectId, label)) });
+  } catch (error) { await handleFsError(res, error); }
+});
+app.post('/api/projects/:projectId/snapshots/:snapshotId/restore', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    res.json({ success: true, ...(await restoreSnapshot(req.user!.id, req.params.projectId, req.params.snapshotId)) });
+  } catch (error) { await handleFsError(res, error); }
+});
+app.delete('/api/projects/:projectId/snapshots/:snapshotId', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await deleteSnapshot(req.user!.id, req.params.projectId, req.params.snapshotId);
+    res.json({ success: true });
+  } catch (error) { await handleFsError(res, error); }
 });
 
 // Page views for a published site (owner, editors and viewers of the project).

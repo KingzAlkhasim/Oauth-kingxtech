@@ -22,6 +22,11 @@ async function fetchUsedBytes(ownerId: string): Promise<number | null> {
   return used;
 }
 
+/** Drop the short-lived usage memo after a bulk change (restore, delete) so the next check is fresh. */
+export function forgetStorageUsage(ownerId: string): void {
+  memo.delete(ownerId);
+}
+
 export async function getUserStorage(userId: string): Promise<{ tier: StorageTier; limitBytes: number; usedBytes: number | null }> {
   memo.delete(userId);
   const tier = await getUserTier(userId);

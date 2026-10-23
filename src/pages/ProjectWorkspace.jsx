@@ -6,9 +6,10 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input } from '../components/ui';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
-  previewUrl, publishProject, PublishError, getSiteViews, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
+  previewUrl, publishProject, PublishError, getSiteViews, listSnapshots, saveSnapshot, restoreSnapshot, deleteSnapshot, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
 } from '../lib/projectFiles';
 import { friendlyPublishError } from '../lib/publishErrors';
+import { formatBytes } from '../lib/formatBytes';
 import { getProjectRepoLink, pushProjectToGithub, importRepoFromGithub } from '../lib/github';
 import { listProjectEnvVars, setProjectEnvVar, deleteProjectEnvVar } from '../lib/projectEnvVars';
 import { runSecurityCheck } from '../lib/securityCheck';
@@ -429,6 +430,69 @@ function SiteViewsCard({ projectId }) {
   );
 }
 
+function RestorePointsCard({ projectId }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState('');
+
+  const load = useCallback(async () => {
+    try { setData(await listSnapshots(projectId)); setError(''); } catch (err) { setError(friendlyError(err)); }
+  }, [projectId]);
+  useEffect(() => { load(); }, [load]);
+
+  const run = async (key, action, success) => {
+    setBusy(key); setError(''); setNotice('');
+    try { const result = await action(); setNotice(typeof success === 'function' ? success(result) : success); await load(); return true; }
+    catch (err) { setError(friendlyError(err)); return false; }
+    finally { setBusy(''); }
+  };
+
+  const saveNow = () => run('save', () => saveSnapshot(projectId, 'Manual'), (r) => (r.created ? 'Restore point saved.' : 'Nothing has changed since your latest restore point.'));
+  const restore = async (snap) => {
+    if (!window.confirm(`Restore "${snap.label}" from ${new Date(snap.created_at).toLocaleString()}?\n\nYour current files will be replaced. Your current version is saved first, so you can undo this.`)) return;
+    const ok = await run(`restore-${snap.id}`, () => restoreSnapshot(projectId, snap.id), (r) => `Restored ${r.restoredFiles} file(s). Publish again to put this version live.`);
+    if (ok) window.dispatchEvent(new CustomEvent('kxpert:files-changed', { detail: { projectId } }));
+  };
+  const remove = (snap) => {
+    if (!window.confirm('Delete this restore point? This cannot be undone.')) return;
+    return run(`delete-${snap.id}`, () => deleteSnapshot(projectId, snap.id), 'Restore point deleted.');
+  };
+
+  return (
+    <Card className="p-4 rounded-xl">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-[14px] font-semibold">Restore points</h3>
+          <p className="text-[11.5px] text-kxmist mt-0.5 leading-relaxed">
+            A copy of your files is saved every time you publish. Go back to an earlier version if an edit or an AI change goes wrong.
+          </p>
+        </div>
+        <button type="button" onClick={saveNow} disabled={busy !== ''} className="shrink-0 min-h-11 px-3 text-[12px] rounded-lg border border-white/12 text-kxmist hover:text-white disabled:opacity-50">{busy === 'save' ? 'Saving…' : 'Save now'}</button>
+      </div>
+      {error && <p className="text-[12.5px] text-red-400 mt-2">{error}</p>}
+      {notice && <p className="text-[12.5px] text-emerald-300 mt-2">{notice}</p>}
+      {data === null && !error && <p className="text-[12.5px] text-kxmist mt-3">Loading…</p>}
+      {data && data.snapshots.length === 0 && (
+        <p className="text-[12px] text-kxmist mt-3">No restore points yet. One is saved automatically the next time you publish.</p>
+      )}
+      <div className="flex flex-col gap-2 mt-3">
+        {data?.snapshots.map((snap) => (
+          <div key={snap.id} className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+            <p className="text-[13px] font-medium break-words">{snap.label}</p>
+            <p className="text-[11.5px] text-kxmist">{new Date(snap.created_at).toLocaleString()} · {snap.file_count} file{snap.file_count === 1 ? '' : 's'} · {formatBytes(snap.bytes)}</p>
+            <div className="flex gap-2 mt-2">
+              <button type="button" onClick={() => restore(snap)} disabled={busy !== ''} className="min-h-11 px-3 text-[12.5px] rounded-lg border border-white/12 hover:border-white/30 disabled:opacity-50">{busy === `restore-${snap.id}` ? 'Restoring…' : 'Restore'}</button>
+              <button type="button" onClick={() => remove(snap)} disabled={busy !== ''} className="min-h-11 px-3 text-[12.5px] rounded-lg text-kxmist hover:text-red-300 disabled:opacity-50">Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {data && <p className="text-[11px] text-kxmist mt-3 leading-relaxed">Your plan keeps the latest {data.keep} restore points. Older ones are removed automatically. They do not use your storage limit.</p>}
+    </Card>
+  );
+}
+
 function SiteSettingsTab({ projectId }) {
   const [vars, setVars] = useState(null);
   const [error, setError] = useState('');
@@ -669,6 +733,9 @@ function SiteSettingsTab({ projectId }) {
           <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
         </div>
       </Card>
+
+      <SettingsGroupLabel>Versions</SettingsGroupLabel>
+      <RestorePointsCard projectId={projectId} />
 
       <SettingsGroupLabel>Security</SettingsGroupLabel>
       <Card className="p-4 rounded-xl">
