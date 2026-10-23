@@ -150,3 +150,21 @@ export async function getSiteViews(projectId) {
   if (!res.ok || !data?.success) throw new Error(data?.error || 'Could not load visits.');
   return data;
 }
+
+// Restore points (whole-project snapshots).
+async function snapshotCall(projectId, path, method = 'GET', body) {
+  const headers = await authHeaders(method !== 'GET' && method !== 'DELETE');
+  let res;
+  try {
+    res = await fetch(apiUrl(`/api/projects/${projectId}/snapshots${path}`), { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch (err) {
+    throw new Error(err?.message || 'Failed to fetch');
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) throw new Error(data?.error || 'Something went wrong with restore points.');
+  return data;
+}
+export const listSnapshots = (projectId) => snapshotCall(projectId, '');
+export const saveSnapshot = (projectId, label) => snapshotCall(projectId, '', 'POST', { label });
+export const restoreSnapshot = (projectId, snapshotId) => snapshotCall(projectId, `/${encodeURIComponent(snapshotId)}/restore`, 'POST');
+export const deleteSnapshot = (projectId, snapshotId) => snapshotCall(projectId, `/${encodeURIComponent(snapshotId)}`, 'DELETE');
