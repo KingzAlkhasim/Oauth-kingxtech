@@ -136,3 +136,17 @@ export async function runTerminalCommand(projectId, command, args = []) {
   if (!data.success) throw new Error(data.error || 'Command failed');
   return { ok: data.ok, output: data.output };
 }
+
+// Page views for a published site: { total, today, last7, last30, daily: [{ day, views }] }.
+export async function getSiteViews(projectId) {
+  const headers = await authHeaders(false);
+  let res;
+  try {
+    res = await fetch(apiUrl(`/api/projects/${projectId}/views`), { headers });
+  } catch (err) {
+    throw new Error(err?.message || 'Failed to fetch');
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) throw new Error(data?.error || 'Could not load visits.');
+  return data;
+}

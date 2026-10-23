@@ -52,11 +52,13 @@ import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { warnFlagOwner, WarningError } from './services/abuseWarning';
 import { getUserStorage, StorageFullError } from './services/storageUsage';
+import { recordSiteView, getSiteViewStats } from './services/siteViews';
+import { shouldCountView } from './services/siteViewsPolicy';
 import { getAccountSuspension, isProjectOwnerSuspended, forgetSuspensionCache } from './services/accountSuspension';
 import { createAccountExport } from './services/accountExport';
 import { scanPromptInBackground, scanPublishedProjectInBackground } from './services/abuseFlags';
 import { DomainError, getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
-import { getProjectRole } from './services/projectCollaboration';
+import { getProjectRole, assertProjectRole } from './services/projectCollaboration';
 import { authorizeProjectAi } from './services/projectCollaborationLogic';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
@@ -1226,7 +1228,7 @@ app.use(async (req, res, next) => {
       res.status(404).type('text/plain').send('No published site found at this address.');
       return;
     }
-    await servePreview(res, projectId, req.path.replace(/^[/]+/, ''));
+    await servePreview(res, projectId, req.path.replace(/^[/]+/, ''), { countView: true });
   } catch (error) {
     console.error('Subdomain site error:', error);
     Sentry.captureException(error, { tags: { route: 'subdomain-site' } });
@@ -1263,10 +1265,21 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   if (/<\/head>/i.test(htmlWithIcon)) return htmlWithIcon.replace(/<\/head>/i, () => snippet + '</head>');
   return htmlWithIcon.replace(/<body[^>]*>/i, (match) => snippet + match);
 }
-async function servePreview(res: express.Response, projectId: string, requestedPath: string) {
+async function servePreview(res: express.Response, projectId: string, requestedPath: string, opts?: { countView?: boolean }) {
   if (await isProjectOwnerSuspended(projectId)) {
     res.status(503).type('text/plain').send('This site is unavailable.');
     return;
+  }
+  // Only real page loads on a published address count as a visit (never the owner's /preview, assets or bots).
+  if (opts?.countView) {
+    const request = res.req;
+    if (shouldCountView({
+      method: request.method,
+      accept: request.headers.accept,
+      userAgent: request.headers['user-agent'],
+      secFetchDest: request.headers['sec-fetch-dest'] as string | undefined,
+      path: requestedPath || '',
+    })) recordSiteView(projectId);
   }
   let filePath = requestedPath || 'index.html';
   if (filePath === '') filePath = 'index.html';
@@ -1379,6 +1392,17 @@ app.post('/api/admin/flags/:id/warn', requireAuth, async (req: AuthedRequest, re
   } catch (error) {
     if (error instanceof WarningError) { res.status(error.status).json({ success: false, error: error.message }); return; }
     await reportError(res, 500, 'Failed to send the warning', error, 'Flag warning error:');
+  }
+});
+
+// Page views for a published site (owner, editors and viewers of the project).
+app.get('/api/projects/:projectId/views', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await assertProjectRole(req.user!.id, req.params.projectId, 'viewer');
+    const stats = await getSiteViewStats(req.params.projectId);
+    res.json({ success: true, ...stats });
+  } catch (error) {
+    await handleFsError(res, error);
   }
 });
 
@@ -1500,7 +1524,7 @@ app.use(async (req, res, next) => {
     applyPublishedSiteSecurity(req, res);
     let requestPath = req.path;
     while (requestPath.startsWith('/')) requestPath = requestPath.slice(1);
-    await servePreview(res, projectId, requestPath);
+    await servePreview(res, projectId, requestPath, { countView: true });
   } catch (error) {
     console.error('Custom domain route error:', error);
     Sentry.captureException(error, { tags: { route: 'custom-domain' } });
@@ -1534,7 +1558,7 @@ app.get(/^\/([^/]+)\/?(.*)$/, async (req, res, next) => {
       return;
     }
 
-    await servePreview(res, projectId, req.params[1]);
+    await servePreview(res, projectId, req.params[1], { countView: true });
   } catch (error) {
     console.error('Custom site route error:', error);
     Sentry.captureException(error, { tags: { route: 'custom-site' } });
@@ -1551,7 +1575,7 @@ app.get(/^\/site\/([^/]+)\/?(.*)$/, async (req, res) => {
       res.status(404).type('text/plain').send('No published site found at this address.');
       return;
     }
-    await servePreview(res, projectId, req.params[1]);
+    await servePreview(res, projectId, req.params[1], { countView: true });
   } catch (error) {
     console.error('Site error:', error);
     Sentry.captureException(error, { tags: { route: 'site' } });
