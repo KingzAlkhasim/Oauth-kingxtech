@@ -9,6 +9,7 @@ import {
   validateSvgText,
 } from './binaryFiles';
 import { assertProjectRole } from './projectCollaboration';
+import { assertStorageAvailable } from './storageUsage';
 
 export class ProjectAccessError extends Error {}
 
@@ -205,6 +206,7 @@ export async function writeProjectFile(userId: string, projectId: string, rawPat
   }
   const ownerId = await getProjectOwnerId(projectId);
   if (!ownerId) throw new ProjectAccessError('Project not found.');
+  await assertStorageAvailable(ownerId, projectId, path, content);
   const { error } = await supabaseAdmin.from('project_files').upsert(
     { project_id: projectId, user_id: ownerId, path, is_folder: false, content },
     { onConflict: 'project_id,path' }

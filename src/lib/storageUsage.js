@@ -15,3 +15,16 @@ export async function getAiUsageMeter() {
     return null;
   }
 }
+
+// Plan limit and current use of project storage (source files only). Advisory: null when unavailable.
+export async function getStorageQuota() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    const res = await fetch(apiUrl('/api/account/storage'), { headers: { Authorization: `Bearer ${session.access_token}` } });
+    const data = await res.json();
+    return data && data.success ? data : null;
+  } catch {
+    return null;
+  }
+}

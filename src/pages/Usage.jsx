@@ -5,7 +5,7 @@ import DashboardShell from '../components/DashboardShell';
 import { Card, Badge } from '../components/ui';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
-import { getStorageUsage, getAiUsageMeter } from '../lib/storageUsage';
+import { getStorageUsage, getAiUsageMeter, getStorageQuota } from '../lib/storageUsage';
 import { formatBytes } from '../lib/formatBytes';
 import { friendlyError } from '../lib/errors';
 
@@ -18,13 +18,13 @@ function Stat({ icon: Icon, label, value }) {
   );
 }
 
-function Meter({ label, percent, resetsAt }) {
+function Meter({ label, percent, resetsAt, detail }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent || 0)));
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3 text-[13px]">
         <span>{label}</span>
-        <span className="text-kxmist">{pct}% used</span>
+        <span className="text-kxmist">{detail || `${pct}% used`}</span>
       </div>
       <div className="mt-1.5 h-2 rounded-full bg-white/10 overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
         <div className={`h-full ${pct >= 90 ? 'bg-red-400' : 'bg-kxpurple'}`} style={{ width: `${pct}%` }} />
@@ -40,6 +40,7 @@ export default function Usage() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   const [ai, setAi] = useState(undefined); // undefined = loading, null = unavailable
+  const [quota, setQuota] = useState(undefined);
 
   useEffect(() => {
     getStorageUsage().then(({ data, error: e }) => {
@@ -49,6 +50,7 @@ export default function Usage() {
       } else setRows(data || []);
     });
     getAiUsageMeter().then(setAi);
+    getStorageQuota().then(setQuota);
   }, []);
 
   const totals = useMemo(() => {
@@ -76,11 +78,35 @@ export default function Usage() {
       {error && error !== 'SETUP' && <p className="text-[12.5px] text-red-400 mb-4">{error}</p>}
 
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <Stat icon={HardDrive} label="Storage used" value={rows === null ? '…' : formatBytes(totals.all)} />
+        <Stat icon={HardDrive} label="Source files" value={rows === null ? '…' : formatBytes(totals.source)} />
         <Stat icon={FolderKanban} label="Projects" value={rows === null ? '…' : totals.projects} />
         <Stat icon={Globe} label="Published sites" value={rows === null ? '…' : totals.published} />
         <Stat icon={HardDrive} label="Published builds" value={rows === null ? '…' : formatBytes(totals.build)} />
       </div>
+
+      <Card className="p-4 sm:p-6 rounded-[20px] mb-5">
+        <h2 className="font-display text-[16px] font-medium mb-1 flex items-center gap-2"><HardDrive size={15} /> Your storage</h2>
+        {quota === undefined && <p className="text-[13px] text-kxmist">Loading…</p>}
+        {quota === null && <p className="text-[13px] text-kxmist">Your storage limit is not available right now. Try again in a moment.</p>}
+        {quota && (() => {
+          const known = typeof quota.usedBytes === 'number';
+          const percent = known && quota.limitBytes > 0 ? (quota.usedBytes / quota.limitBytes) * 100 : 0;
+          return (
+            <div className="flex flex-col gap-3 mt-3">
+              <p className="text-[12.5px] text-kxmist">Plan: <span className="text-white capitalize">{String(quota.tier).replace('_', ' ')}</span></p>
+              <Meter
+                label="Project files"
+                percent={percent}
+                detail={known ? `${formatBytes(quota.usedBytes)} of ${formatBytes(quota.limitBytes)}` : `Limit ${formatBytes(quota.limitBytes)}`}
+              />
+              <p className="text-[12px] text-kxmist leading-relaxed">Only your source files count. Published builds are shown below but do not count toward your limit.</p>
+              {known && percent >= 100 && <p className="text-[13px] text-red-300">Storage is full. You can edit and delete files, but not add more until you free up space{quota.tier === 'pro_plus' ? '' : ' or upgrade'}.</p>}
+              {known && percent >= 80 && percent < 100 && <p className="text-[13px] text-amber-300">You are close to your limit.</p>}
+              {known && percent >= 80 && quota.tier !== 'pro_plus' && <Link to="/billing" className="text-[13px] text-kxblue underline min-h-11 inline-flex items-center">Upgrade for more space</Link>}
+            </div>
+          );
+        })()}
+      </Card>
 
       <Card className="p-4 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1 flex items-center gap-2"><Sparkles size={15} /> AI usage</h2>
@@ -104,7 +130,7 @@ export default function Usage() {
       <Card className="p-4 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1">Storage by project</h2>
         <p className="text-[13px] text-kxmist mb-4 leading-relaxed">
-          Source is your files. A published build is the finished copy that visitors get. Images and fonts count about a third more than their size on your device. No storage limit applies yet.
+          Source is your files. A published build is the finished copy that visitors get. Images and fonts count about a third more than their size on your device.
         </p>
         {rows === null && <p className="text-[13px] text-kxmist">Loading…</p>}
         {rows && rows.length === 0 && !error && (

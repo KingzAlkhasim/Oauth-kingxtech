@@ -51,6 +51,7 @@ import {
 import { buildProjectForPublish } from './services/projectRuntime';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { warnFlagOwner, WarningError } from './services/abuseWarning';
+import { getUserStorage, StorageFullError } from './services/storageUsage';
 import { getAccountSuspension, isProjectOwnerSuspended, forgetSuspensionCache } from './services/accountSuspension';
 import { createAccountExport } from './services/accountExport';
 import { scanPromptInBackground, scanPublishedProjectInBackground } from './services/abuseFlags';
@@ -111,6 +112,11 @@ async function handleFsError(res: express.Response, error: unknown) {
   if (error instanceof ProjectAccessError) {
     // Expected access-control rejection, not a bug — no Sentry report.
     res.status(403).json({ success: false, error: error.message });
+    return;
+  }
+  if (error instanceof StorageFullError) {
+    // Expected plan limit, not a bug.
+    res.status(413).json({ success: false, error: error.message, code: 'storage_full' });
     return;
   }
   console.error('Project FS error:', error);
@@ -1373,6 +1379,16 @@ app.post('/api/admin/flags/:id/warn', requireAuth, async (req: AuthedRequest, re
   } catch (error) {
     if (error instanceof WarningError) { res.status(error.status).json({ success: false, error: error.message }); return; }
     await reportError(res, 500, 'Failed to send the warning', error, 'Flag warning error:');
+  }
+});
+
+// How much of the plan's project storage this account has used (source files only).
+app.get('/api/account/storage', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const storage = await getUserStorage(req.user!.id);
+    res.json({ success: true, ...storage });
+  } catch (error) {
+    await reportError(res, 500, 'Failed to load storage usage', error, 'Storage usage error:');
   }
 });
 
