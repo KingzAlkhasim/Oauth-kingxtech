@@ -6,7 +6,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input } from '../components/ui';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
-  previewUrl, publishProject, PublishError, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
+  previewUrl, publishProject, PublishError, getSiteViews, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
 } from '../lib/projectFiles';
 import { friendlyPublishError } from '../lib/publishErrors';
 import { getProjectRepoLink, pushProjectToGithub, importRepoFromGithub } from '../lib/github';
@@ -379,6 +379,56 @@ function SettingsGroupLabel({ children }) {
   return <h2 className="pt-2 text-[11px] font-mono uppercase tracking-wider text-kxmist">{children}</h2>;
 }
 
+function SiteViewsCard({ projectId }) {
+  const [stats, setStats] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try { setStats(await getSiteViews(projectId)); } catch (err) { setError(friendlyError(err)); }
+    setLoading(false);
+  }, [projectId]);
+  useEffect(() => { load(); }, [load]);
+
+  const max = stats ? Math.max(1, ...stats.daily.map((d) => d.views)) : 1;
+  const fmt = (n) => Number(n).toLocaleString();
+  return (
+    <Card className="p-4 rounded-xl">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-[14px] font-semibold">Visits</h3>
+          <p className="text-[11.5px] text-kxmist mt-0.5 leading-relaxed">Page views of your published site.</p>
+        </div>
+        <button type="button" onClick={load} disabled={loading} className="min-h-11 px-3 text-[12px] text-kxmist hover:text-white disabled:opacity-50">{loading ? 'Loading…' : 'Refresh'}</button>
+      </div>
+      {error && <p className="text-[12.5px] text-red-400 mt-2">{error}</p>}
+      {stats && (
+        <>
+          <div className="grid grid-cols-4 gap-2 mt-3 text-center">
+            {[['Today', stats.today], ['7 days', stats.last7], ['30 days', stats.last30], ['All time', stats.total]].map(([label, n]) => (
+              <div key={label} className="rounded-lg border border-white/10 bg-white/[0.02] py-2 min-w-0">
+                <p className="font-display text-[17px] leading-tight break-words">{fmt(n)}</p>
+                <p className="text-[10.5px] text-kxmist">{label}</p>
+              </div>
+            ))}
+          </div>
+          {stats.total === 0 ? (
+            <p className="text-[12px] text-kxmist mt-3">No visits yet. Publish your site and share the link, and visits will show up here.</p>
+          ) : (
+            <div className="mt-3 flex items-end gap-1 h-16" role="img" aria-label="Visits per day for the last 14 days">
+              {stats.daily.map((d) => (
+                <div key={d.day} title={`${d.day}: ${d.views}`} className="flex-1 rounded-t bg-kxpurple/80 min-h-[2px]" style={{ height: `${Math.max(3, Math.round((d.views / max) * 100))}%`, opacity: d.views === 0 ? 0.25 : 1 }} />
+              ))}
+            </div>
+          )}
+          <p className="text-[11px] text-kxmist mt-3 leading-relaxed">Counts page loads in real browsers. No cookies or IP addresses are stored. Bots and your own previews are not counted, and numbers are approximate. Days use UTC time.</p>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function SiteSettingsTab({ projectId }) {
   const [vars, setVars] = useState(null);
   const [error, setError] = useState('');
@@ -510,6 +560,7 @@ function SiteSettingsTab({ projectId }) {
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
+      <SiteViewsCard projectId={projectId} />
       <ShareSettingsCard projectId={projectId} />
 
       <SettingsGroupLabel>App &amp; install</SettingsGroupLabel>
