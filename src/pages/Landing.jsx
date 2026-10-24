@@ -15,6 +15,7 @@ export default function Landing() {
       <header className="relative z-10 max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-6">
         <Logo />
         <div className="flex items-center gap-3">
+          <Link to="/docs" className="min-h-11 inline-flex items-center px-2 text-[13.5px] text-kxmist hover:text-white">Docs</Link>
           <Link to="/login"><Button variant="ghost">Sign in</Button></Link>
           <Link to="/signup"><Button variant="glow">Create account</Button></Link>
         </div>
