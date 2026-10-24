@@ -35,6 +35,9 @@ export function friendlyError(err, fallback) {
   if (/(relation|function) .* does not exist|could not find the (table|function)/i.test(raw)) {
     return 'This feature is not fully set up yet. Please contact support from Help.';
   }
+  if (/hobby plan|plan usage limit|usage limit exceeded for|snapshots? storage/i.test(raw)) {
+    return 'The project runtime is full on our side right now. This is not a problem with your account. Please try again later, or contact support from Help.';
+  }
   if (status === 429 || /rate limit|too many requests/i.test(raw)) {
     return 'Too many tries in a short time. Wait a minute and try again.';
   }

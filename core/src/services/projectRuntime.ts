@@ -84,14 +84,35 @@ function detectRuntime(packageJson: any): { framework: string; port: number; arg
   };
 }
 
+// Every time a persistent sandbox stops, Vercel saves a ~300 MB snapshot of it. Without a
+// limit these pile up per project and fill the account's snapshot storage (the "Hobby plan
+// usage limit exceeded for Snapshots Storage" error). Project files live in KingxTech's own
+// storage and are re-synced on start, so we only ever need the latest snapshot, and only
+// for a week.
+const SNAPSHOT_KEEP = { count: 1, expiration: 7 * 24 * 60 * 60 * 1000 };
+const snapshotPolicyApplied = new Set<string>();
+
 async function getSandbox(projectId: string): Promise<Sandbox> {
   const { Sandbox } = await loadSandboxModule();
-  return Sandbox.getOrCreate({
-    name: sandboxName(projectId),
+  const name = sandboxName(projectId);
+  const sandbox = await Sandbox.getOrCreate({
+    name,
     runtime: 'node24',
     timeout: SANDBOX_TIMEOUT_MS,
     ports: EXPOSED_PORTS,
+    snapshotExpiration: SNAPSHOT_KEEP.expiration,
+    keepLastSnapshots: SNAPSHOT_KEEP,
   });
+  if (!snapshotPolicyApplied.has(name)) {
+    // Sandboxes created before this change keep their old settings, so apply them once.
+    try {
+      await sandbox.update({ snapshotExpiration: SNAPSHOT_KEEP.expiration, keepLastSnapshots: SNAPSHOT_KEEP });
+      snapshotPolicyApplied.add(name);
+    } catch (error) {
+      console.error('Could not apply the sandbox snapshot limit:', error);
+    }
+  }
+  return sandbox;
 }
 
 async function syncFiles(userId: string, projectId: string, sandbox: Sandbox): Promise<ProjectFileContentForSandbox[]> {

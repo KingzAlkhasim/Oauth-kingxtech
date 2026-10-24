@@ -32,3 +32,9 @@ test('empty, object-like or stack-trace messages use the fallback', () => {
   assert.equal(friendlyError({ message: 'x'.repeat(400) }, 'Fallback'), 'Fallback');
   assert.equal(friendlyError({ message: 'Error at foo (/app/a.js:10:5)' }, 'Fallback'), 'Fallback');
 });
+
+test('runtime capacity errors are explained in plain words', () => {
+  const msg = friendlyError(new Error('Status code 402 is not ok: Hobby plan usage limit exceeded for Snapshots Storage. Limit will be reset on 2026-11-01T00:00:00.000Z.'));
+  assert.match(msg, /not a problem with your account/);
+  assert.doesNotMatch(msg, /Hobby/);
+});

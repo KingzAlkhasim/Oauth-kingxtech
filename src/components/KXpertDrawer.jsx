@@ -6,9 +6,10 @@ import { getBillingProfile } from '../lib/billing';
 import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import { friendlyError } from '../lib/errors';
+import { copyText } from '../lib/copyText';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
-  FileEdit, FolderPlus, FileX, Check, Undo2, Info, MoreHorizontal, ChevronDown, Globe } from 'lucide-react';
+  FileEdit, FolderPlus, FileX, Check, Undo2, Info, MoreHorizontal, ChevronDown, Globe, Copy } from 'lucide-react';
 
 const VIEW_LABELS = {
   '/welcome': 'Dashboard',
@@ -67,6 +68,27 @@ function StepLine({ step }) {
   );
 }
 
+// Small "Copy" button used on code blocks and under whole replies.
+function CopyButton({ text, label = 'Copy', className = '' }) {
+  const [state, setState] = useState('idle');
+  const onCopy = async () => {
+    const ok = await copyText(text);
+    setState(ok ? 'done' : 'failed');
+    setTimeout(() => setState('idle'), 1600);
+  };
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      aria-label={label}
+      className={`inline-flex items-center gap-1 min-h-8 px-2 rounded-md text-[10.5px] text-kxmist hover:text-white hover:bg-white/10 ${className}`}
+    >
+      {state === 'done' ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
+      {state === 'done' ? 'Copied' : state === 'failed' ? 'Could not copy' : label}
+    </button>
+  );
+}
+
 // Renders assistant text as markdown (bold, headers, lists, links, fenced
 // code blocks, tables, etc). Kept intentionally lightweight — no syntax
 // highlighter dependency — but styled to fit the drawer's dark theme.
@@ -112,30 +134,29 @@ function MarkdownMessage({ text }) {
             </th>
           ),
           td: ({ children }) => <td className="border border-white/10 px-2 py-1 align-top">{children}</td>,
-          code: ({ inline, className, children, ...props }) => {
-            const match = /language-(\w+)/.exec(className || '');
-            if (inline) {
-              return (
-                <code className="rounded bg-black/40 border border-white/10 px-1 py-[1px] font-mono text-[12px] text-green-300" {...props}>
-                  {children}
-                </code>
-              );
-            }
+          // Fenced blocks arrive as <pre><code>; inline `code` arrives as a bare <code>.
+          pre: ({ children }) => {
+            const child = Array.isArray(children) ? children[0] : children;
+            const className = child?.props?.className || '';
+            const lang = /language-(\w+)/.exec(className)?.[1];
+            const raw = String(child?.props?.children ?? '').replace(/\n$/, '');
             return (
               <div className="my-2 min-w-0 max-w-full rounded-lg border border-kxpurple/30 bg-black overflow-hidden">
-                {match && (
-                  <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-kxmist/60 border-b border-white/10">
-                    {match[1]}
-                  </div>
-                )}
+                <div className="flex items-center justify-between gap-2 pl-3 pr-1 border-b border-white/10">
+                  <span className="py-1 text-[10px] font-mono uppercase tracking-wider text-kxmist/60">{lang || 'code'}</span>
+                  <CopyButton text={raw} label="Copy code" />
+                </div>
                 <pre className="max-w-full px-3 py-2 overflow-x-auto">
-                  <code className="font-mono text-[12px] text-green-400 leading-relaxed" {...props}>
-                    {children}
-                  </code>
+                  <code className="font-mono text-[12px] text-green-400 leading-relaxed">{raw}</code>
                 </pre>
               </div>
             );
           },
+          code: ({ children, node, ...props }) => (
+            <code className="rounded bg-black/40 border border-white/10 px-1 py-[1px] font-mono text-[12px] text-green-300 break-words" {...props}>
+              {children}
+            </code>
+          ),
         }}
       >
         {text}
@@ -576,7 +597,10 @@ export default function KXpertDrawer() {
                   {m.role === 'user' || m.type === 'tool' ? (
                     <div className="whitespace-pre-wrap">{m.text}</div>
                   ) : (
-                    <MarkdownMessage text={m.text} />
+                    <>
+                      <MarkdownMessage text={m.text} />
+                      {m.text && <div className="mt-1 -ml-2"><CopyButton text={m.text} label="Copy reply" /></div>}
+                    </>
                   )}
 
                   {m.model && <div className="mt-1.5 text-[10px] opacity-40">{m.model.label}</div>}
