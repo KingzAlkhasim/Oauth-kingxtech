@@ -47,7 +47,7 @@ npm run dev
 
 ## License
 
-MIT. See `LICENSE`.
+Proprietary. All rights reserved. See `LICENSE`.
 
 
 Deployment health check: /health
