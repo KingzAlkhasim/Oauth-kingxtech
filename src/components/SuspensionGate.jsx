@@ -11,7 +11,7 @@ export default function SuspensionGate() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (OPEN_PATHS.includes(location.pathname)) return undefined;
+    if (OPEN_PATHS.includes(location.pathname) || location.pathname.startsWith('/docs')) return undefined;
     let alive = true;
     supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session || !alive) return;

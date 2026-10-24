@@ -19,6 +19,7 @@ import Admin from './pages/Admin';
 import Suspended from './pages/Suspended';
 import Restored from './pages/Restored';
 import Usage from './pages/Usage';
+import Docs from './pages/Docs';
 import AcceptTerms from './pages/AcceptTerms';
 import Terms from './pages/Terms';
 import SuspensionGate from './components/SuspensionGate';
@@ -69,6 +70,8 @@ export default function App() {
         <Route path="/restored" element={<Restored />} />
         <Route path="/terms/accept" element={<AcceptTerms />} />
         <Route path="/terms" element={<Terms />} />
+        <Route path="/docs" element={<Docs />} />
+        <Route path="/docs/:slug" element={<Docs />} />
       </Routes>
     </BrowserRouter>
   );

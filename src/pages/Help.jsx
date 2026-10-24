@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Mail, LifeBuoy } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
 import { Card, Button, Input, Badge } from '../components/ui';
@@ -104,7 +105,8 @@ export default function Help() {
           <div className="min-w-0"><h1 className="font-display text-2xl font-semibold">Help &amp; Support</h1><p className="text-kxmist text-sm mt-1">Find an answer or send a message to the KingxTech team.</p></div>
         </div>
         <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
-          <h2 className="font-display text-[16px] font-medium mb-4">Frequently asked questions</h2>
+          <h2 className="font-display text-[16px] font-medium mb-1">Frequently asked questions</h2>
+          <p className="text-kxmist text-[13px] mb-4">Looking for step-by-step guides? Read the <Link to="/docs" className="text-kxblue underline">documentation</Link>.</p>
           <div className="flex flex-col gap-4 text-[13px]">
             <div><p className="font-medium mb-1">How do I reset my password?</p><p className="text-kxmist leading-relaxed">Use “Forgot password” on the sign-in page and follow the secure link sent to your email.</p></div>
             <div><p className="font-medium mb-1">How do I protect my account?</p><p className="text-kxmist leading-relaxed">Open Account → Security to change your password or manage two-factor authentication.</p></div>
