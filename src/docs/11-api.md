@@ -23,6 +23,10 @@ A few words you will see on this page:
 4. Send a request from your server.
 5. Read the answer.
 
+## Building with K-XpertAI
+
+When you ask K-XpertAI to build something that uses this API, it already knows the address, the two endpoints, how the key works and what the errors mean, so you do not need to explain them. Tell it what you want the app to do. It will also warn you if a plan would expose your key. Other AI assistants can read the same facts at [kingxtech llms.txt](https://auth.kingxtech.name.ng/llms.txt).
+
 ## 1. Create a key
 
 1. Open [Console](/console) and go to **AI Lab**.

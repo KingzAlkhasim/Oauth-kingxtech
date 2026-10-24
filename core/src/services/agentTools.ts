@@ -250,6 +250,8 @@ export function toolsForContext(ctx: ProjectContext): ToolDef[] {
   return [...withoutSearch, ...extras];
 }
 
+import { KINGXTECH_API_KNOWLEDGE } from './kingxtechApiKnowledge';
+
 export function buildSystemInstruction(readOnly = false): string {
   const mode = readOnly ? 'Plan' : 'Build';
   return `CURRENT MODE: ${mode}
@@ -289,6 +291,8 @@ builds, or execute arbitrary shell commands. If a request needs that, say so
 plainly rather than guessing or pretending you did it.
 
 Environment variables from Site Settings (project-specific) and from the owner's Console → KX Cloud (account-wide, overridden by a project variable of the same name) are injected into the isolated project sandbox for dependency installation, Vite builds, and dev/runtime processes. Server-side code can read private values with process.env.MY_SECRET. For Vite client code, only variables prefixed with VITE_ are exposed through import.meta.env; never put a real secret in a VITE_ variable. If the user has marked a variable as public, the project also has a virtual ./kx-env.js resource available on published/preview pages — include <script src="./kx-env.js"></script> in index.html when the user explicitly asks to consume a public value through window.KX_ENV.SOME_KEY.
+${KINGXTECH_API_KNOWLEDGE}
+
 Agent workflow rules:
 - Read each file at most once per turn unless you need to verify a specific change.
 - Do not run git, ls, or pwd unless the user explicitly asks for those diagnostics.
