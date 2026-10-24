@@ -13,6 +13,7 @@ import { getHistoryFromDb, saveMessageToDb, deleteSessionHistory } from './servi
 import { touchSession, listSessions, deleteSession } from './services/sessions';
 import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi, REGISTRY } from './services/modelRegistry';
 import { resolveDefaultModelForTier } from './services/modelDefaults';
+import { resolveRoutedModel, normalizePreference, usageFraction } from './services/modelRouting';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, getUserTier, getAiUsageState, recordAiUsage, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { computeCostUsd } from './config/modelPricing';
 import { PLAN_LIMITS } from './config/planLimits';
@@ -410,7 +411,23 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   // models. Everything else (Gemini, Claude, GPT) needs a paid plan, since
   // it either costs KingxTech real money or is a premium third-party model.
   const usageTier = await getUserTier(userId);
-  if (!parsedRequest.explicitTag) model = resolveDefaultModelForTier(usageTier, REGISTRY);
+  if (!parsedRequest.explicitTag) {
+    model = resolveDefaultModelForTier(usageTier, REGISTRY);
+    if (usageTier !== 'free') {
+      // Model Router (Console → AI Lab). Any failure here keeps the safe default above.
+      try {
+        const enforced = env.AI_USAGE_MODE === 'enforce';
+        const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+        const preference = normalizePreference(authUser?.user?.user_metadata?.model_router_preference);
+        const fraction = enforced && preference !== 'free'
+          ? usageFraction(await getAiUsageState(userId), PLAN_LIMITS[usageTier], Date.now())
+          : 0;
+        model = resolveRoutedModel({ tier: usageTier, preference, usageFraction: fraction, enforced, models: REGISTRY });
+      } catch (routerError) {
+        console.error('Model router fell back to the default model:', routerError);
+      }
+    }
+  }
   if (model.minTier === 'pro_plus' && usageTier !== 'free' && !modelTierAllowed(usageTier, model.minTier)) {
     res.status(403).json({ success: false, code: 'model_requires_pro_plus', error: `${model.label} requires Pro+. Upgrade your plan to use this model.` }); return;
   }
