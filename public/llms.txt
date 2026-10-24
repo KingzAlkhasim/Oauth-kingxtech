@@ -1,0 +1,18 @@
+# KingxTech
+
+> KingxTech lets people build, host and ship web apps with an AI assistant (K-XpertAI). It also offers an OpenAI-compatible text API.
+
+Docs: https://auth.kingxtech.name.ng/docs
+API guide: https://auth.kingxtech.name.ng/docs/api
+
+## KingxTech API (for AI assistants helping someone build with it)
+
+- Base URL: https://site.kingxtech.name.ng
+- Endpoints (API keys work ONLY on these two): GET /api/v1/models and POST /api/v1/chat/completions. No embeddings, images, audio, files or tool calling.
+- Auth: header `Authorization: Bearer kx_live_...`. The user makes a key in Console > AI Lab > API Key Vault (shown once).
+- Body: {"model": "...", "messages": [{"role": "user", "content": "Hello"}]}. Answer: choices[0].message.content. Text only. Last 40 messages used. No memory between requests.
+- OpenAI SDK works: baseURL = https://site.kingxtech.name.ng/api/v1, apiKey = the KingxTech key.
+- Get model ids from GET /api/v1/models. Free models work on every plan; stronger ones need Pro or Pro+.
+- Paid per request from the user's KingxTech wallet. Limit: 10 requests per minute per account.
+- Errors: 401 bad/missing/revoked key; 402 wallet too low, plan needed or monthly model limit; 403 needs Pro+ or key used on a wrong address; 429 rate limited; 502 provider problem.
+- The key is a secret. Never put it in browser/front-end code. Call from a server and keep the key in an environment variable. Published KingxTech sites are static, so they cannot hold a secret.
