@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { env } from '../config/env';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { getAccountSuspension, isAllowedWhenSuspended } from '../services/accountSuspension';
+import { isAllowedForApiKey, API_KEY_SCOPE_MESSAGE } from '../services/apiKeyScope';
 
 export interface AuthedRequest extends Request {
   user?: { id: string; email?: string };
@@ -85,6 +86,10 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
 
   try {
     if (await tryApiKeyAuth(req, token)) {
+      if (!isAllowedForApiKey(req.originalUrl || req.path)) {
+        res.status(403).json({ success: false, code: 'api_key_scope', error: API_KEY_SCOPE_MESSAGE });
+        return;
+      }
       await continueUnlessSuspended(req, res, next);
       return;
     }
