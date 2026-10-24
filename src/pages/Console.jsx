@@ -473,9 +473,10 @@ function ModelRouter() {
   }, [user]);
 
   const options = [
-    { id: 'auto', label: 'Auto-Route', desc: 'Best model per request' },
-    { id: 'neurocore', label: 'NeuroCore Pro', desc: "KingxTech's fine-tuned model" },
-    { id: 'opensource', label: 'Open-Source Pool', desc: 'Free-tier community models' },
+    // Saved ids stay the same as before ('neurocore' and 'opensource') so nobody's choice is lost.
+    { id: 'auto', label: 'Auto-Route', desc: 'A strong model first, then cheaper ones as your allowance fills up. Free plan uses the free model.' },
+    { id: 'neurocore', label: 'Best quality', desc: 'Stays on the strongest model your plan allows for longer. Uses your allowance faster.' },
+    { id: 'opensource', label: 'Free models only', desc: 'Always uses free open-source models. Never uses your paid allowance.' },
   ];
 
   const save = async (id) => {
@@ -486,7 +487,7 @@ function ModelRouter() {
   };
 
   return (
-    <Section title="Model Router" desc="Default backend routing preference for K-XpertAI, once it's live. This choice is saved to your account for real.">
+    <Section title="Model Router" desc="Chooses which model K-XpertAI uses when you do not pick one yourself. If you pick a model in a message, that choice always wins.">
       <Notice notice={notice} />
       <div className="grid sm:grid-cols-3 gap-3">
         {options.map((o) => (

@@ -26,3 +26,13 @@ You can choose between models. Stronger models use more of your allowance. Your 
 ## Rules
 
 You may not use K-XpertAI to build malware, phishing pages, scams or anything else listed in the [Terms of Service](/terms). Requests that look like this are flagged for review, and accounts that keep doing it can be suspended.
+
+## Which AI model is used
+
+You can leave this to KingxTech. Open [Console](/console), go to **AI Lab** and find **Model Router**:
+
+- **Auto-Route:** on Pro and Pro+, K-XpertAI starts with a strong model. As your session or weekly allowance fills up it switches to cheaper models, and finally to a free one, so you can keep working instead of being stopped. The Free plan always uses the free model.
+- **Best quality:** keeps the strongest model your plan allows for longer. Your allowance runs out faster.
+- **Free models only:** always uses free open-source models and never touches your paid allowance.
+
+If you choose a model yourself in a message, your choice always wins. Your meters on the [Usage page](/usage) show how much of your allowance is left.
