@@ -4,6 +4,7 @@ import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input } from '../components/ui';
+import SiteAiCard from '../components/SiteAiCard';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
   previewUrl, publishProject, PublishError, getSiteViews, listSnapshots, saveSnapshot, restoreSnapshot, deleteSnapshot, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
@@ -733,6 +734,9 @@ function SiteSettingsTab({ projectId }) {
           <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
         </div>
       </Card>
+
+      <SettingsGroupLabel>AI</SettingsGroupLabel>
+      <SiteAiCard projectId={projectId} />
 
       <SettingsGroupLabel>Versions</SettingsGroupLabel>
       <RestorePointsCard projectId={projectId} />

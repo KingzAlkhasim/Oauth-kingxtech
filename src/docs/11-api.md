@@ -155,7 +155,7 @@ Errors come back as JSON with a readable `message`. The number tells you the kin
 
 Common mistakes:
 - Copying the key with a space or line break at the end.
-- Calling the API from browser code, which exposes your key.
+- Calling the API from browser code, which exposes your key. To add AI to a site published on KingxTech, use [AI for your site](/docs/ai-for-your-site) instead.
 - Forgetting to send earlier messages and expecting the AI to remember them.
 
 Still stuck? [Contact support](/help).

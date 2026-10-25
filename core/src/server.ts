@@ -14,6 +14,8 @@ import { touchSession, listSessions, deleteSession } from './services/sessions';
 import { parseModelTag, listModelsForClient, tagForModel, findModelForApi, listModelsForApi, REGISTRY } from './services/modelRegistry';
 import { resolveDefaultModelForTier } from './services/modelDefaults';
 import { resolveRoutedModel, normalizePreference, usageFraction } from './services/modelRouting';
+import { getSiteAiSettings, saveSiteAiSettings, getProjectOwnerAndHosts, takeDailyRequest, visitorWithinRate, SiteAiError } from './services/siteAi';
+import { cleanVisitorMessages, originAllowed, buildSiteAiPrompt } from './services/siteAiPolicy';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, getUserTier, getAiUsageState, recordAiUsage, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { computeCostUsd } from './config/modelPricing';
 import { PLAN_LIMITS } from './config/planLimits';
@@ -60,7 +62,7 @@ import { getAccountSuspension, isProjectOwnerSuspended, forgetSuspensionCache } 
 import { createAccountExport } from './services/accountExport';
 import { scanPromptInBackground, scanPublishedProjectInBackground } from './services/abuseFlags';
 import { DomainError, getProjectIdByCustomDomain, addCustomDomain, verifyCustomDomain, removeCustomDomain } from './services/customDomains';
-import { getProjectRole, assertProjectRole } from './services/projectCollaboration';
+import { getProjectRole, assertProjectRole, ProjectRoleError } from './services/projectCollaboration';
 import { authorizeProjectAi } from './services/projectCollaborationLogic';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
@@ -116,6 +118,10 @@ async function handleFsError(res: express.Response, error: unknown) {
   if (error instanceof ProjectAccessError) {
     // Expected access-control rejection, not a bug — no Sentry report.
     res.status(403).json({ success: false, error: error.message });
+    return;
+  }
+  if (error instanceof SiteAiError) {
+    res.status(error.status).json({ success: false, error: error.message });
     return;
   }
   if (error instanceof SnapshotError) {
@@ -357,6 +363,93 @@ app.post('/api/v1/chat/completions', requireAuth, rateLimit, async (req: AuthedR
     res.json(responseBody);
   } catch (error) {
     await reportError(res, 502, 'AI provider request failed', error, 'Public API generation error:');
+  }
+});
+
+
+// --- AI for your site (public chatbot endpoint) ---------------------------
+// The owner turns it on in Site Settings. The site's own JavaScript calls
+// POST /api/public/ai/<projectId>/chat with no key; the backend uses the owner's
+// account, so the key never appears in the page. Limits: same-site origin only,
+// a daily cap, a per-visitor rate, and the owner's wallet (checked every time).
+app.get('/api/projects/:projectId/ai', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await assertProjectRole(req.user!.id, req.params.projectId, 'owner');
+    const tier = await getUserTier(req.user!.id);
+    const models = REGISTRY
+      .filter((m) => modelTierAllowed(tier, m.minTier) && (!m.requiresPaidPlan || tier !== 'free'))
+      .map((m) => ({ code: m.code, label: m.label, costUsd: Math.round(m.creditCost * 0.01 * 100) / 100 }));
+    res.json({ success: true, settings: await getSiteAiSettings(req.params.projectId), models });
+  } catch (error) {
+    if (error instanceof ProjectRoleError) { res.status(403).json({ success: false, error: error.message }); return; }
+    await handleFsError(res, error);
+  }
+});
+
+app.put('/api/projects/:projectId/ai', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const settings = await saveSiteAiSettings(req.user!.id, req.params.projectId, req.body);
+    const model = findModelForApi(settings.modelCode);
+    if (settings.enabled && !model) throw new SiteAiError('Unknown model. Pick one from the list.');
+    res.json({ success: true, settings });
+  } catch (error) {
+    if (error instanceof ProjectRoleError) { res.status(403).json({ success: false, error: error.message }); return; }
+    await handleFsError(res, error);
+  }
+});
+
+app.post('/api/public/ai/:projectId/chat', async (req, res) => {
+  const unavailable = (status: number, message: string) => res.status(status).json({ success: false, error: message });
+  const projectId = req.params.projectId;
+  try {
+    if (!/^[0-9a-f-]{36}$/i.test(projectId)) { unavailable(404, 'Not found.'); return; }
+    const settings = await getSiteAiSettings(projectId);
+    if (!settings.enabled) { unavailable(404, 'Not found.'); return; }
+
+    const owner = await getProjectOwnerAndHosts(projectId);
+    if (!owner) { unavailable(404, 'Not found.'); return; }
+    if (!originAllowed(req.headers.origin as string | undefined, req.headers.host, owner.customHosts)) {
+      unavailable(403, 'This chatbot can only be used from its own website.'); return;
+    }
+
+    const forwarded = String(req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+    if (!visitorWithinRate(`${projectId}:${forwarded}`)) { unavailable(429, 'You are sending messages too fast. Wait a moment and try again.'); return; }
+
+    const cleaned = cleanVisitorMessages(req.body?.messages);
+    if (!cleaned.ok) { unavailable(400, cleaned.error); return; }
+
+    if ((await getAccountSuspension(owner.ownerId)).suspended) { unavailable(503, 'This chatbot is not available right now.'); return; }
+
+    const model = findModelForApi(settings.modelCode);
+    const ownerTier = await getUserTier(owner.ownerId);
+    if (!model || (model.requiresPaidPlan && ownerTier === 'free') || !modelTierAllowed(ownerTier, model.minTier)) {
+      console.error('[site-ai] model not allowed for owner', { projectId, model: settings.modelCode, ownerTier });
+      unavailable(503, 'This chatbot is not available right now.'); return;
+    }
+    if (model.requestCap) {
+      const cap = await checkModelRequestCap(owner.ownerId, model.code, model.requestCap);
+      if (!cap.ok) { unavailable(503, 'This chatbot is not available right now.'); return; }
+    }
+
+    if (!(await takeDailyRequest(projectId, settings.dailyLimit))) {
+      unavailable(429, 'This chatbot has reached its limit for today. Please come back tomorrow.'); return;
+    }
+
+    const charge = await chargeUserByApiKey(owner.ownerId, model.creditCost * 0.01);
+    if (!charge.allowed) {
+      console.error('[site-ai] owner wallet too low', { projectId });
+      unavailable(503, 'This chatbot is not available right now.'); return;
+    }
+
+    const messages = cleaned.messages;
+    const history: AgentTurn[] = messages.slice(0, -1).map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', text: m.text }));
+    const prompt = buildSiteAiPrompt(settings.systemPrompt, messages[messages.length - 1].text);
+    const result = await generateContent(prompt, model.provider, model.modelId, history, { userId: owner.ownerId, publicApi: true });
+    await logUsage(owner.ownerId, model.provider, model.code, model.creditCost, projectId);
+    res.json({ success: true, reply: result.text });
+  } catch (error) {
+    console.error('[site-ai] request failed:', error);
+    unavailable(502, 'The chatbot could not answer right now. Please try again.');
   }
 });
 
