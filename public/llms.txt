@@ -17,3 +17,4 @@ API guide: https://auth.kingxtech.name.ng/docs/api
 - Errors: 401 bad/missing/revoked key; 402 wallet too low, plan needed or monthly model limit; 403 needs Pro+ or key used on a wrong address; 429 rate limited; 502 provider problem.
 - The key is a secret. Never put it in browser/front-end code. Call from a server and keep the key in an environment variable. Published KingxTech sites are static, so they cannot hold a secret.
 - KingxTech does not run server code or serverless functions for published sites, so do not create functions/ or api/ folders expecting them to run.
+- To add AI to a site published on KingxTech, use the project's "AI for your site" feature (Site Settings > AI): the page calls POST /api/public/ai/<projectId>/chat with {"messages":[...]} and no key, and reads `reply`. The owner pays from their wallet; there is a daily limit.

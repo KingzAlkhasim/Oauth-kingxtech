@@ -168,3 +168,19 @@ export const listSnapshots = (projectId) => snapshotCall(projectId, '');
 export const saveSnapshot = (projectId, label) => snapshotCall(projectId, '', 'POST', { label });
 export const restoreSnapshot = (projectId, snapshotId) => snapshotCall(projectId, `/${encodeURIComponent(snapshotId)}/restore`, 'POST');
 export const deleteSnapshot = (projectId, snapshotId) => snapshotCall(projectId, `/${encodeURIComponent(snapshotId)}`, 'DELETE');
+
+// AI for your site (public chatbot endpoint settings).
+async function siteAiCall(projectId, method = 'GET', body) {
+  const headers = await authHeaders(method !== 'GET');
+  let res;
+  try {
+    res = await fetch(apiUrl(`/api/projects/${projectId}/ai`), { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch (err) {
+    throw new Error(err?.message || 'Failed to fetch');
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) throw new Error(data?.error || 'Something went wrong with AI for your site.');
+  return data;
+}
+export const getSiteAi = (projectId) => siteAiCall(projectId);
+export const saveSiteAi = (projectId, settings) => siteAiCall(projectId, 'PUT', settings);
