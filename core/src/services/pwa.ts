@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import sharp from 'sharp';
 import { assertProjectOwnership, getProjectOwnerId, hasPublishedBuild, readPublishedBuildFile, readProjectFilePublic } from './projectFs';
 import { getUserPlan } from './credits';
+import { buildInitialIconPng } from './siteIcon';
 
 export interface ProjectPwaConfig {
   name: string;
@@ -134,19 +135,19 @@ export async function removeProjectPwaIcon(userId: string, projectId: string): P
 
 export async function getProjectPwaIconPng(projectId: string, size: 192 | 512): Promise<Buffer> {
   const config = await getProjectPwaConfig(projectId);
-  if (!config?.pwaIconPath) return buildPwaIconPng(size);
+  if (!config?.pwaIconPath) return buildInitialIconPng(size, config?.name ?? '');
   const ownerId = await getProjectOwnerId(projectId);
-  if (!ownerId || await getUserPlan(ownerId) !== 'paid') return buildPwaIconPng(size);
+  if (!ownerId || await getUserPlan(ownerId) !== 'paid') return buildInitialIconPng(size, config?.name ?? '');
 
   const { data, error } = await supabaseAdmin.storage.from(PWA_ICON_BUCKET).download(config.pwaIconPath);
-  if (error || !data) return buildPwaIconPng(size);
+  if (error || !data) return buildInitialIconPng(size, config?.name ?? '');
   try {
     const source = Buffer.from(await data.arrayBuffer());
     await validatePwaIcon(source);
     return await sharp(source).resize(size, size, { fit: 'cover' }).png().toBuffer();
   } catch (error) {
     console.error('Failed to render custom PWA icon, using default:', error);
-    return buildPwaIconPng(size);
+    return buildInitialIconPng(size, config?.name ?? '');
   }
 }
 

@@ -52,6 +52,7 @@ import {
   readPublishedBuildFile,
 } from './services/projectFs';
 import { buildProjectForPublish } from './services/projectRuntime';
+import { hasFaviconLink } from './services/siteIcon';
 import { getProjectPwaConfig, setProjectPwaEnabled, getProjectPwaColors, buildPwaManifest, buildPwaServiceWorker, getProjectPwaIconPublicUrl, getProjectPwaIconPng, uploadProjectPwaIcon, removeProjectPwaIcon, PwaIconError } from './services/pwa';
 import { warnFlagOwner, WarningError } from './services/abuseWarning';
 import { getUserStorage, StorageFullError } from './services/storageUsage';
@@ -1361,16 +1362,23 @@ async function injectPwaHtml(projectId: string, content: string): Promise<string
   const config = await getProjectPwaConfig(projectId);
   const marker = '<!-- KX-PWA -->';
   const cleaned = content.replace(new RegExp('\\s*' + marker + '[\\s\\S]*?' + marker + '\\s*', 'g'), '');
-  if (!config?.enabled || !/<html[\s>]/i.test(cleaned)) return cleaned;
+  // Every site gets a favicon, so browsers do not show a blank placeholder. A site's own icon wins.
+  const faviconMarker = '<!-- KX-FAVICON -->';
+  const withoutFavicon = cleaned.replace(new RegExp('\\s*' + faviconMarker + '[\\s\\S]*?' + faviconMarker + '\\s*', 'g'), '');
+  let page = withoutFavicon;
+  if (/<html[\s>]/i.test(withoutFavicon) && /<\/head>/i.test(withoutFavicon) && !hasFaviconLink(withoutFavicon)) {
+    page = withoutFavicon.replace(/<\/head>/i, () => faviconMarker + '\n<link rel="icon" type="image/png" href="./kx-favicon.png">\n' + faviconMarker + '</head>');
+  }
+  if (!config?.enabled || !/<html[\s>]/i.test(page)) return page;
 
   const ownerId = await getProjectOwnerId(projectId);
   const plan = ownerId ? await getUserPlan(ownerId) : undefined;
   const customIconUrl = await getProjectPwaIconPublicUrl(projectId, config, ownerId, plan);
-  const hasThemeColor = /<meta\s+[^>]*name=["']theme-color["'][^>]*>/i.test(cleaned);
+  const hasThemeColor = /<meta\s+[^>]*name=["']theme-color["'][^>]*>/i.test(page);
   const withoutOldAppleIcon = customIconUrl
-    ? cleaned.replace(/<link\s+[^>]*rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*>/gi, '')
-    : cleaned;
-  const htmlWithIcon = customIconUrl ? withoutOldAppleIcon : cleaned;
+    ? page.replace(/<link\s+[^>]*rel=["'][^"']*apple-touch-icon[^"']*["'][^>]*>/gi, '')
+    : page;
+  const htmlWithIcon = customIconUrl ? withoutOldAppleIcon : page;
   const snippet = marker + '\n'
     + '<link rel="manifest" href="./manifest.webmanifest">\n'
     + (customIconUrl ? '<link rel="apple-touch-icon" href="./pwa-icon-192.png">\n' : '')
@@ -1401,6 +1409,11 @@ async function servePreview(res: express.Response, projectId: string, requestedP
   if (filePath === '') filePath = 'index.html';
 
   const pwaConfig = await getProjectPwaConfig(projectId);
+  if (filePath === 'kx-favicon.png') {
+    res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+    res.type('image/png').send(await getProjectPwaIconPng(projectId, 192));
+    return;
+  }
   if (
     filePath === 'manifest.webmanifest' ||
     filePath === 'sw.js' ||

@@ -7,6 +7,7 @@ import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import { friendlyError } from '../lib/errors';
 import { copyText } from '../lib/copyText';
+import { looksLikeCode, fencePastedCode } from '../lib/codePaste';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
   FileEdit, FolderPlus, FileX, Check, Undo2, Info, MoreHorizontal, ChevronDown, Globe, Copy } from 'lucide-react';
@@ -594,12 +595,12 @@ export default function KXpertDrawer() {
                     </div>
                   )}
 
-                  {m.role === 'user' || m.type === 'tool' ? (
+                  {m.type === 'tool' || (m.role === 'user' && !m.text?.includes('```')) ? (
                     <div className="whitespace-pre-wrap">{m.text}</div>
                   ) : (
                     <>
                       <MarkdownMessage text={m.text} />
-                      {m.text && <div className="mt-1 -ml-2"><CopyButton text={m.text} label="Copy reply" /></div>}
+                      {m.text && m.role !== 'user' && <div className="mt-1 -ml-2"><CopyButton text={m.text} label="Copy reply" /></div>}
                     </>
                   )}
 
@@ -645,12 +646,32 @@ export default function KXpertDrawer() {
 
             <form onSubmit={send} className="kxpert-composer shrink-0 flex items-end gap-2 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
               {activeTag && <span className="kxpert-active-tag" title="Model selected for this conversation">{models.find((m) => m.tag === activeTag)?.label || activeTag}</span>}
-              <input
+              <textarea
                 value={message}
+                rows={1}
+                style={message ? undefined : { height: 'auto' }}
                 onChange={(e) => setMessage(e.target.value)}
+                onInput={(e) => { e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`; }}
+                onPaste={(e) => {
+                  // Pasted code keeps its lines and goes into a code block.
+                  const pasted = e.clipboardData?.getData('text') || '';
+                  if (!looksLikeCode(pasted)) return;
+                  e.preventDefault();
+                  const box = e.currentTarget;
+                  const start = box.selectionStart ?? message.length;
+                  const end = box.selectionEnd ?? message.length;
+                  const before = message.slice(0, start);
+                  const lead = before && !before.endsWith('\n') ? '\n' : '';
+                  setMessage(before + lead + fencePastedCode(pasted) + message.slice(end));
+                }}
+                onKeyDown={(e) => {
+                  // Computer: Enter sends, Shift+Enter adds a line. Phone: Enter adds a line, the arrow sends.
+                  const phone = window.matchMedia?.('(pointer: coarse)').matches;
+                  if (e.key === 'Enter' && !e.shiftKey && !phone) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); }
+                }}
                 placeholder={isLoading ? 'Working...' : mode === 'plan' ? 'Describe what you want to plan…' : 'Ask K-XpertAI to build…'}
                 disabled={isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))}
-                className="kxpert-message-input flex-1 min-w-0 bg-white/[0.02] border border-white/12 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-kxblue"
+                className="kxpert-message-input flex-1 min-w-0 resize-none max-h-40 bg-white/[0.02] border border-white/12 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-kxblue"
               />
               <button type="submit" disabled={isLoading || ((usage?.tier === 'free' || usage?.enforced) && (usage?.sessionPercent >= 100 || usage?.weekPercent >= 100))} className="w-11 h-11 rounded-lg bg-kx-gradient flex items-center justify-center shrink-0 disabled:opacity-40" aria-label="Send message">
                 <Send size={15} />
