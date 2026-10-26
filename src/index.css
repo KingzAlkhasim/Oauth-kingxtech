@@ -100,3 +100,7 @@ input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #0F172A inset; -webkit
   .kxpert-chip { max-width:58%; }
   .kxpert-composer { padding-left:8px; padding-right:8px; }
 }
+
+/* K-XpertAI docked beside the page on wide screens: the page makes room and stays usable. */
+body { transition: padding-right .2s ease; }
+html.kxpert-docked body { padding-right: 24rem; }

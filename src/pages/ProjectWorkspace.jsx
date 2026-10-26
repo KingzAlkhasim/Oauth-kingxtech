@@ -820,6 +820,29 @@ export default function ProjectWorkspace() {
   const folderInputRef = useRef(null);
   const uploadInputRef = useRef(null);
 
+  // Live "AI is writing" view: K-XpertAI announces each file it writes and the
+  // editor opens it and types the code in, like watching an agent in VS Code.
+  const [aiTyping, setAiTyping] = useState(false);
+  const [followAi, setFollowAi] = useState(() => {
+    try { return localStorage.getItem('kx_follow_ai') !== '0'; } catch { return true; }
+  });
+  const followRef = useRef(followAi);
+  const selectedPathRef = useRef(null);
+  const dirtyRef = useRef(false);
+  const aiTypingRef = useRef(false);
+  const typingQueueRef = useRef(Promise.resolve());
+  const typingJobsRef = useRef(0);
+  const aliveRef = useRef(true);
+  const editorViewRef = useRef(null);
+  followRef.current = followAi;
+  dirtyRef.current = dirty;
+  const toggleFollowAi = () => setFollowAi((v) => {
+    const next = !v;
+    try { localStorage.setItem('kx_follow_ai', next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
+  useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; }; }, []);
+
   const toggleFolder = (path) => {
     setCollapsedFolders((prev) => {
       const next = new Set(prev);
@@ -881,16 +904,66 @@ export default function ProjectWorkspace() {
       if (e.detail?.projectId !== projectId) return;
       refreshFiles();
       if (tab === 'preview') setPreviewKey((k) => k + 1);
-      if (selectedPath) openFile(selectedPath); // keep the open file's content current
+      // keep the open file's content current, unless the AI is still typing it or the user has unsaved edits
+      if (selectedPath && !aiTypingRef.current && !dirtyRef.current) openFile(selectedPath);
     };
     window.addEventListener('kxpert:files-changed', handler);
     return () => window.removeEventListener('kxpert:files-changed', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, refreshFiles, tab, selectedPath]);
 
+  // Types `next` into the editor over ~1.5s (never longer), then settles on the exact text.
+  const typeIntoEditor = useCallback(async (path, next) => {
+    setTab('editor');
+    setMobileView('workspace');
+    selectedPathRef.current = path;
+    setSelectedPath(path);
+    setDirty(false);
+    if (next.length > 60000) { setContent(next); return; }
+    setContent('');
+    const frames = 90; // ~1.5s at 60fps
+    const step = Math.max(24, Math.ceil(next.length / frames));
+    for (let i = step; i < next.length; i += step) {
+      if (!aliveRef.current || !followRef.current) break;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      setContent(next.slice(0, i));
+      const scroller = editorViewRef.current?.scrollDOM;
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    }
+    if (aliveRef.current) { setContent(next); setDirty(false); }
+  }, []);
+
+  useEffect(() => {
+    const onWritten = (e) => {
+      const { projectId: pid, path, content: next } = e.detail || {};
+      if (pid !== projectId || typeof path !== 'string' || typeof next !== 'string') return;
+      refreshFiles();
+      if (!followRef.current) return;
+      // never pull the user away from a file they have unsaved edits in
+      if (dirtyRef.current && selectedPathRef.current !== path) return;
+      typingJobsRef.current += 1;
+      aiTypingRef.current = true;
+      setAiTyping(true);
+      typingQueueRef.current = typingQueueRef.current
+        .then(() => typeIntoEditor(path, next))
+        .catch(() => {})
+        .finally(() => {
+          typingJobsRef.current -= 1;
+          if (typingJobsRef.current <= 0) {
+            typingJobsRef.current = 0;
+            aiTypingRef.current = false;
+            if (aliveRef.current) setAiTyping(false);
+          }
+        });
+    };
+    window.addEventListener('kxpert:file-written', onWritten);
+    return () => window.removeEventListener('kxpert:file-written', onWritten);
+  }, [projectId, refreshFiles, typeIntoEditor]);
+
   const openFile = async (path) => {
     try {
       const file = await readFile(projectId, path);
+      selectedPathRef.current = path;
       setSelectedPath(path);
       setContent(file.content ?? '');
       setDirty(false);
@@ -1416,10 +1489,20 @@ export default function ProjectWorkspace() {
               <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                 <div className="min-w-0">
                   <span className="block text-[12.5px] md:text-[13px] font-mono text-kxmist truncate">{selectedPath}</span>
+                  {aiTyping && <span role="status" className="block text-[11px] text-kxpurple animate-pulse">K-XpertAI is writing…</span>}
                   {selectedIsAssetPreview && <span className="text-[11px] text-kxmist">{mimeForPath(selectedPath)} · {formatFileSize(selectedSize)}</span>}
                 </div>
                 {!selectedIsAssetPreview && (
                   <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={toggleFollowAi}
+                      aria-pressed={followAi}
+                      title="When on, the editor opens each file K-XpertAI writes and shows the code as it is typed"
+                      className={`min-h-9 px-2.5 rounded-lg border text-[12px] ${followAi ? 'border-kxpurple/40 text-kxpurple bg-kxpurple/10' : 'border-white/12 text-kxmist'}`}
+                    >
+                      Follow AI: {followAi ? 'on' : 'off'}
+                    </button>
                     <Button onClick={undoFile} disabled={isUndoing} variant="ghost" className="flex items-center gap-1.5">
                       <Undo2 size={14} /> <span className="hidden sm:inline">{isUndoing ? 'Undoing…' : 'Undo'}</span>
                     </Button>
@@ -1447,7 +1530,7 @@ export default function ProjectWorkspace() {
                 </div>
               ) : (
                 <div className="flex-1 min-h-0 overflow-hidden rounded-lg border border-white/10">
-                  <CodeMirror value={content} height="100%" theme={vscodeDark} extensions={languageForPath(selectedPath) ? [languageForPath(selectedPath)] : []} onChange={(value) => { setContent(value); setDirty(true); }} basicSetup={{ foldGutter: true, highlightActiveLine: true }} style={{ height: '100%', fontSize: '13px' }} />
+                  <CodeMirror value={content} height="100%" theme={vscodeDark} readOnly={aiTyping} onCreateEditor={(view) => { editorViewRef.current = view; }} extensions={languageForPath(selectedPath) ? [languageForPath(selectedPath)] : []} onChange={(value) => { if (aiTypingRef.current) return; setContent(value); setDirty(true); }} basicSetup={{ foldGutter: true, highlightActiveLine: true }} style={{ height: '100%', fontSize: '13px' }} />
                 </div>
               )}
             </>
