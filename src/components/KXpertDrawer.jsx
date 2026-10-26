@@ -170,8 +170,25 @@ function MarkdownMessage({ text }) {
 function resetLabel(value){if(!value)return 'reset time unavailable';const ms=new Date(value).getTime()-Date.now();if(ms<=0)return 'resetting soon';if(ms<86400000){const mins=Math.floor(ms/60000);return `resets in ${Math.floor(mins/60)}h ${mins%60}m`;}return `resets ${new Date(value).toLocaleDateString()}`;}
 function UsageBar({label,percent,resetsAt}){const value=Math.max(0,Math.min(100,Number(percent)||0));return <div className="min-w-0"><div className="flex items-center justify-between gap-2 text-[11px] mb-1"><span className="text-kxmist">{label}</span><span className="text-white tabular-nums">{value}%</span></div><div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden"><div className={`h-full rounded-full ${value>=100?'bg-red-400':value>=80?'bg-amber-400':'bg-kxblue'}`} style={{width:`${value}%`}}/></div><p className="text-[10px] text-kxmist/80 mt-1">{resetLabel(resetsAt)}</p></div>}
 
+const DOCK_QUERY = '(min-width: 1024px)';
+
 export default function KXpertDrawer() {
   const [open, setOpen] = useState(false);
+  // On wide screens the drawer docks beside the page (the page shrinks and stays
+  // clickable). On small screens there is no room, so it overlays like before.
+  const [docked, setDocked] = useState(() => typeof window !== 'undefined' && window.matchMedia(DOCK_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(DOCK_QUERY);
+    const onChange = () => setDocked(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  useEffect(() => {
+    if (!open || !docked) return undefined;
+    document.documentElement.classList.add('kxpert-docked');
+    return () => document.documentElement.classList.remove('kxpert-docked');
+  }, [open, docked]);
   const [balance, setBalance] = useState(null);
   const [message, setMessage] = useState('');
   const [history, setHistory] = useState([]);
@@ -344,6 +361,7 @@ export default function KXpertDrawer() {
             setLiveSteps((s) => [...s, { tool: 'status', status: 'ok', summary: payload.label }]);
           } else if (payload.type === 'step') {
             setLiveSteps((s) => [...s, payload.step]);
+            announceStep(payload.step);
           } else if (payload.type === 'done') {
             finalPayload = payload;
           } else if (payload.type === 'error') {
@@ -382,6 +400,19 @@ export default function KXpertDrawer() {
       refreshUsage();
       setIsLoading(false);
       setLiveSteps([]);
+    }
+  };
+
+  // Tell the workspace what the AI just did, so it can open the file and show
+  // the code being written instead of waiting for the whole turn to finish.
+  const announceStep = (step) => {
+    if (!activeProjectId || step?.status !== 'ok') return;
+    if (step.tool === 'writeProjectFile' && typeof step.args?.path === 'string' && typeof step.args?.content === 'string') {
+      window.dispatchEvent(new CustomEvent('kxpert:file-written', {
+        detail: { projectId: activeProjectId, path: step.args.path, content: step.args.content },
+      }));
+    } else if (step.tool === 'createProjectFolder' || step.tool === 'deleteProjectFile') {
+      window.dispatchEvent(new CustomEvent('kxpert:files-changed', { detail: { projectId: activeProjectId, live: true } }));
     }
   };
 
@@ -461,15 +492,15 @@ export default function KXpertDrawer() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-30 w-12 h-12 rounded-full bg-kx-gradient flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
+        className={`fixed bottom-6 right-6 z-30 w-12 h-12 rounded-full bg-kx-gradient items-center justify-center shadow-lg hover:scale-105 transition-transform ${open && docked ? 'hidden' : 'flex'}`}
         aria-label="Open K-XpertAI"
       >
         <Sparkles size={18} />
       </button>
 
       {open && (
-        <div className="kxpert-overlay fixed inset-0 z-40 flex justify-end">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+        <div className={`kxpert-overlay fixed z-40 flex justify-end ${docked ? 'top-0 right-0 bottom-0' : 'inset-0'}`}>
+          {!docked && <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />}
           <section className="kxpert-drawer relative w-full max-w-sm h-[100dvh] bg-kxsurface border-l border-white/10 flex flex-col min-w-0" aria-label="K-XpertAI chat">
             <header className="kxpert-header flex items-center justify-between gap-2 px-3 border-b border-white/8 shrink-0">
               <div className="flex items-center gap-1.5 min-w-0">
