@@ -5,7 +5,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import useCurrentUser from '../lib/useCurrentUser';
 import { supabase } from '../lib/supabase';
 import { API_BASE } from '../lib/apiBase';
-import { Card, Button, Input, Badge, ExpandableList } from '../components/ui';
+import { Card, Button, Input, Badge, ExpandableList, SkeletonRows, SkeletonLines, Skeleton } from '../components/ui';
 import { listApiKeys, createApiKey, revokeApiKey, deleteApiKey } from '../lib/apiKeys';
 import { listWebhooks, createWebhook, toggleWebhook, deleteWebhook, WEBHOOK_EVENTS } from '../lib/webhooks';
 import { getLinkedIdentities, findIdentity, linkProvider, unlinkProvider } from '../lib/identities';
@@ -192,7 +192,7 @@ function GithubPushTab() {
     >
       <Notice error={error} />
 
-      {connected === null && <p className="text-[13px] text-kxmist">Loading…</p>}
+      {connected === null && <SkeletonRows rows={1} />}
 
       {connected === false && (
         <div className="flex items-end gap-3 flex-wrap">
@@ -292,7 +292,7 @@ function AiUsageCard() {
         {tierLabel === 'Free' && <a href="/billing" className="inline-flex min-h-[44px] items-center justify-center rounded-lg px-3 text-[12.5px] font-medium bg-kx-gradient text-white">Upgrade to Pro</a>}
       </div>
       {error && <p className="text-[12px] text-kxmist mb-3">{error}</p>}
-      {!usage && !error && <p className="text-[13px] text-kxmist">Loading usage…</p>}
+      {!usage && !error && <SkeletonLines lines={3} label="Loading usage" />}
       <div className="grid sm:grid-cols-2 gap-4">
         {bars.map((item) => {
           const percent = Math.max(0, Math.min(100, Number(item.percent) || 0));
@@ -426,7 +426,7 @@ function ApiKeyVault() {
         </div>
       )}
 
-      {keys === null && <p className="text-sm text-kxmist">Loading…</p>}
+      {keys === null && <SkeletonRows rows={2} label="Loading keys" />}
 
       {keys !== null && (
         <div className="flex flex-col gap-2.5 mb-5">
@@ -634,7 +634,7 @@ function WebhookManager() {
       <Notice error={error && error !== 'SETUP' ? error : ''} />
 
       <div className="flex flex-col gap-2.5 mb-5">
-        {hooks === null && <p className="text-sm text-kxmist">Loading…</p>}
+        {hooks === null && <SkeletonRows rows={2} label="Loading webhooks" />}
         {hooks !== null && hooks.length === 0 && <p className="text-[13px] text-kxmist">No webhooks configured.</p>}
         {hooks?.map((h) => (
           <div key={h.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3.5">
@@ -714,7 +714,7 @@ function CommunityTab() {
     refresh();
   };
 
-  if (!stats) return <Section title="Community"><p className="text-sm text-kxmist">Loading…</p></Section>;
+  if (!stats) return <Section title="Community"><SkeletonLines lines={3} label="Loading community" /></Section>;
 
   return (
     <>
@@ -831,7 +831,7 @@ function EnvVarsSubTab() {
       <Notice error={error && error !== 'SETUP' ? error : ''} />
 
       <div className="flex flex-col gap-2.5 mb-5">
-        {vars === null && <p className="text-sm text-kxmist">Loading…</p>}
+        {vars === null && <SkeletonRows rows={2} label="Loading variables" />}
         {vars !== null && vars.length === 0 && <p className="text-[13px] text-kxmist">No variables yet. Add your first one below.</p>}
         {vars?.map((v) => (
           <div key={v.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">

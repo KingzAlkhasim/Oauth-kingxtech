@@ -231,8 +231,68 @@ export function OTPInput({ length = 6, onChange }) {
   );
 }
 
+/** A single shimmering placeholder block. Decorative, so it is hidden from screen readers. */
 export function Skeleton({ className = '' }) {
-  return <div className={`rounded-md bg-white/5 relative overflow-hidden ${className}`}>
+  return <div aria-hidden="true" className={`${/\brounded/.test(className) ? '' : 'rounded-md'} bg-white/5 relative overflow-hidden ${className}`}>
     <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/10 to-transparent" />
   </div>;
+}
+
+function Busy({ label, className = '', children }) {
+  return (
+    <div role="status" aria-busy="true" className={className}>
+      <span className="sr-only">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** A few lines of text, for short values and descriptions. */
+export function SkeletonLines({ lines = 2, label = 'Loading', className = '' }) {
+  const widths = ['w-full', 'w-4/5', 'w-3/5'];
+  return (
+    <Busy label={label} className={`flex flex-col gap-2.5 ${className}`}>
+      {Array.from({ length: lines }, (_, i) => <Skeleton key={i} className={`h-3.5 ${widths[i % widths.length]}`} />)}
+    </Busy>
+  );
+}
+
+/** List rows (activity, tickets, keys, variables...). `avatar` adds the round icon on the left. */
+export function SkeletonRows({ rows = 3, avatar = false, label = 'Loading', className = '' }) {
+  return (
+    <Busy label={label} className={`flex flex-col gap-2.5 ${className}`}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5">
+          {avatar && <Skeleton className="w-8 h-8 rounded-full shrink-0" />}
+          <div className="flex-1 min-w-0 flex flex-col gap-2">
+            <Skeleton className="h-3.5 w-2/5" />
+            <Skeleton className="h-3 w-3/4" />
+          </div>
+          <Skeleton className="h-3 w-14 shrink-0 hidden sm:block" />
+        </div>
+      ))}
+    </Busy>
+  );
+}
+
+/** Card grid, shaped like the project cards. */
+export function SkeletonCards({ count = 4, label = 'Loading', className = '' }) {
+  return (
+    <Busy label={label} className={`grid sm:grid-cols-2 gap-5 ${className}`}>
+      {Array.from({ length: count }, (_, i) => (
+        <Card key={i} className="p-6 rounded-[20px] flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 flex flex-col gap-2">
+              <Skeleton className="h-5 w-1/2" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+            <Skeleton className="h-5 w-14 rounded-full" />
+          </div>
+          <Skeleton className="h-3.5 w-full" />
+          <Skeleton className="h-3.5 w-2/3" />
+          <Skeleton className="h-8 w-28 rounded-lg" />
+        </Card>
+      ))}
+    </Busy>
+  );
 }

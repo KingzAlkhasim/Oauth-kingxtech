@@ -3,7 +3,7 @@ import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { listActivity } from '../lib/activity';
-import { Card } from '../components/ui';
+import { Card, SkeletonRows } from '../components/ui';
 import {
   Activity as ActivityIcon, LogIn, KeyRound, ShieldCheck, User, FolderKanban, Plug, Ticket,
 } from 'lucide-react';
@@ -61,7 +61,7 @@ export default function Activity() {
         <p className="text-[12.5px] text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2 mb-5">{error}</p>
       )}
 
-      {entries === null && !error && <p className="text-sm text-kxmist">Loading…</p>}
+      {entries === null && !error && <SkeletonRows rows={5} avatar label="Loading activity" />}
 
       {entries !== null && entries.length === 0 && (
         <Card className="p-10 rounded-[20px] flex flex-col items-center text-center gap-3">

@@ -11,7 +11,7 @@ import {
   resumeProPlan,
 } from '../lib/billing';
 import { supabase } from '../lib/supabase';
-import { Card, Button, Badge, ExpandableList } from '../components/ui';
+import { Card, Button, Badge, ExpandableList, Skeleton, SkeletonRows } from '../components/ui';
 import { Wallet, ExternalLink } from 'lucide-react';
 import { friendlyError } from '../lib/errors';
 
@@ -182,7 +182,7 @@ export default function Billing() {
           <div className="min-w-0">
             <p className="text-[12px] font-mono uppercase tracking-wider text-kxmist">Wallet balance</p>
             <p className="text-[12.5px] text-kxmist mb-1">Wallet balance. For compute and storage. You can also use it to renew Pro.</p>
-            {profile ? <p className="font-display text-2xl font-semibold truncate">${walletBalance.toFixed(2)}</p> : <p className="text-sm text-kxmist">Loading…</p>}
+            {profile ? <p className="font-display text-2xl font-semibold truncate">${walletBalance.toFixed(2)}</p> : <Skeleton className="h-7 w-28 mt-1" />}
           </div>
         </div>
         {profile && <div className="mt-4"><Badge tone={planInfo.active ? 'live' : 'default'}>{planInfo.planName} plan</Badge></div>}
@@ -282,7 +282,7 @@ export default function Billing() {
       <Card className="p-5 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1">Transaction history</h2>
         <p className="text-[13px] text-kxmist mb-5">Processed payment events and wallet activity.</p>
-        {txns === null && <p className="text-sm text-kxmist">Loading…</p>}
+        {txns === null && <SkeletonRows rows={3} label="Loading transactions" />}
         {txns !== null && (
           <ExpandableList
             items={txns}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { HardDrive, FolderKanban, Globe, Sparkles } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
-import { Card, Badge } from '../components/ui';
+import { Card, Badge, SkeletonLines, SkeletonRows } from '../components/ui';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { getStorageUsage, getAiUsageMeter, getStorageQuota } from '../lib/storageUsage';
@@ -86,7 +86,7 @@ export default function Usage() {
 
       <Card className="p-4 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1 flex items-center gap-2"><HardDrive size={15} /> Your storage</h2>
-        {quota === undefined && <p className="text-[13px] text-kxmist">Loading…</p>}
+        {quota === undefined && <SkeletonLines lines={3} className="mt-3" label="Loading storage" />}
         {quota === null && <p className="text-[13px] text-kxmist">Your storage limit is not available right now. Try again in a moment.</p>}
         {quota && (() => {
           const known = typeof quota.usedBytes === 'number';
@@ -110,7 +110,7 @@ export default function Usage() {
 
       <Card className="p-4 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1 flex items-center gap-2"><Sparkles size={15} /> AI usage</h2>
-        {ai === undefined && <p className="text-[13px] text-kxmist">Loading…</p>}
+        {ai === undefined && <SkeletonLines lines={3} className="mt-3" label="Loading AI usage" />}
         {ai === null && <p className="text-[13px] text-kxmist">AI usage is not available right now. Try again in a moment.</p>}
         {ai && (
           <div className="flex flex-col gap-4 mt-3">
@@ -132,7 +132,7 @@ export default function Usage() {
         <p className="text-[13px] text-kxmist mb-4 leading-relaxed">
           Source is your files. A published build is the finished copy that visitors get. Images and fonts count about a third more than their size on your device.
         </p>
-        {rows === null && <p className="text-[13px] text-kxmist">Loading…</p>}
+        {rows === null && <SkeletonRows rows={3} label="Loading projects" />}
         {rows && rows.length === 0 && !error && (
           <p className="text-[13px] text-kxmist">No projects yet. <Link to="/projects" className="text-kxblue underline">Create your first project</Link>.</p>
         )}

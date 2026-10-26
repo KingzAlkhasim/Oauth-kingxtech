@@ -4,7 +4,7 @@ import DashboardShell from '../components/DashboardShell';
 import ClampedText from '../components/ClampedText';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
-import { Card, Button, Input, Badge } from '../components/ui';
+import { Card, Button, Input, Badge, SkeletonCards } from '../components/ui';
 import { listProjects, createProject, updateProject, deleteProject, PRODUCTS, STATUSES } from '../lib/projects';
 import { logActivity } from '../lib/activity';
 import { writeFile } from '../lib/projectFiles';
@@ -155,7 +155,7 @@ export default function Projects() {
         ))}
       </div>
 
-      {projects === null && <p className="text-sm text-kxmist">Loading projects…</p>}
+      {projects === null && <SkeletonCards count={4} label="Loading projects" />}
 
       {sharedProjects.length > 0 && (
         <section className="mb-8">
