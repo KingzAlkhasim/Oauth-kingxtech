@@ -7,6 +7,7 @@ import { API_BASE } from '../lib/apiBase';
 import { supabase } from '../lib/supabase';
 import { friendlyError } from '../lib/errors';
 import { copyText } from '../lib/copyText';
+import { Skeleton } from './ui';
 import { looksLikeCode, fencePastedCode } from '../lib/codePaste';
 import {
   Sparkles, X, Send, Wallet, RotateCcw, Trash2, Terminal, FilePlus,
@@ -555,7 +556,14 @@ export default function KXpertDrawer() {
             )}
 
             <div className="kxpert-messages flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-3" aria-live="polite">
-              {isHistoryLoading && <p className="text-[13px] text-kxmist italic">Loading conversation...</p>}
+              {isHistoryLoading && (
+                <div role="status" aria-busy="true" className="flex flex-col gap-3">
+                  <span className="sr-only">Loading conversation</span>
+                  <Skeleton className="h-10 w-2/3 self-end rounded-2xl" />
+                  <Skeleton className="h-16 w-4/5 rounded-2xl" />
+                  <Skeleton className="h-10 w-1/2 self-end rounded-2xl" />
+                </div>
+              )}
               {!isHistoryLoading && history.length === 0 && (
                 <div className="kxpert-empty-state">
                   <div className="kxpert-empty-icon"><Sparkles size={21}/></div>

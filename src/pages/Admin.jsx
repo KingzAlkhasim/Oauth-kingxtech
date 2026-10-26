@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
-import { Card, Button, Badge } from '../components/ui';
+import { Card, Button, Badge, SkeletonRows } from '../components/ui';
 import { adminListAccounts, adminSetSuspension } from '../lib/account';
 import { adminListFlags, adminResolveFlag, warnFlagByEmail } from '../lib/abuse';
 import useSeo from '../lib/useSeo';
@@ -95,7 +95,7 @@ function SupportInbox() {
         ))}
       </div>
       {error && <p className="text-[12.5px] text-red-400">{error}</p>}
-      {tickets === null && !error && <p className="text-sm text-kxmist">Loading tickets…</p>}
+      {tickets === null && !error && <SkeletonRows rows={4} label="Loading tickets" />}
       {tickets && visible.length === 0 && <p className="text-[13px] text-kxmist">Nothing here.</p>}
       {visible.map((t) => (
         <Card key={t.id} className="p-4 rounded-xl">
@@ -176,7 +176,7 @@ function Accounts() {
     <div className="flex flex-col gap-3">
       <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or email" className="w-full rounded-lg border border-white/12 bg-white/[0.02] px-3.5 py-2.5 text-sm outline-none focus:border-kxblue" />
       {error && <p className="text-[12.5px] text-red-400">{error}</p>}
-      {rows === null && !error && <p className="text-sm text-kxmist">Loading accounts…</p>}
+      {rows === null && !error && <SkeletonRows rows={5} avatar label="Loading accounts" />}
       {rows && visible.length === 0 && <p className="text-[13px] text-kxmist">No accounts match.</p>}
       {visible.map((a) => <AccountRow key={a.user_id} account={a} onChanged={refresh} />)}
     </div>
@@ -292,7 +292,7 @@ function Flags() {
       </div>
       <p className="text-[12px] text-kxmist leading-relaxed">Flags come from automatic checks on AI prompts and published sites. A flag is a reason to look, not proof. Items the AI judged harmless and low-risk are tucked under "All".</p>
       {error && <p className="text-[12.5px] text-red-400">{error}</p>}
-      {rows === null && !error && <p className="text-sm text-kxmist">Loading flags…</p>}
+      {rows === null && !error && <SkeletonRows rows={3} label="Loading flags" />}
       {rows?.length === 0 && <p className="text-[13px] text-kxmist">Nothing to review.</p>}
       {rows?.map((f) => <FlagCard key={f.id} flag={f} onChanged={refresh} />)}
     </div>
@@ -308,7 +308,7 @@ function AuditLog() {
   return (
     <div className="flex flex-col gap-2">
       {error && <p className="text-[12.5px] text-red-400">{error}</p>}
-      {rows === null && !error && <p className="text-sm text-kxmist">Loading…</p>}
+      {rows === null && !error && <SkeletonRows rows={4} />}
       {rows?.length === 0 && <p className="text-[13px] text-kxmist">No admin actions recorded yet.</p>}
       {rows?.map((r) => (
         <div key={r.id} className="rounded-lg border border-white/10 bg-white/[0.02] px-3.5 py-2.5 text-[12.5px] break-words">

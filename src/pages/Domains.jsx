@@ -3,7 +3,7 @@ import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { listDomains, listDomainProjects, addDomain, removeDomain, verifyDomain } from '../lib/domains';
-import { Card, Button, Input, Badge } from '../components/ui';
+import { Card, Button, Input, Badge, SkeletonRows } from '../components/ui';
 import { Plus, Trash2, CheckCircle2, RefreshCw, Globe } from 'lucide-react';
 import { friendlyError } from '../lib/errors';
 
@@ -90,7 +90,7 @@ export default function Domains() {
         </div>
       </Card>
 
-      {domains === null && <p className="text-sm text-kxmist">Loading…</p>}
+      {domains === null && <SkeletonRows rows={2} label="Loading domains" />}
       {domains !== null && domains.length === 0 && (
         <Card className="p-10 rounded-[20px] flex flex-col items-center text-center gap-3">
           <Globe size={28} className="text-kxmist" /><p className="text-sm text-kxmist">No domains connected yet.</p>

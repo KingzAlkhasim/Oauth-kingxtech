@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, LifeBuoy } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
-import { Card, Button, Input, Badge } from '../components/ui';
+import { Card, Button, Input, Badge, SkeletonRows } from '../components/ui';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { listTickets, createTicket, listReplies, addFollowUp, TICKET_CATEGORIES } from '../lib/tickets';
@@ -127,7 +127,7 @@ export default function Help() {
         </Card>
         <Card className="p-5 sm:p-6 rounded-[20px]">
           <h2 className="font-display text-[16px] font-medium mb-4">Your tickets</h2>
-          {tickets === null && !error && <p className="text-sm text-kxmist">Loading tickets…</p>}
+          {tickets === null && !error && <SkeletonRows rows={3} label="Loading tickets" />}
           {tickets?.length === 0 && <p className="text-[13px] text-kxmist">No tickets yet.</p>}
           <div className="flex flex-col gap-2.5">{tickets?.map((ticket) => <TicketRow key={ticket.id} ticket={ticket} />)}</div>
         </Card>

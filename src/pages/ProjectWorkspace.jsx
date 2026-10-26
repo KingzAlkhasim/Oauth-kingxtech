@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import DashboardShell from '../components/DashboardShell';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
-import { Card, Button, Input } from '../components/ui';
+import { Card, Button, Input, SkeletonRows } from '../components/ui';
 import SiteAiCard from '../components/SiteAiCard';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
@@ -473,7 +473,7 @@ function RestorePointsCard({ projectId }) {
       </div>
       {error && <p className="text-[12.5px] text-red-400 mt-2">{error}</p>}
       {notice && <p className="text-[12.5px] text-emerald-300 mt-2">{notice}</p>}
-      {data === null && !error && <p className="text-[12.5px] text-kxmist mt-3">Loading…</p>}
+      {data === null && !error && <SkeletonRows rows={2} className="mt-3" label="Loading restore points" />}
       {data && data.snapshots.length === 0 && (
         <p className="text-[12px] text-kxmist mt-3">No restore points yet. One is saved automatically the next time you publish.</p>
       )}
@@ -704,7 +704,7 @@ function SiteSettingsTab({ projectId }) {
         )}
 
         <div className="flex flex-col gap-2 mb-4">
-          {vars === null && <p className="text-[13px] text-kxmist">Loading…</p>}
+          {vars === null && <SkeletonRows rows={2} label="Loading variables" />}
           {vars?.length === 0 && <p className="text-[13px] text-kxmist">No variables set for this project yet.</p>}
           {vars?.map((v) => (
             <div key={v.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">

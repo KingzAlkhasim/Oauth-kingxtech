@@ -6,7 +6,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import useCurrentUser, { initials } from '../lib/useCurrentUser';
 import { supabase } from '../lib/supabase';
 import { useEnsureAal2 } from '../lib/ensureAal2';
-import { Card, Button, Input, Badge } from '../components/ui';
+import { Card, Button, Input, Badge, Skeleton, SkeletonLines, SkeletonRows } from '../components/ui';
 import { logActivity, listActivity } from '../lib/activity';
 import { User, ShieldCheck, Monitor, Laptop, Activity as ActivityIcon } from 'lucide-react';
 import { friendlyError } from '../lib/errors';
@@ -103,7 +103,12 @@ function ProfileTab() {
   }, [user]);
 
   if (loading || !form) {
-    return <Card className="p-6 rounded-[20px] text-sm text-kxmist">Loading profile…</Card>;
+    return (
+      <Card className="p-6 rounded-[20px]">
+        <div className="flex items-center gap-4 mb-6"><Skeleton className="w-16 h-16 rounded-full" /><SkeletonLines lines={2} className="flex-1" label="Loading profile" /></div>
+        <div className="flex flex-col gap-3"><Skeleton className="h-10 w-full rounded-lg" /><Skeleton className="h-10 w-full rounded-lg" /><Skeleton className="h-10 w-2/3 rounded-lg" /></div>
+      </Card>
+    );
   }
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -447,7 +452,7 @@ function AccountActivityTab() {
   return (
     <Section title="Account activity" desc="A chronological record of events recorded for your account.">
       {error && <Notice error={error} />}
-      {entries === null && !error && <p className="text-sm text-kxmist">Loading activity…</p>}
+      {entries === null && !error && <SkeletonRows rows={4} avatar label="Loading activity" />}
       {entries?.length === 0 && <p className="text-[13px] text-kxmist">No account activity has been recorded yet.</p>}
       {entries?.length > 0 && <div className="flex flex-col min-w-0">
         {entries.map((entry, index) => (
