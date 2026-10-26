@@ -69,6 +69,9 @@ const envSchema = z.object({
   APP_ORIGIN: z.string().url().default('https://auth.kingxtech.name.ng').transform((value) => value.replace(/\/+$/, '')),
   RESEND_API_KEY: z.string().min(1).optional(),
 
+  // --- Proxy trust (how many reverse proxies sit in front of this service; Vercel = 1) ---
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
+
   // --- CORS ---
   ALLOWED_ORIGINS: z.string().default('https://kingxtech.name.ng,https://auth.kingxtech.name.ng').transform((val) => val.split(',').map((s) => s.trim())),
 });

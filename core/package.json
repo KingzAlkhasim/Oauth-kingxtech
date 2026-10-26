@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.3",
-    "@google/genai": "latest",
+    "@google/genai": "^2.11.0",
     "@google/generative-ai": "^0.24.1",
     "@sentry/node": "^10.68.0",
     "@supabase/supabase-js": "^2.45.0",
@@ -33,7 +33,7 @@
     "pino": "^9.2.0",
     "pino-http": "^10.1.0",
     "sharp": "^0.35.0",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -44,5 +44,8 @@
     "eslint": "^8.57.0",
     "tsx": "^4.7.1",
     "typescript": "^5.5.3"
+  },
+  "overrides": {
+    "zod": "$zod"
   }
 }

@@ -34,3 +34,33 @@ jobs:
       - name: Run AI usage tests
         working-directory: core
         run: npm test
+
+  security:
+    # Fails the build on a CRITICAL known vulnerability in production dependencies.
+    # High/moderate findings are printed in the log so they stay visible without blocking merges.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Audit frontend dependencies
+        run: |
+          npm audit --omit=dev --audit-level=critical
+          npm audit --omit=dev || true
+
+      - name: Audit core dependencies
+        working-directory: core
+        run: |
+          npm audit --omit=dev --audit-level=critical
+          npm audit --omit=dev || true
+
+      - name: Block committed secrets
+        run: |
+          if git ls-files | grep -Ei '(^|/)\.env($|\.)' | grep -v '\.env\.example$'; then
+            echo "A .env file is committed. Remove it and rotate the keys inside."; exit 1
+          fi
