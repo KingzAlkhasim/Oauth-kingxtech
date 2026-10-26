@@ -1,2 +1,13 @@
 node_modules/
 dist/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+.npmrc
+supabase/.temp/
+supabase/.branches/

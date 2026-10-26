@@ -101,9 +101,18 @@ async function tryRecordEvent(
 }
 
 async function findUserIdByEmail(email: string): Promise<string | null> {
-  const { data } = await supabaseAdmin.auth.admin.listUsers();
-  const match = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-  return match?.id ?? null;
+  // listUsers() returns one page at a time (50 users by default), so walk the pages;
+  // otherwise any customer beyond the first page could never be matched to a payment.
+  const target = email.toLowerCase();
+  const perPage = 1000;
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
+    if (error || !data) return null;
+    const match = data.users.find((u) => u.email?.toLowerCase() === target);
+    if (match) return match.id;
+    if (data.users.length < perPage) return null;
+  }
+  return null;
 }
 
 async function creditWallet(userId: string, usdAmount: number, gateway: string, gatewayRef?: string, treatAsPro?: boolean) {

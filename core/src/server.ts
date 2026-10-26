@@ -71,6 +71,8 @@ import { rateLimit } from './middleware/rateLimit';
 const PWA_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#09090B"/><circle cx="256" cy="256" r="218" fill="none" stroke="#8B5CF6" stroke-width="22" opacity=".35"/><path d="M126 326V186l56 56 74-106 74 106 56-56v140" fill="none" stroke="#D946C6" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/><circle cx="126" cy="326" r="22" fill="#D946C6"/><circle cx="256" cy="136" r="22" fill="#8B5CF6"/><circle cx="386" cy="326" r="22" fill="#00A3FF"/></svg>';
 
 const app = express();
+// Trust exactly the proxies we run behind, so req.ip cannot be spoofed with a forged X-Forwarded-For.
+app.set('trust proxy', env.TRUST_PROXY_HOPS);
 app.use(helmet());
 // API-key callers may be hosted on any origin. Authentication is explicit via
 // Authorization: Bearer kx_live_/kx_test_ — no browser session cookie is used.
