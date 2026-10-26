@@ -5,7 +5,7 @@ import CommandPalette from './CommandPalette';
 import { supabase } from '../lib/supabase';
 import useCurrentUser, { initials } from '../lib/useCurrentUser';
 import { LayoutDashboard, FolderKanban, Settings, LifeBuoy, LogOut, Menu, X, Search, TerminalSquare, Wallet, Globe, ShieldCheck, Gauge } from 'lucide-react';
-import KXpertDrawer from './KXpertDrawer';
+import { useKXpertShell } from './KXpertHost';
 import useIsAdmin from '../lib/admin';
 
 const NAV = [
@@ -25,6 +25,7 @@ export default function DashboardShell({ children, fullWidth = false }) {
   const { user } = useCurrentUser();
   const isAdmin = useIsAdmin();
   const [mobileOpen, setMobileOpen] = useState(false);
+  useKXpertShell();
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -87,7 +88,6 @@ export default function DashboardShell({ children, fullWidth = false }) {
   return (
     <div className="min-h-screen bg-kxbg text-white lg:flex">
       <CommandPalette />
-      <KXpertDrawer />
 
       {/* Mobile top bar */}
       <div className="lg:hidden flex items-center justify-between px-4 h-14 border-b border-white/8 sticky top-0 z-20 bg-kxbg/90 backdrop-blur-xl">

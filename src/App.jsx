@@ -23,6 +23,7 @@ import Docs from './pages/Docs';
 import AcceptTerms from './pages/AcceptTerms';
 import Terms from './pages/Terms';
 import SuspensionGate from './components/SuspensionGate';
+import KXpertHost from './components/KXpertHost';
 import ProjectInvite from './pages/ProjectInvite';
 
 function LegacySettingsRedirect() {
@@ -37,6 +38,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <SuspensionGate />
+      <KXpertHost />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<SignIn />} />
