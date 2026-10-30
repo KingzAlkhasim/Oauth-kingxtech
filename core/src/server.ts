@@ -16,6 +16,8 @@ import { resolveDefaultModelForTier } from './services/modelDefaults';
 import { resolveRoutedModel, normalizePreference, usageFraction } from './services/modelRouting';
 import { getSiteAiSettings, saveSiteAiSettings, getProjectOwnerAndHosts, takeDailyRequest, visitorWithinRate, SiteAiError } from './services/siteAi';
 import { cleanVisitorMessages, originAllowed, buildSiteAiPrompt } from './services/siteAiPolicy';
+import { cleanCollectionName, cleanRow, cleanLimit } from './services/siteDataPolicy';
+import { getRules, listCollections, saveRules, listRows, ownerListRows, addRow, ownerAddRow, ownerDeleteRow, visitorAllowed } from './services/siteData';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, getUserTier, getAiUsageState, recordAiUsage, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { computeCostUsd } from './config/modelPricing';
 import { PLAN_LIMITS } from './config/planLimits';
@@ -453,6 +455,110 @@ app.post('/api/public/ai/:projectId/chat', async (req, res) => {
   } catch (error) {
     console.error('[site-ai] request failed:', error);
     unavailable(502, 'The chatbot could not answer right now. Please try again.');
+  }
+});
+
+// --- Project Data API ------------------------------------------------------
+// A project's site can save and read its own records without server code.
+// Owner/editor routes (signed in) manage collections and rules; the public routes
+// are closed by default and only work for collections the owner opened, from the
+// site's own pages, with per-visitor limits and a spam trap.
+const dataErr = (res: express.Response, error: unknown) => {
+  if (error instanceof ProjectRoleError) { res.status(403).json({ success: false, error: error.message }); return; }
+  return handleFsError(res, error);
+};
+
+app.get('/api/projects/:projectId/data', requireAuth, async (req: AuthedRequest, res) => {
+  try { res.json({ success: true, collections: await listCollections(req.user!.id, req.params.projectId) }); } catch (e) { await dataErr(res, e); }
+});
+
+app.put('/api/projects/:projectId/data/:collection/rules', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const name = cleanCollectionName(req.params.collection);
+    if (!name) { res.status(400).json({ success: false, error: 'Collection names use lowercase letters, numbers, - and _, starting with a letter.' }); return; }
+    res.json({ success: true, rules: await saveRules(req.user!.id, req.params.projectId, name, req.body) });
+  } catch (e) { await dataErr(res, e); }
+});
+
+app.get('/api/projects/:projectId/data/:collection', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const name = cleanCollectionName(req.params.collection);
+    if (!name) { res.status(400).json({ success: false, error: 'Invalid collection name.' }); return; }
+    res.json({ success: true, rows: await ownerListRows(req.user!.id, req.params.projectId, name, Math.min(200, Math.max(1, Number(req.query.limit) || 50)), typeof req.query.before === 'string' ? req.query.before : undefined) });
+  } catch (e) { await dataErr(res, e); }
+});
+
+app.post('/api/projects/:projectId/data/:collection', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const name = cleanCollectionName(req.params.collection);
+    const row = cleanRow(req.body);
+    if (!name) { res.status(400).json({ success: false, error: 'Invalid collection name.' }); return; }
+    if (!row.ok) { res.status(400).json({ success: false, error: row.error }); return; }
+    const id = await ownerAddRow(req.user!.id, req.params.projectId, name, row.data);
+    if (!id) { res.status(409).json({ success: false, error: 'This project has reached its record limit.' }); return; }
+    res.status(201).json({ success: true, id });
+  } catch (e) { await dataErr(res, e); }
+});
+
+app.delete('/api/projects/:projectId/data/rows/:rowId', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.rowId)) { res.status(400).json({ success: false, error: 'Invalid record id.' }); return; }
+    await ownerDeleteRow(req.user!.id, req.params.projectId, req.params.rowId);
+    res.json({ success: true });
+  } catch (e) { await dataErr(res, e); }
+});
+
+// Public: gate shared by both public routes. Answers 404 for anything that is not open, so
+// the endpoint never reveals which collections or projects exist.
+async function publicDataGate(req: express.Request, res: express.Response, need: 'publicCreate' | 'publicRead') {
+  const notFound = () => { res.status(404).json({ success: false, error: 'Not found.' }); return null; };
+  const projectId = req.params.projectId;
+  const collection = cleanCollectionName(req.params.collection);
+  if (!collection || !/^[0-9a-f-]{36}$/i.test(projectId)) return notFound();
+  const owner = await getProjectOwnerAndHosts(projectId);
+  if (!owner) return notFound();
+  // Browsers omit Origin on same-site GETs, but mark them Sec-Fetch-Site: same-origin.
+  const origin = req.headers.origin as string | undefined;
+  const sameSiteRead = need === 'publicRead' && !origin && req.headers['sec-fetch-site'] === 'same-origin';
+  if (!sameSiteRead && !originAllowed(origin, req.headers.host, owner.customHosts)) {
+    res.status(403).json({ success: false, error: 'This data can only be used from its own website.' }); return null;
+  }
+  const rules = await getRules(projectId, collection);
+  if (!rules[need]) return notFound();
+  if ((await getAccountSuspension(owner.ownerId)).suspended) { res.status(503).json({ success: false, error: 'Not available right now.' }); return null; }
+  const ip = String(req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+  const allowed = need === 'publicCreate'
+    ? await visitorAllowed(`data-w:${projectId}:${ip}`, 10, 60)
+    : await visitorAllowed(`data-r:${projectId}:${ip}`, 60, 60);
+  if (!allowed) { res.status(429).json({ success: false, error: 'Too many requests. Wait a moment and try again.' }); return null; }
+  return { projectId, collection };
+}
+
+app.post('/api/public/data/:projectId/:collection', async (req, res) => {
+  try {
+    const gate = await publicDataGate(req, res, 'publicCreate');
+    if (!gate) return;
+    const row = cleanRow(req.body);
+    if (!row.ok) { res.status(400).json({ success: false, error: row.error }); return; }
+    if (row.spam) { res.status(201).json({ success: true }); return; } // look successful to bots, store nothing
+    const id = await addRow(gate.projectId, gate.collection, row.data);
+    if (!id) { res.status(409).json({ success: false, error: 'This site cannot accept more records right now.' }); return; }
+    res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('[site-data] write failed:', error);
+    res.status(502).json({ success: false, error: 'Could not save right now. Please try again.' });
+  }
+});
+
+app.get('/api/public/data/:projectId/:collection', async (req, res) => {
+  try {
+    const gate = await publicDataGate(req, res, 'publicRead');
+    if (!gate) return;
+    const rows = await listRows(gate.projectId, gate.collection, cleanLimit(req.query.limit), typeof req.query.before === 'string' ? req.query.before : undefined);
+    res.json({ success: true, rows });
+  } catch (error) {
+    console.error('[site-data] read failed:', error);
+    res.status(502).json({ success: false, error: 'Could not load right now. Please try again.' });
   }
 });
 
