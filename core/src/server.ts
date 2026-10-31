@@ -17,6 +17,8 @@ import { resolveRoutedModel, normalizePreference, usageFraction } from './servic
 import { getSiteAiSettings, saveSiteAiSettings, getProjectOwnerAndHosts, takeDailyRequest, visitorWithinRate, SiteAiError } from './services/siteAi';
 import { cleanVisitorMessages, originAllowed, buildSiteAiPrompt } from './services/siteAiPolicy';
 import { cleanCollectionName, cleanRow, cleanLimit } from './services/siteDataPolicy';
+import { getServerSettings, saveServerSettings, ensureServerRunning, proxyToServer, publicServerBlocker, ProjectServerError } from './services/projectServer';
+import { cleanServerPath, cleanQueryString, buildForwardHeaders, planAllowsServer, ALLOWED_METHODS, REQUEST_BODY_MAX } from './services/projectServerPolicy';
 import { getRules, listCollections, saveRules, listRows, ownerListRows, addRow, ownerAddRow, ownerDeleteRow, visitorAllowed } from './services/siteData';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, getUserTier, getAiUsageState, recordAiUsage, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { computeCostUsd } from './config/modelPricing';
@@ -561,6 +563,80 @@ app.get('/api/public/data/:projectId/:collection', async (req, res) => {
     res.status(502).json({ success: false, error: 'Could not load right now. Please try again.' });
   }
 });
+// --- Project servers (Pro): a Node API that sleeps when idle and wakes on request ----
+// The owner turns it on in Site Settings. The site calls /api/public/server/<projectId>/<path>;
+// KingxTech wakes the project's sandbox, forwards the request, and returns the answer with
+// cookies and redirects removed. Rate-limited per visitor and per project.
+const serverErr = (res: express.Response, error: unknown) => {
+  if (error instanceof ProjectServerError) { res.status(error.status).json({ success: false, error: error.message, ...(error.logs ? { logs: error.logs } : {}) }); return; }
+  return dataErr(res, error);
+};
+
+app.get('/api/projects/:projectId/server', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    await assertProjectRole(req.user!.id, req.params.projectId, 'viewer');
+    res.json({ success: true, settings: await getServerSettings(req.params.projectId), planAllowed: planAllowsServer(await getUserTier(req.user!.id)) });
+  } catch (e) { await serverErr(res, e); }
+});
+
+app.put('/api/projects/:projectId/server', requireAuth, async (req: AuthedRequest, res) => {
+  try { res.json({ success: true, settings: await saveServerSettings(req.user!.id, req.params.projectId, req.body) }); } catch (e) { await serverErr(res, e); }
+});
+
+// Wake the server now and report whether it came up (with the last log lines if it did not).
+app.post('/api/projects/:projectId/server/start', requireAuth, rateLimit, async (req: AuthedRequest, res) => {
+  try {
+    await assertProjectRole(req.user!.id, req.params.projectId, 'owner');
+    if (!planAllowsServer(await getUserTier(req.user!.id))) throw new ProjectServerError('Project servers are part of the Pro plan.', 402);
+    await ensureServerRunning(req.user!.id, req.params.projectId);
+    res.json({ success: true });
+  } catch (e) { await serverErr(res, e); }
+});
+
+app.all(
+  /^\/api\/public\/server\/([0-9a-f-]{36})(\/.*)?$/i,
+  express.raw({ type: (r) => !/json/i.test(String(r.headers['content-type'] || '')), limit: REQUEST_BODY_MAX }),
+  async (req, res) => {
+    const fail = (status: number, message: string) => res.status(status).json({ success: false, error: message });
+    try {
+      const projectId = String((req.params as any)[0]);
+      const method = req.method.toUpperCase();
+      if (!(ALLOWED_METHODS as readonly string[]).includes(method)) { fail(405, 'Method not allowed.'); return; }
+      const path = cleanServerPath((req.params as any)[1] ?? '/');
+      if (!path) { fail(400, 'Invalid path.'); return; }
+
+      const gate = await publicServerBlocker(projectId);
+      if ('error' in gate) { fail(gate.status, gate.error); return; }
+      if ((await getAccountSuspension(gate.ownerId)).suspended) { fail(503, 'This server is not available right now.'); return; }
+
+      const ip = String(req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'] || req.ip || 'unknown').split(',')[0].trim();
+      if (!(await visitorAllowed(`srv:${projectId}:${ip}`, 60, 60)) || !(await visitorAllowed(`srv-p:${projectId}`, 600, 60))) {
+        fail(429, 'Too many requests. Wait a moment and try again.'); return;
+      }
+
+      let body: Buffer | undefined;
+      if (Buffer.isBuffer(req.body)) body = req.body;
+      else if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) body = Buffer.from(JSON.stringify(req.body));
+      if (body && body.length > REQUEST_BODY_MAX) { fail(413, 'Request is too large (1 MB limit).'); return; }
+
+      const out = await proxyToServer(gate.ownerId, projectId, {
+        method, path, query: cleanQueryString(req.originalUrl), headers: buildForwardHeaders(req.headers, ip),
+        body: method === 'GET' || method === 'HEAD' ? undefined : body,
+      });
+      res.status(out.status);
+      for (const [k, v] of Object.entries(out.headers)) res.setHeader(k, v);
+      res.send(method === 'HEAD' ? undefined : out.body);
+    } catch (error) {
+      if (error instanceof ProjectServerError) {
+        // Visitors never see logs; the owner finds them with the Start button in Site Settings.
+        if (error.status >= 500) res.setHeader('Retry-After', '5');
+        fail(error.status, error.status === 504 || error.status === 503 ? 'The server is waking up or busy. Please try again in a few seconds.' : error.message); return;
+      }
+      console.error('[project-server] request failed:', error);
+      fail(502, 'The server could not answer right now. Please try again.');
+    }
+  },
+);
 
 // --- POST /api/ai/generate ---------------------------------------------
 // Streams progress as Server-Sent Events: one "step" event per tool call
