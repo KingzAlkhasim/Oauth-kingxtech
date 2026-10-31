@@ -6,6 +6,7 @@ import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input, SkeletonRows } from '../components/ui';
 import SiteAiCard from '../components/SiteAiCard';
 import SiteDataCard from '../components/SiteDataCard';
+import SiteServerCard from '../components/SiteServerCard';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
   previewUrl, publishProject, PublishError, getSiteViews, listSnapshots, saveSnapshot, restoreSnapshot, deleteSnapshot, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
@@ -740,6 +741,8 @@ function SiteSettingsTab({ projectId }) {
       <SiteAiCard projectId={projectId} />
       <SettingsGroupLabel>Data</SettingsGroupLabel>
       <SiteDataCard projectId={projectId} />
+      <SettingsGroupLabel>Server</SettingsGroupLabel>
+      <SiteServerCard projectId={projectId} />
 
       <SettingsGroupLabel>Versions</SettingsGroupLabel>
       <RestorePointsCard projectId={projectId} />
