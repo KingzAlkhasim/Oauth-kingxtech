@@ -5,6 +5,7 @@ import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import { Card, Button, Input, SkeletonRows } from '../components/ui';
 import SiteAiCard from '../components/SiteAiCard';
+import SiteDataCard from '../components/SiteDataCard';
 import {
   listFiles, readFile, writeFile, createFolder, deleteFile, revertFile,
   previewUrl, publishProject, PublishError, getSiteViews, listSnapshots, saveSnapshot, restoreSnapshot, deleteSnapshot, runTerminalCommand, startProjectRuntime, syncProjectRuntime,
@@ -737,6 +738,8 @@ function SiteSettingsTab({ projectId }) {
 
       <SettingsGroupLabel>AI</SettingsGroupLabel>
       <SiteAiCard projectId={projectId} />
+      <SettingsGroupLabel>Data</SettingsGroupLabel>
+      <SiteDataCard projectId={projectId} />
 
       <SettingsGroupLabel>Versions</SettingsGroupLabel>
       <RestorePointsCard projectId={projectId} />

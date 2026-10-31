@@ -184,3 +184,15 @@ async function siteAiCall(projectId, method = 'GET', body) {
 }
 export const getSiteAi = (projectId) => siteAiCall(projectId);
 export const saveSiteAi = (projectId, settings) => siteAiCall(projectId, 'PUT', settings);
+
+async function dataCall(path, method = 'GET', body) {
+  const headers = await authHeaders(method !== 'GET' && method !== 'DELETE');
+  const res = await fetch(apiUrl(path), { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!data.success) throw new Error(data.error || 'Request failed');
+  return data;
+}
+export const listDataCollections = (projectId) => dataCall(`/api/projects/${projectId}/data`);
+export const saveDataRules = (projectId, collection, rules) => dataCall(`/api/projects/${projectId}/data/${collection}/rules`, 'PUT', rules);
+export const listDataRows = (projectId, collection) => dataCall(`/api/projects/${projectId}/data/${collection}?limit=50`);
+export const deleteDataRow = (projectId, rowId) => dataCall(`/api/projects/${projectId}/data/rows/${rowId}`, 'DELETE');
