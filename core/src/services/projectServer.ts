@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Sandbox } from '@vercel/sandbox' with { "resolution-mode": "import" };
+import { env } from '../config/env';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { assertProjectRole } from './projectCollaboration';
 import { listProjectFilesWithContent } from './projectFs';
@@ -7,12 +8,15 @@ import { getProjectEnvVarsForRuntime } from './projectEnvVars';
 import { getUserTier } from './credits';
 import { BINARY_PREFIX } from './binaryFiles';
 import {
-  SERVER_PORT, IDLE_WINDOW_MS, PROXY_TIMEOUT_MS, START_TIMEOUT_MS, RESPONSE_BODY_MAX,
-  cleanResponseHeaders, startCommandProblem, planAllowsServer,
+  SERVER_PORT, IDLE_WINDOW_MS, PROXY_TIMEOUT_MS, START_TIMEOUT_MS, RESPONSE_BODY_MAX, APP_DIR,
+  cleanResponseHeaders, startCommandProblem, planAllowsServer, sanitizeAppEnv, serverNetworkPolicy,
 } from './projectServerPolicy';
+import { deriveProjectKey, signRequest, expectedProof, nonceOf, gatewaySecretProblem, CREDENTIAL_HEADER } from './projectServerAuth';
+import { gateScript } from './projectGateRuntime';
+import {
+  STAGE_DIR, stagePrepareArgs, provisionArgs, freshCheckArgs, installArgs, writeHashArgs, gateStartArgs, appStartArgs, tailLogArgs, stopProcessesArgs,
+} from './projectServerProvision';
 
-const PROJECT_ROOT = '/vercel/sandbox/project';
-const LOG_FILE = '/tmp/kx-server.log';
 const SNAPSHOT_KEEP = { count: 1, expiration: 7 * 24 * 60 * 60 * 1000 };
 
 export class ProjectServerError extends Error {
@@ -53,11 +57,21 @@ export async function stopServer(projectId: string): Promise<void> {
   } catch { /* not created yet, or already stopped */ }
 }
 
-async function isUp(sandbox: Sandbox): Promise<boolean> {
+/** Per-project signing key. Throws a clear, non-leaky error when the platform is not configured. */
+function gatewayKey(projectId: string): string {
+  const problem = gatewaySecretProblem(env.PROJECT_SERVER_GATEWAY_SECRET);
+  if (problem) throw new ProjectServerError('Project servers are not available right now.', 503, problem);
+  return deriveProjectKey(env.PROJECT_SERVER_GATEWAY_SECRET as string, projectId);
+}
+
+/** True only when the REAL gate answers with a valid proof (project code cannot forge it) and the app is listening behind it. */
+async function isUp(sandbox: Sandbox, projectId: string): Promise<boolean> {
   try {
-    const res = await fetch(sandbox.domain(SERVER_PORT) + '/', { signal: AbortSignal.timeout(3000), redirect: 'manual' });
-    await res.body?.cancel();
-    return true; // any HTTP answer, even 404, means something is listening
+    const key = gatewayKey(projectId);
+    const cred = signRequest({ keyHex: key, projectId, method: 'GET', url: '/__kx/health' });
+    const res = await fetch(sandbox.domain(SERVER_PORT) + '/__kx/health', { headers: { [CREDENTIAL_HEADER]: cred }, signal: AbortSignal.timeout(3000), redirect: 'manual' });
+    const body = (await res.json().catch(() => null)) as { gate?: boolean; upstream?: boolean } | null;
+    return res.status === 200 && res.headers.get('x-kx-proof') === expectedProof(key, nonceOf(cred)) && body?.gate === true && body?.upstream === true;
   } catch { return false; }
 }
 
@@ -67,12 +81,14 @@ const MAX_STARTS_IN_FLIGHT = 3;
 
 async function tail(sandbox: Sandbox): Promise<string> {
   try {
-    const r = await sandbox.runCommand({ cmd: 'sh', args: ['-c', `tail -c 3000 ${LOG_FILE} 2>/dev/null || true`], timeoutMs: 10_000 });
+    const [cmd, ...args] = tailLogArgs();
+    const r = await sandbox.runCommand({ cmd, args, sudo: true, timeoutMs: 10_000 });
     return (await r.stdout()).trim();
   } catch { return ''; }
 }
 
 async function startServer(ownerId: string, projectId: string): Promise<Sandbox> {
+  const key = gatewayKey(projectId);
   const { Sandbox } = await loadSandboxModule();
   const sandbox = await Sandbox.getOrCreate({
     name: serverSandboxName(projectId),
@@ -81,42 +97,61 @@ async function startServer(ownerId: string, projectId: string): Promise<Sandbox>
     ports: [SERVER_PORT],
     resources: { vcpus: 1 },
     persistent: true,
+    networkPolicy: serverNetworkPolicy(),
     snapshotExpiration: SNAPSHOT_KEEP.expiration,
     keepLastSnapshots: SNAPSHOT_KEEP,
   });
-  if (sandbox.status === 'running' && (await isUp(sandbox))) return sandbox;
+  if (sandbox.status === 'running' && (await isUp(sandbox, projectId))) return sandbox;
+  // A sandbox created before this policy existed (or restored from a snapshot) must still get it.
+  await sandbox.updateNetworkPolicy(serverNetworkPolicy());
 
   const files = await listProjectFilesWithContent(ownerId, projectId);
   const pkg = files.find((f) => f.path === 'package.json');
   const problem = startCommandProblem(typeof pkg?.content === 'string' ? pkg.content : null);
   if (problem) throw new ProjectServerError(problem, 400);
 
-  await sandbox.writeFiles(files.filter((f) => typeof f.content === 'string').map((f) => {
-    const content = f.content ?? '';
-    return { path: `${PROJECT_ROOT}/${f.path}`, content: content.startsWith(BINARY_PREFIX) ? Buffer.from(content.slice(BINARY_PREFIX.length), 'base64') : Buffer.from(content, 'utf8') };
-  }));
+  const run = async (argv: string[], opts: { sudo?: boolean; cwd?: string; timeoutMs: number }) => {
+    const [cmd, ...args] = argv;
+    return sandbox.runCommand({ cmd, args, sudo: opts.sudo, cwd: opts.cwd, timeoutMs: opts.timeoutMs });
+  };
 
+  // 1. Hand files to root through a private staging dir; root installs the gate+key root-only and gives the project to kxapp.
+  await run(stagePrepareArgs(), { timeoutMs: 15_000 });
+  await sandbox.writeFiles([
+    { path: `${STAGE_DIR}/gate.cjs`, content: Buffer.from(gateScript(), 'utf8') },
+    { path: `${STAGE_DIR}/key`, content: Buffer.from(key, 'utf8') },
+    ...files.filter((f) => typeof f.content === 'string').map((f) => {
+      const content = f.content ?? '';
+      return { path: `${STAGE_DIR}/app/${f.path}`, content: content.startsWith(BINARY_PREFIX) ? Buffer.from(content.slice(BINARY_PREFIX.length), 'base64') : Buffer.from(content, 'utf8') };
+    }),
+  ]);
+  const prov = await run(provisionArgs(), { sudo: true, timeoutMs: 60_000 });
+  if (prov.exitCode !== 0) throw new ProjectServerError('Preparing your server failed.', 502, ((await prov.stderr()) || '').trim().slice(-1000));
+
+  // 2. Dependencies, as kxapp with a clean environment.
+  const userEnv = sanitizeAppEnv(await getProjectEnvVarsForRuntime(ownerId, projectId));
   const hash = crypto.createHash('sha256')
     .update(files.filter((f) => /^(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(f.path)).map((f) => `${f.path}\n${f.content ?? ''}`).join('\n'))
     .digest('hex').slice(0, 16);
-  const env = { ...(await getProjectEnvVarsForRuntime(ownerId, projectId)), PORT: String(SERVER_PORT), HOST: '0.0.0.0', NODE_ENV: 'production' };
-
-  const fresh = await sandbox.runCommand({ cmd: 'sh', args: ['-c', `[ -d node_modules ] && [ "$(cat .kx-hash 2>/dev/null)" = "${hash}" ]`], cwd: PROJECT_ROOT, timeoutMs: 15_000 });
+  const fresh = await run(freshCheckArgs(userEnv, hash), { sudo: true, cwd: APP_DIR, timeoutMs: 15_000 });
   if (fresh.exitCode !== 0) {
-    const install = await sandbox.runCommand({ cmd: 'npm', args: ['install', '--no-audit', '--no-fund'], cwd: PROJECT_ROOT, env, timeoutMs: 150_000 });
+    const install = await run(installArgs(userEnv), { sudo: true, cwd: APP_DIR, timeoutMs: 150_000 });
     if (install.exitCode !== 0) throw new ProjectServerError('Installing your dependencies failed.', 502, ((await install.stderr()) || '').trim().slice(-3000));
-    await sandbox.runCommand({ cmd: 'sh', args: ['-c', `echo ${hash} > .kx-hash`], cwd: PROJECT_ROOT, timeoutMs: 10_000 });
+    await run(writeHashArgs(userEnv, hash), { sudo: true, cwd: APP_DIR, timeoutMs: 10_000 });
   }
 
-  await sandbox.runCommand({ cmd: 'sh', args: ['-c', `fuser -k ${SERVER_PORT}/tcp 2>/dev/null; true`], timeoutMs: 10_000 });
-  await sandbox.runCommand({ cmd: 'sh', args: ['-c', `npm start > ${LOG_FILE} 2>&1`], cwd: PROJECT_ROOT, env, detached: true });
+  // 3. The gate first (it owns the public port), then project code on a loopback-only port, both detached.
+  const [gcmd, ...gargs] = gateStartArgs(projectId);
+  await sandbox.runCommand({ cmd: gcmd, args: gargs, sudo: true, detached: true });
+  const [acmd, ...aargs] = appStartArgs(userEnv);
+  await sandbox.runCommand({ cmd: acmd, args: aargs, sudo: true, cwd: APP_DIR, detached: true });
 
   const deadline = Date.now() + START_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (await isUp(sandbox)) return sandbox;
+    if (await isUp(sandbox, projectId)) return sandbox;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new ProjectServerError(`Your server did not start listening on port ${SERVER_PORT} in time. Make sure it uses process.env.PORT and host 0.0.0.0.`, 504, await tail(sandbox));
+  throw new ProjectServerError('Your server did not start listening on the port in time. Make sure it uses process.env.PORT.', 504, await tail(sandbox));
 }
 
 /** Makes sure the project's server is awake, starting it if needed. One start at a time per project. */
@@ -153,8 +188,10 @@ export async function proxyToServer(
   void keepAwake(sandbox);
   let res: Response;
   try {
-    res = await fetch(sandbox.domain(SERVER_PORT) + req.path + req.query, {
-      method: req.method, headers: req.headers, body: req.body && req.body.length ? new Uint8Array(req.body) : undefined,
+    const url = req.path + req.query;
+    const credential = signRequest({ keyHex: gatewayKey(projectId), projectId, method: req.method, url, body: req.body });
+    res = await fetch(sandbox.domain(SERVER_PORT) + url, {
+      method: req.method, headers: { ...req.headers, [CREDENTIAL_HEADER]: credential }, body: req.body && req.body.length ? new Uint8Array(req.body) : undefined,
       redirect: 'manual', signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });
   } catch {

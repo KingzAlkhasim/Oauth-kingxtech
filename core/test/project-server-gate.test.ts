@@ -102,6 +102,7 @@ test('health proves a genuine gate and the reserved prefix is not forwarded', as
   assert.equal(r.status, 200);
   assert.equal(r.headers['x-kx-proof'], expectedProof(key, nonceOf(c)));
   assert.equal(JSON.parse(r.text).gate, true);
+  assert.equal(JSON.parse(r.text).upstream, true);
   assert.equal((await call('GET', '/__kx/other', undefined, sign({ method: 'GET', url: '/__kx/other' }))).status, 404);
 });
 

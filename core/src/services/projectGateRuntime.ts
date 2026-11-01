@@ -23,6 +23,7 @@ export interface GateConfig {
 export function createGate(cfg: GateConfig) {
   const http = (process as any).getBuiltinModule('node:http');
   const crypto = (process as any).getBuiltinModule('node:crypto');
+  const net = (process as any).getBuiltinModule('node:net');
   const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'host', 'content-length', 'x-kx-auth']);
   const nonces = new Map<string, number>();
   const stats = { requests: 0, bytesIn: 0, bytesOut: 0, rejected: 0, upstreamErrors: 0, inflight: 0 };
@@ -88,9 +89,17 @@ export function createGate(cfg: GateConfig) {
       stats.bytesIn += body.length;
 
       if (url === '/__kx/health') {
-        const out = JSON.stringify({ gate: true, projectId: cfg.projectId, ...stats });
-        res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(out), 'x-kx-proof': hmac('proof\n' + auth.nonce), 'cache-control': 'no-store' });
-        res.end(out);
+        const probe = net.connect({ host: '127.0.0.1', port: cfg.upstreamPort, timeout: 1500 });
+        const finish = (upstream: boolean) => {
+          probe.destroy();
+          if (res.headersSent) return;
+          const out = JSON.stringify({ gate: true, upstream, projectId: cfg.projectId, ...stats });
+          res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(out), 'x-kx-proof': hmac('proof\n' + auth.nonce), 'cache-control': 'no-store' });
+          res.end(out);
+        };
+        probe.on('connect', () => finish(true));
+        probe.on('error', () => finish(false));
+        probe.on('timeout', () => finish(false));
         return;
       }
       if (url.startsWith('/__kx/')) { reply(res, 404, 'not found'); return; }

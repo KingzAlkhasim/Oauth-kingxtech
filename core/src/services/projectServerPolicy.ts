@@ -78,3 +78,44 @@ export const SERVER_PLANS_ALLOWED = ['pro', 'pro_plus'] as const;
 export function planAllowsServer(tier: string | null | undefined): boolean {
   return (SERVER_PLANS_ALLOWED as readonly string[]).includes(String(tier));
 }
+
+/** The in-sandbox user that runs ALL project code (install and start). Never the default privileged user. */
+export const APP_USER = 'kxapp';
+export const APP_HOME = '/home/kxapp';
+export const APP_DIR = '/home/kxapp/app';
+export const APP_PORT = 3001; // loopback only; the gate on SERVER_PORT is the only thing reachable from outside
+export const APP_PATH = '/usr/local/bin:/usr/bin:/bin';
+
+const RESERVED_ENV = new Set(['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'PWD', 'PORT', 'HOST', 'NODE_ENV', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'SUDO_USER', 'SUDO_UID', 'SUDO_GID', 'SUDO_COMMAND']);
+
+/** Only the project's own variables reach its code, with safe names, and nothing the platform controls can be overridden. */
+export function sanitizeAppEnv(vars: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(vars || {})) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(k)) continue;
+    if (RESERVED_ENV.has(k.toUpperCase()) || /^(VERCEL|SUDO|KX_|PROJECT_SERVER)/i.test(k)) continue;
+    if (typeof v !== 'string' || v.length > 8192 || v.includes('\0')) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** `env -i ... setpriv ... <cmd>`: a clean environment and a permanently unprivileged process. */
+export function restrictedCommand(userEnv: Record<string, string>, cmd: string[]): string[] {
+  const pairs = Object.entries({ ...sanitizeAppEnv(userEnv), PATH: APP_PATH, HOME: APP_HOME, PORT: String(APP_PORT), NODE_ENV: 'production' }).map(([k, v]) => `${k}=${v}`);
+  return ['env', '-i', ...pairs, 'setpriv', `--reuid=${APP_USER}`, `--regid=${APP_USER}`, '--init-groups', '--no-new-privs', '--', ...cmd];
+}
+
+/** Egress rules. Project code may reach the public internet but never the platform's private or metadata networks. */
+export const DENIED_EGRESS_CIDRS = [
+  '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24',
+  '192.168.0.0/16', '198.18.0.0/15', '224.0.0.0/4', '240.0.0.0/4',
+];
+/**
+ * Egress policy: any public domain, but never the private/metadata ranges. (The Vercel API rejects IPv6 CIDRs,
+ * and sandboxes have no global IPv6 route, so only IPv4 ranges can and need to be listed. Verified for real.)
+ * "allow: {'*': []}" is required: with only deny CIDRs, no public DNS name resolves at all.
+ */
+export function serverNetworkPolicy() {
+  return { allow: { '*': [] as never[] }, subnets: { deny: [...DENIED_EGRESS_CIDRS] } };
+}
