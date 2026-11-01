@@ -14,6 +14,10 @@ import {
 import { deriveProjectKey, signRequest, expectedProof, nonceOf, gatewaySecretProblem, CREDENTIAL_HEADER } from './projectServerAuth';
 import { gateScript } from './projectGateRuntime';
 import {
+  beginStart, markReady, markFailed, markStopped, stopFailed, touch, claimStops, denialResponse, measuredRecord, recordMeasured, unmeasuredSessions,
+  type StopClaim, type SdkSession,
+} from './projectServerLifecycle';
+import {
   STAGE_DIR, stagePrepareArgs, provisionArgs, freshCheckArgs, installArgs, writeHashArgs, gateStartArgs, appStartArgs, tailLogArgs, stopProcessesArgs,
 } from './projectServerProvision';
 
@@ -43,18 +47,79 @@ export async function saveServerSettings(userId: string, projectId: string, inpu
   await assertProjectRole(userId, projectId, 'owner');
   const enabled = input?.enabled === true;
   if (enabled && !planAllowsServer(await getUserTier(userId))) throw new ProjectServerError('Project servers are part of the Pro plan. Upgrade in Billing to turn this on.', 402);
-  const { error } = await supabaseAdmin.from('project_server_settings').upsert({ project_id: projectId, enabled, updated_at: new Date().toISOString() });
+  const { data, error } = await supabaseAdmin.rpc('ps_set_enabled', { p_project: projectId, p_owner: userId, p_tier: await getUserTier(userId), p_enabled: enabled });
   if (error) throw new Error(`Server settings save failed: ${error.message}`);
+  if (!(data as { ok?: boolean })?.ok) { const r = denialResponse(String((data as { reason?: string })?.reason ?? 'disabled')); throw new ProjectServerError(r.message, r.status); }
   if (!enabled) await stopServer(projectId);
   return { enabled };
 }
 
-export async function stopServer(projectId: string): Promise<void> {
+/**
+ * Stops one claimed server. The claim (generation + lease) was taken in the database, so two workers can never stop
+ * the same server, and a start that happens afterwards is never clobbered (mark_stopped checks the generation).
+ */
+export async function stopClaimed(claim: StopClaim): Promise<boolean> {
   try {
     const { Sandbox } = await loadSandboxModule();
-    const sandbox = await Sandbox.get({ name: serverSandboxName(projectId), resume: false });
-    if (sandbox.status === 'running') await sandbox.stop();
-  } catch { /* not created yet, or already stopped */ }
+    let sandbox: Sandbox | null = null;
+    try { sandbox = await Sandbox.get({ name: serverSandboxName(claim.project_id), resume: false }); } catch { sandbox = null; /* never created or already gone */ }
+    if (sandbox && sandbox.status === 'running') await sandbox.stop();
+    const ok = await markStopped(claim.project_id, claim.generation);
+    if (ok) await reconcileProject(claim.project_id, claim.owner_id).catch(() => undefined);
+    return ok;
+  } catch (e) {
+    await stopFailed(claim.project_id, claim.generation, (e as Error).message).catch(() => undefined);
+    return false;
+  }
+}
+
+/** Stops a project's server now (owner turned it off, admin action, or a dead sandbox being replaced). Safe to call any time. */
+export async function stopServer(projectId: string, opts: { force?: boolean } = { force: true }): Promise<number> {
+  const claims = await claimStops({ projectId, force: opts.force ?? true, limit: 1 });
+  let stopped = 0;
+  for (const c of claims) if (await stopClaimed(c)) stopped += 1;
+  return stopped;
+}
+
+/**
+ * Asks the platform for the measured numbers of sessions that ended, and records them once (idempotent by session id).
+ * Sessions the platform has not finished reporting stay "estimated" and are retried by the next sweep.
+ */
+export async function reconcileProject(projectId: string, ownerId: string): Promise<number> {
+  const { Sandbox } = await loadSandboxModule();
+  let sandbox: Sandbox;
+  try { sandbox = await Sandbox.get({ name: serverSandboxName(projectId), resume: false }); } catch { return 0; }
+  const page = await sandbox.listSessions({ limit: 20, sortOrder: 'desc' });
+  let recorded = 0;
+  for (const s of page.sessions as unknown as SdkSession[]) {
+    const rec = measuredRecord(s);
+    if (rec && (await recordMeasured(projectId, ownerId, rec))) recorded += 1;
+  }
+  return recorded;
+}
+
+/** One reaper pass: stop what must stop, then finalize usage. Concurrency-safe: claims use SKIP LOCKED + leases. */
+export async function reapServers(opts: { limit?: number; maxMs?: number } = {}): Promise<{ claimed: number; stopped: number; reasons: Record<string, number>; usageRecorded: number }> {
+  const deadline = Date.now() + (opts.maxMs ?? 240_000);
+  const reasons: Record<string, number> = {};
+  let claimed = 0; let stopped = 0; let usageRecorded = 0;
+  for (;;) {
+    if (Date.now() > deadline) break;
+    const claims = await claimStops({ limit: opts.limit ?? 10 });
+    if (claims.length === 0) break;
+    claimed += claims.length;
+    const results = await Promise.all(claims.map(async (c) => { const ok = await stopClaimed(c); reasons[c.reason] = (reasons[c.reason] ?? 0) + 1; return ok; }));
+    stopped += results.filter(Boolean).length;
+  }
+  const open = await unmeasuredSessions(50);
+  const seen = new Set<string>();
+  for (const row of open) {
+    if (Date.now() > deadline) break;
+    if (seen.has(row.project_id)) continue;
+    seen.add(row.project_id);
+    usageRecorded += await reconcileProject(row.project_id, row.owner_id).catch(() => 0);
+  }
+  return { claimed, stopped, reasons, usageRecorded };
 }
 
 /** Per-project signing key. Throws a clear, non-leaky error when the platform is not configured. */
@@ -75,10 +140,6 @@ async function isUp(sandbox: Sandbox, projectId: string): Promise<boolean> {
   } catch { return false; }
 }
 
-const starting = new Map<string, Promise<Sandbox>>();
-let startsInFlight = 0;
-const MAX_STARTS_IN_FLIGHT = 3;
-
 async function tail(sandbox: Sandbox): Promise<string> {
   try {
     const [cmd, ...args] = tailLogArgs();
@@ -88,6 +149,7 @@ async function tail(sandbox: Sandbox): Promise<string> {
 }
 
 async function startServer(ownerId: string, projectId: string): Promise<Sandbox> {
+  // Callers hold a database lease for this project (see ensureServerRunning), so only one worker is here at a time.
   const key = gatewayKey(projectId);
   const { Sandbox } = await loadSandboxModule();
   const sandbox = await Sandbox.getOrCreate({
@@ -154,15 +216,67 @@ async function startServer(ownerId: string, projectId: string): Promise<Sandbox>
   throw new ProjectServerError('Your server did not start listening on the port in time. Make sure it uses process.env.PORT.', 504, await tail(sandbox));
 }
 
-/** Makes sure the project's server is awake, starting it if needed. One start at a time per project. */
+const inflight = new Map<string, Promise<Sandbox>>(); // coalesces callers inside ONE instance; the database lease coordinates across instances
+
+async function sandboxIfUp(projectId: string): Promise<Sandbox | null> {
+  try {
+    const { Sandbox } = await loadSandboxModule();
+    const sandbox = await Sandbox.get({ name: serverSandboxName(projectId), resume: false });
+    return sandbox.status === 'running' && (await isUp(sandbox, projectId)) ? sandbox : null;
+  } catch { return null; }
+}
+
+/**
+ * Makes sure the project's server is awake. The database decides who may start it (plan, allowance, suspension,
+ * kill switch, concurrency, backoff) and serialises starts with a lease + generation, so duplicate requests and
+ * parallel serverless instances can never provision twice. Failed or interrupted starts are recoverable.
+ */
 export async function ensureServerRunning(ownerId: string, projectId: string): Promise<Sandbox> {
-  const pending = starting.get(projectId);
+  const pending = inflight.get(projectId);
   if (pending) return pending;
-  if (startsInFlight >= MAX_STARTS_IN_FLIGHT) throw new ProjectServerError('The platform is busy waking servers. Try again in a few seconds.', 503);
-  startsInFlight += 1;
-  const p = startServer(ownerId, projectId).finally(() => { starting.delete(projectId); startsInFlight -= 1; });
-  starting.set(projectId, p);
+  const p = ensureOnce(ownerId, projectId).finally(() => inflight.delete(projectId));
+  inflight.set(projectId, p);
   return p;
+}
+
+async function ensureOnce(ownerId: string, projectId: string): Promise<Sandbox> {
+  const tier = await getUserTier(ownerId);
+  const deadline = Date.now() + START_TIMEOUT_MS + 15_000;
+  for (let round = 0; round < 12 && Date.now() < deadline; round += 1) {
+    const d = await beginStart(projectId, ownerId, tier);
+    if (d.action === 'denied') { const r = denialResponse(d.reason, d.retry_after); throw new ProjectServerError(r.message, r.status); }
+
+    if (d.action === 'ready') {
+      const up = await sandboxIfUp(projectId);
+      if (up) return up;
+      // The database says it is running but the sandbox is gone (expired or crashed): reclaim and start fresh.
+      await stopServer(projectId, { force: true });
+      continue;
+    }
+    if (d.action === 'wait') { await new Promise((r) => setTimeout(r, 1500)); const up = await sandboxIfUp(projectId); if (up) return up; continue; }
+
+    // action === 'start': we own generation d.generation.
+    let sandbox: Sandbox | null = null;
+    let superseded = false;
+    try {
+      sandbox = await startServer(ownerId, projectId);
+      const s = sandbox.currentSession();
+      const ok = await markReady(projectId, d.generation, s.sessionId, s.vcpus ?? null, s.memory ?? null, s.startedAt ?? new Date());
+      if (!ok) { // we were superseded (lease expired and the reaper or another worker took over): do not leave an orphan running
+        superseded = true;
+        await sandbox.stop().catch(() => undefined);
+        throw new ProjectServerError('The server was restarted by the platform. Try again.', 503);
+      }
+      return sandbox;
+    } catch (e) {
+      if (!superseded) {
+        await markFailed(projectId, d.generation, e instanceof Error ? e.message : 'start failed').catch(() => undefined);
+        if (sandbox) await sandbox.stop().catch(() => undefined);
+      }
+      throw e;
+    }
+  }
+  throw new ProjectServerError('The server did not become ready in time. Try again.', 504);
 }
 
 /** Each request pushes the sleep time out, so a server stays awake while it is being used. */
@@ -185,6 +299,7 @@ export async function proxyToServer(
   ownerId: string, projectId: string, req: { method: string; path: string; query: string; headers: Record<string, string>; body?: Buffer },
 ): Promise<ProxyResult> {
   const sandbox = await ensureServerRunning(ownerId, projectId);
+  void touch(projectId).catch(() => undefined);
   void keepAwake(sandbox);
   let res: Response;
   try {
