@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 
 /**
- * Thin, typed access to the lifecycle / quota / usage functions of migration 047, plus the pure rules around them.
+ * Thin, typed access to the lifecycle / quota / usage functions of migration 048, plus the pure rules around them.
  * The database decides; this file never keeps authoritative state in process memory.
  */
 export const HOLDER = `${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
@@ -32,7 +32,15 @@ export const stopFailed = (projectId: string, generation: number, error: string)
 export const touch = (projectId: string) => rpc<void>('ps_touch', { p_project: projectId });
 export const claimStops = (opts: { limit?: number; projectId?: string | null; ownerId?: string | null; force?: boolean } = {}) =>
   rpc<StopClaim[]>('ps_claim_stops', { p_holder: HOLDER, p_idle_seconds: 600, p_limit: opts.limit ?? 20, p_lease_seconds: STOP_LEASE_SECONDS, p_project: opts.projectId ?? null, p_owner: opts.ownerId ?? null, p_force: opts.force ?? false });
-export const usageRaw = (ownerId: string, projectId: string | null = null) => rpc<Record<string, any>>('ps_usage', { p_owner: ownerId, p_project: projectId });
+export const usageRaw = (ownerId: string, projectId: string | null = null, monthStartIso: string | null = null) => rpc<Record<string, any>>('ps_usage', { p_owner: ownerId, p_project: projectId, p_month: monthStartIso });
+
+/** "2026-10" -> first instant of that UTC month, or null when the text is not a real past-or-current month. */
+export function parseMonth(text: unknown, now: Date = new Date()): string | null {
+  if (typeof text !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(text)) return null;
+  const start = new Date(`${text}-01T00:00:00.000Z`);
+  if (!Number.isFinite(start.getTime()) || start.getUTCFullYear() < 2024 || start.getTime() > now.getTime()) return null;
+  return start.toISOString();
+}
 export const quotaRaw = (ownerId: string, projectId: string, tier: string) => rpc<Record<string, any>>('ps_quota', { p_owner: ownerId, p_project: projectId, p_tier: tier });
 export const unmeasuredSessions = (limit = 50) => rpc<{ project_id: string; owner_id: string; session_id: string }[]>('ps_unmeasured_sessions', { p_limit: limit });
 export const setKillSwitch = (engaged: boolean, reason: string, adminId: string) => rpc<void>('ps_admin_set_kill_switch', { p_engaged: engaged, p_reason: reason, p_admin: adminId });
@@ -57,7 +65,7 @@ export function denialResponse(reason: string, retryAfter?: number): { status: n
 }
 
 /** Reasons that must also stop a server that is already running (used by the reaper and admin tools). */
-export const HARD_STOP_REASONS = new Set(['owner_suspended', 'account_suspended', 'platform_stopped', 'quota_owner_hours', 'quota_project_hours', 'quota_cpu', 'quota_egress']);
+export const HARD_STOP_REASONS = new Set(['owner_changed', 'owner_suspended', 'account_suspended', 'platform_stopped', 'quota_owner_hours', 'quota_project_hours', 'quota_cpu', 'quota_egress']);
 
 /** Shape of one session as returned by Sandbox.listSessions (only the fields we use). */
 export interface SdkSession { id: string; status: string; startedAt?: number; stoppedAt?: number; duration?: number; activeCpuDurationMs?: number; networkTransfer?: { ingress: number; egress: number }; vcpus?: number; memory?: number }
@@ -92,6 +100,8 @@ export function buildUsageView(quota: Record<string, any>, allocated?: { vcpus: 
     allowed: quota.ok === true, blockedReason: quota.ok === true ? null : (quota.reason ?? null),
     measured: {
       source: 'Reported by the sandbox platform after each session stops',
+      attribution: 'Whole-session totals are split across UTC months in proportion to wall-clock time in each month; the shares always add up to the reported total.',
+      apportionedSessions: uo.apportioned_sessions ?? 0,
       activeCpuMs: uo.active_cpu_ms_measured ?? 0, networkEgressBytes: uo.egress_bytes_measured ?? 0, networkIngressBytes: uo.ingress_bytes_measured ?? 0,
       wallMs: uo.wall_ms_measured ?? 0,
     },

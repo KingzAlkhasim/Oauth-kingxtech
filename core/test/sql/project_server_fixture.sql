@@ -6,3 +6,4 @@ do $$ begin
 end $$;
 create table if not exists public.projects (id uuid primary key, user_id uuid not null);
 create table if not exists public.account_status (user_id uuid primary key, suspended boolean not null default false);
+create table if not exists public.admin_users (user_id uuid primary key);
