@@ -1,4 +1,4 @@
-import { APP_USER, APP_HOME, APP_DIR, APP_PATH, SERVER_PORT, APP_PORT, restrictedCommand } from './projectServerPolicy';
+import { APP_USER, APP_HOME, APP_DIR, NODE_BIN_DIR, SERVER_PORT, APP_PORT, restrictedCommand } from './projectServerPolicy';
 import { GATE_DIR, GATE_KEY_FILE, GATE_SCRIPT_FILE } from './projectGateRuntime';
 
 /**
@@ -7,6 +7,8 @@ import { GATE_DIR, GATE_KEY_FILE, GATE_SCRIPT_FILE } from './projectGateRuntime'
  * and executed by the SDK. Project code only ever runs through restrictedCommand(): clean env, user kxapp,
  * no-new-privs. Root is used only for fixed provisioning scripts and the gate.
  */
+/** Root-only copy of node for the gate. The image's own node is owned by the project user's uid, so root must never run it. */
+export const GATE_NODE = `${GATE_DIR}/node`;
 export const STAGE_DIR = '/tmp/.kx-stage';
 export const GATE_LOG = '/tmp/kx-gate.log';
 export const APP_LOG = '/tmp/kx-server.log';
@@ -19,8 +21,9 @@ export const PROVISION_SCRIPT = `set -eu
 id ${APP_USER} >/dev/null 2>&1 || useradd -m -s /bin/bash ${APP_USER}
 chmod 700 ${APP_HOME}
 pkill -KILL -u ${APP_USER} || true
-pkill -KILL -f '^node ${GATE_SCRIPT_FILE}' || true
+pkill -KILL -f '^${GATE_NODE} ${GATE_SCRIPT_FILE}' || true
 install -d -m 700 -o root -g root ${GATE_DIR}
+install -m 755 -o root -g root "$(readlink -f ${NODE_BIN_DIR}/node)" ${GATE_NODE}
 install -m 600 -o root -g root ${STAGE_DIR}/gate.cjs ${GATE_SCRIPT_FILE}
 install -m 600 -o root -g root ${STAGE_DIR}/key ${GATE_KEY_FILE}
 mkdir -p ${APP_DIR}
@@ -39,11 +42,11 @@ export const writeHashArgs = (userEnv: Record<string, string>, hash: string) => 
 /** Root, detached. Started BEFORE project code so the gate owns the public port first. */
 export const gateStartArgs = (projectId: string) =>
   ['sh', '-c', 'exec "$@" > "$0" 2>&1', GATE_LOG,
-    'env', '-i', `PATH=${APP_PATH}`, 'node', GATE_SCRIPT_FILE, projectId, String(SERVER_PORT), String(APP_PORT)];
+    'env', '-i', 'PATH=/usr/bin:/bin', GATE_NODE, GATE_SCRIPT_FILE, projectId, String(SERVER_PORT), String(APP_PORT)];
 
 /** Root-launched but permanently unprivileged, detached. */
 export const appStartArgs = (userEnv: Record<string, string>) =>
   ['sh', '-c', 'exec "$@" > "$0" 2>&1', APP_LOG, ...restrictedCommand(userEnv, ['npm', 'start'])];
 
 export const tailLogArgs = () => ['sh', '-c', `tail -c 3000 ${APP_LOG} 2>/dev/null || true`];
-export const stopProcessesArgs = () => ['sh', '-c', `pkill -KILL -u ${APP_USER} || true; pkill -KILL -f '^node ${GATE_SCRIPT_FILE}' || true`];
+export const stopProcessesArgs = () => ['sh', '-c', `pkill -KILL -u ${APP_USER} || true; pkill -KILL -f '^${GATE_NODE} ${GATE_SCRIPT_FILE}' || true`];

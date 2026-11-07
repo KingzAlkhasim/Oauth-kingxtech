@@ -27,12 +27,13 @@ test('project env is sanitized: no platform, sudo or reserved variables can be s
   });
   assert.deepEqual(Object.keys(out), ['OK_VAR']);
   const cmd = restrictedCommand({ A: '1' }, ['node']).join(' ');
-  assert.ok(cmd.includes(`PORT=${APP_PORT}`) && cmd.includes('PATH=/usr/local/bin:/usr/bin:/bin') && !cmd.includes('SUDO'));
+  assert.ok(cmd.includes(`PORT=${APP_PORT}`) && cmd.includes('PATH=/vercel/runtimes/node24/bin:/usr/local/bin:/usr/bin:/bin') && !cmd.includes('SUDO'));
 });
 
 test('gate runs as root on the public port before the app, app only on loopback port, secrets never in argv', () => {
   const g = gateStartArgs('pid').join(' ');
   assert.ok(g.includes(`gate.cjs pid ${SERVER_PORT} ${APP_PORT}`) && !g.includes('setpriv'));
+  assert.ok(g.includes('/opt/kx/node /opt/kx/gate.cjs') && g.includes('PATH=/usr/bin:/bin') && !g.includes('/vercel/runtimes'), 'root runs only its own copy of node, never the image node owned by the project uid');
   assert.notEqual(SERVER_PORT, APP_PORT);
   for (const argv of [gateStartArgs('p'), provisionArgs(), appStartArgs(env)].slice(0, 2)) assert.ok(!argv.join(' ').match(/[0-9a-f]{64}/));
 });
@@ -52,6 +53,13 @@ test('gate and key are root-only, project dir goes to kxapp', () => {
   assert.match(PROVISION_SCRIPT, /install -m 600 -o root -g root \S+\/key \/opt\/kx\/key/);
   assert.match(PROVISION_SCRIPT, /chown -R kxapp:kxapp \/home\/kxapp/);
   assert.match(PROVISION_SCRIPT, /chmod 700 \/home\/kxapp/);
+});
+
+test('npm and node are found: the image node dir is on the project PATH, and root keeps a root-owned node copy', () => {
+  assert.ok(installArgs(env).join(' ').includes('/vercel/runtimes/node24/bin'));
+  assert.match(PROVISION_SCRIPT, /install -m 755 -o root -g root "\$\(readlink -f \/vercel\/runtimes\/node24\/bin\/node\)" \/opt\/kx\/node/);
+  assert.ok(PROVISION_SCRIPT.indexOf('/opt/kx/node') < PROVISION_SCRIPT.indexOf('chown -R'));
+  assert.ok(stopProcessesArgs().join(' ').includes("^/opt/kx/node /opt/kx/gate.cjs"));
 });
 
 test('network policy allows public domains and denies private/metadata IPv4 only (API rejects IPv6 CIDRs)', () => {
