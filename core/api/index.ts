@@ -1,6 +1,7 @@
 import app = require('../src/server');
 import collaborationRouter from '../src/routes/projectCollaboration';
 import billingRouter from '../src/services/billingRoutes';
+import projectServerRouter from '../src/services/projectServerRoutes';
 
 // server.ts exports the fully configured Express app. Mount the collaboration
 // router and billing router after existing routes; these paths are distinct and
@@ -8,5 +9,6 @@ import billingRouter from '../src/services/billingRoutes';
 // unchanged.
 app.use(collaborationRouter);
 app.use(billingRouter);
+app.use(projectServerRouter);
 
 export = app;

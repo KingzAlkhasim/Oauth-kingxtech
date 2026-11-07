@@ -196,3 +196,15 @@ export const listDataCollections = (projectId) => dataCall(`/api/projects/${proj
 export const saveDataRules = (projectId, collection, rules) => dataCall(`/api/projects/${projectId}/data/${collection}/rules`, 'PUT', rules);
 export const listDataRows = (projectId, collection) => dataCall(`/api/projects/${projectId}/data/${collection}?limit=50`);
 export const deleteDataRow = (projectId, rowId) => dataCall(`/api/projects/${projectId}/data/rows/${rowId}`, 'DELETE');
+
+// Project server (Pro): a Node API that sleeps when idle and wakes on request.
+async function serverCall(projectId, path = '', method = 'GET', body) {
+  const headers = await authHeaders(method === 'PUT');
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/server${path}`), { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!data.success) { const err = new Error(data.error || 'Request failed'); err.logs = data.logs || ''; err.status = res.status; throw err; }
+  return data;
+}
+export const getProjectServer = (projectId) => serverCall(projectId);
+export const saveProjectServer = (projectId, settings) => serverCall(projectId, '', 'PUT', settings);
+export const startProjectServer = (projectId) => serverCall(projectId, '/start', 'POST');
