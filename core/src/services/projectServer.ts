@@ -8,7 +8,7 @@ import { getProjectEnvVarsForRuntime } from './projectEnvVars';
 import { getUserTier } from './credits';
 import { BINARY_PREFIX } from './binaryFiles';
 import {
-  SERVER_PORT, IDLE_WINDOW_MS, PROXY_TIMEOUT_MS, START_TIMEOUT_MS, RESPONSE_BODY_MAX, APP_DIR,
+  SERVER_PORT, IDLE_WINDOW_MS, PROXY_TIMEOUT_MS, START_TIMEOUT_MS, RESPONSE_BODY_MAX, APP_DIR, NODE_RUNTIME,
   cleanResponseHeaders, startCommandProblem, planAllowsServer, sanitizeAppEnv, serverNetworkPolicy,
 } from './projectServerPolicy';
 import { deriveProjectKey, signRequest, expectedProof, nonceOf, gatewaySecretProblem, CREDENTIAL_HEADER } from './projectServerAuth';
@@ -154,7 +154,7 @@ async function startServer(ownerId: string, projectId: string): Promise<Sandbox>
   const { Sandbox } = await loadSandboxModule();
   const sandbox = await Sandbox.getOrCreate({
     name: serverSandboxName(projectId),
-    runtime: 'node24',
+    runtime: NODE_RUNTIME,
     timeout: IDLE_WINDOW_MS,
     ports: [SERVER_PORT],
     resources: { vcpus: 1 },

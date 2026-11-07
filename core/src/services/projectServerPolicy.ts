@@ -84,7 +84,10 @@ export const APP_USER = 'kxapp';
 export const APP_HOME = '/home/kxapp';
 export const APP_DIR = '/home/kxapp/app';
 export const APP_PORT = 3001; // loopback only; the gate on SERVER_PORT is the only thing reachable from outside
-export const APP_PATH = '/usr/local/bin:/usr/bin:/bin';
+/** The sandbox image keeps node/npm here, not in /usr/bin. Without it on PATH, `npm` is "No such file or directory". */
+export const NODE_RUNTIME = 'node24';
+export const NODE_BIN_DIR = `/vercel/runtimes/${NODE_RUNTIME}/bin`;
+export const APP_PATH = `${NODE_BIN_DIR}:/usr/local/bin:/usr/bin:/bin`;
 
 const RESERVED_ENV = new Set(['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'PWD', 'PORT', 'HOST', 'NODE_ENV', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'SUDO_USER', 'SUDO_UID', 'SUDO_GID', 'SUDO_COMMAND']);
 
