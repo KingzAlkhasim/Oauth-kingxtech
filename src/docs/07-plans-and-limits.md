@@ -34,3 +34,6 @@ Free accounts can invite up to 2 people to a project. Pro and Pro+ can invite up
 ## Wallet
 
 Your wallet balance is for compute and storage. Pro can be paid from the wallet using the confirm button on the Billing page. Moving money from the wallet to a plan is one-way.
+
+## Servers
+A project server (a Node API that sleeps when idle) is a Pro and Pro+ feature. See [Save data and run a server](/docs/data-and-servers). Saving data from your site needs no plan.

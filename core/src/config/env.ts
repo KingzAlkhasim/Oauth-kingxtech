@@ -39,6 +39,10 @@ const envSchema = z.object({
   VERCEL_TOKEN: z.string().min(1).optional(),
   VERCEL_TEAM_ID: z.string().min(1).optional(),
 
+  // --- Project servers (Pro) ---
+  // Master secret for gateway-to-sandbox request signing. Per-project keys are derived from it; it never enters a sandbox.
+  PROJECT_SERVER_GATEWAY_SECRET: z.string().min(32).optional(),
+
   // --- Agentic tool sandboxing ---
   AGENT_PROJECT_ROOT: z.string().min(1).optional(),
 
