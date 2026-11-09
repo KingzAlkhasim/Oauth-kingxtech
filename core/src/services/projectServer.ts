@@ -14,7 +14,7 @@ import {
 import { deriveProjectKey, signRequest, expectedProof, nonceOf, gatewaySecretProblem, CREDENTIAL_HEADER } from './projectServerAuth';
 import { gateScript } from './projectGateRuntime';
 import {
-  beginStart, markReady, markFailed, markStopped, stopFailed, touch, claimStops, denialResponse, measuredRecord, recordMeasured, unmeasuredSessions,
+  beginStart, markReady, markFailed, markStopped, stopFailed, touch, claimStops, denialResponse, measuredRecord, recordMeasured, unmeasuredSessions, orphanRuntimes, forgetRuntime,
   type StopClaim, type SdkSession,
 } from './projectServerLifecycle';
 import {
@@ -118,6 +118,18 @@ export async function reapServers(opts: { limit?: number; maxMs?: number } = {})
     if (seen.has(row.project_id)) continue;
     seen.add(row.project_id);
     usageRecorded += await reconcileProject(row.project_id, row.owner_id).catch(() => 0);
+  }
+  // Projects deleted from the browser leave a stopped sandbox behind: record its measured usage, delete it, then forget the row.
+  for (const o of await orphanRuntimes(10).catch(() => [])) {
+    if (Date.now() > deadline) break;
+    try {
+      await reconcileProject(o.project_id, o.owner_id).catch(() => 0);
+      const { Sandbox } = await loadSandboxModule();
+      let sandbox: Sandbox | null = null;
+      try { sandbox = await Sandbox.get({ name: serverSandboxName(o.project_id), resume: false }); } catch { sandbox = null; }
+      if (sandbox) await sandbox.delete();
+      await forgetRuntime(o.project_id);
+    } catch { /* retried by the next sweep */ }
   }
   return { claimed, stopped, reasons, usageRecorded };
 }

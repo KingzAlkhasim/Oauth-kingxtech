@@ -49,7 +49,7 @@ before(() => {
   run1(path.join(BIN!, 'initdb'), ['-D', path.join(dir, 'data'), '-A', 'trust']);
   run1(path.join(BIN!, 'pg_ctl'), ['-D', path.join(dir, 'data'), '-o', `-p ${PORT} -k ${dir} -c listen_addresses=''`, '-l', path.join(dir, 'log'), '-w', 'start']);
   execFileSync('psql', ['-h', dir, '-p', String(PORT), '-U', 'postgres', '-qc', 'create database kx']);
-  for (const f of ['test/sql/project_server_fixture.sql', '../supabase/migrations/047_project_server.sql', '../supabase/migrations/048_project_server_lifecycle.sql']) {
+  for (const f of ['test/sql/project_server_fixture.sql', '../supabase/migrations/047_project_server.sql', '../supabase/migrations/048_project_server_lifecycle.sql', '../supabase/migrations/049_project_server_survive_project_delete.sql']) {
     execFileSync('psql', ['-h', dir, '-p', String(PORT), '-U', 'postgres', '-d', 'kx', '-v', 'ON_ERROR_STOP=1', '-q', '-f', new URL(`../${f}`, import.meta.url).pathname], { stdio: 'ignore' });
   }
   execFileSync('psql', ['-h', dir, '-p', String(PORT), '-U', 'postgres', '-d', 'kx', '-qc', `insert into public.admin_users values ('${ADMIN}')`]);
@@ -62,7 +62,7 @@ after(() => {
 const t = (name: string, fn: () => void | Promise<void>) => test(name, { skip: !available && 'PostgreSQL binaries not installed' }, fn);
 
 t('migration is idempotent and exposes nothing to anon/authenticated', () => {
-  for (const m of ['047_project_server.sql', '048_project_server_lifecycle.sql', '048_project_server_lifecycle.sql']) {
+  for (const m of ['047_project_server.sql', '048_project_server_lifecycle.sql', '049_project_server_survive_project_delete.sql', '049_project_server_survive_project_delete.sql']) {
     execFileSync('psql', ['-h', dir, '-p', String(PORT), '-U', 'postgres', '-d', 'kx', '-v', 'ON_ERROR_STOP=1', '-q', '-f', new URL(`../../supabase/migrations/${m}`, import.meta.url).pathname], { stdio: 'ignore' });
   }
   for (const role of ['anon', 'authenticated']) {
@@ -521,4 +521,52 @@ t('SECURITY DEFINER audit: fixed search_path, no public/anon/authenticated acces
 t('migration history is preserved: 047 is byte-identical to the version pushed in 04384de, all new SQL is in 048', () => {
   const sha = crypto.createHash('sha256').update(readFileSync(new URL('../../supabase/migrations/047_project_server.sql', import.meta.url))).digest('hex');
   assert.equal(sha, 'fa8adb27461b98dce46424ea8a689eeefbfd40d948f9473fcf205c9b859e2969');
+});
+
+// Migration 049: deleting a project (done straight from the browser) must not erase usage or strand a sandbox.
+t('deleting a project keeps its usage ledger, so it still counts toward the owner month', () => {
+  const p = newProject();
+  const s = `sbx_${uid()}`;
+  assert.equal(q(`select public.ps_record_session_usage('${s}','${p.id}','${p.owner}', now() - interval '2 hours', now() - interval '1 hour', 3600000, 9000, 100, 200, 1, 2048)`), 't');
+  const before = J(q(`select public.ps_usage('${p.owner}', null, ${MS})::text`));
+  q(`delete from public.projects where id='${p.id}'`);
+  assert.equal(q(`select count(*) from public.project_server_sessions where project_id='${p.id}'`), '1');
+  const after = J(q(`select public.ps_usage('${p.owner}', null, ${MS})::text`));
+  assert.deepEqual(after, before);
+  assert.equal(q(`select count(*) from public.project_server_settings where project_id='${p.id}'`), '0'); // the on/off switch still goes with the project
+});
+
+t('a deleted project leaves a stoppable runtime row, then is listed for cleanup only when stopped and measured', () => {
+  const p = newProject();
+  const g = begin(p).generation; const s = ready(p, g)!;
+  q(`delete from public.projects where id='${p.id}'`);
+  assert.equal(state(p), 'READY');                                        // row survives: the reaper can still find and stop it
+  assert.equal(q(`select count(*) from public.ps_orphan_runtimes(50) where project_id='${p.id}'`), '0'); // running: not an orphan yet
+  assert.equal(q(`select public.ps_forget_runtime('${p.id}')`), 'f');     // refuses while not stopped
+  q(`update public.project_server_runtime set last_request_at = now() - interval '2 hours' where project_id='${p.id}'`);
+  const c = J(claim()).find((x: any) => x.p === p.id); assert.ok(c, 'idle server of a deleted project is claimed');
+  assert.equal(q(`select public.ps_mark_stopped('${p.id}', ${c.g})`), 't');
+  // session still estimated: wait for measured numbers before the sandbox (and its numbers) are deleted
+  assert.equal(q(`select count(*) from public.ps_orphan_runtimes(50) where project_id='${p.id}'`), '0');
+  q(`select public.ps_record_session_usage('${s}','${p.id}','${p.owner}', now() - interval '2 hours', now() - interval '1 hour', 3600000, 9000, 100, 200, 1, 2048)`);
+  assert.equal(q(`select count(*) from public.ps_orphan_runtimes(50) where project_id='${p.id}'`), '1');
+  assert.equal(q(`select public.ps_forget_runtime('${p.id}')`), 't');
+  assert.equal(q(`select count(*) from public.project_server_runtime where project_id='${p.id}'`), '0');
+  assert.equal(q(`select count(*) from public.project_server_sessions where project_id='${p.id}'`), '1'); // usage stays
+});
+
+t('a live project is never listed as an orphan or forgotten', () => {
+  const p = newProject();
+  const g = begin(p).generation; ready(p, g);
+  q(`update public.project_server_runtime set state='STOPPED' where project_id='${p.id}'`);
+  assert.equal(q(`select count(*) from public.ps_orphan_runtimes(50) where project_id='${p.id}'`), '0');
+  assert.equal(q(`select public.ps_forget_runtime('${p.id}')`), 'f');
+});
+
+t('cleanup functions are service_role only', () => {
+  for (const role of ['anon', 'authenticated']) {
+    assert.match(qErr(`set role ${role}; select * from public.ps_orphan_runtimes(1)`), /permission denied/);
+    assert.match(qErr(`set role ${role}; select public.ps_forget_runtime('${uid()}')`), /permission denied/);
+  }
+  assert.equal(q(`select has_function_privilege('service_role','public.ps_orphan_runtimes(int)','execute')`), 't');
 });
