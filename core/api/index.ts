@@ -7,8 +7,12 @@ import projectServerRouter from '../src/services/projectServerRoutes';
 // router and billing router after existing routes; these paths are distinct and
 // there is no terminal catch-all 404 in server.ts, so existing behavior remains
 // unchanged.
-app.use(collaborationRouter);
+// Order matters: the collaboration router runs requireAuth on every request that reaches it, so it must come LAST.
+// Cron callers (expire-plans, project-servers-reap) send `Authorization: Bearer <CRON_SECRET>`; if that router saw them first
+// it would treat the secret as a user token and answer 401 "Invalid or expired session." Billing and project-server
+// routes check their own auth per route, so they are safe to mount before it.
 app.use(billingRouter);
 app.use(projectServerRouter);
+app.use(collaborationRouter);
 
 export = app;
