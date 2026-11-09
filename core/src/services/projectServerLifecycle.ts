@@ -42,6 +42,8 @@ export function parseMonth(text: unknown, now: Date = new Date()): string | null
   return start.toISOString();
 }
 export const quotaRaw = (ownerId: string, projectId: string, tier: string) => rpc<Record<string, any>>('ps_quota', { p_owner: ownerId, p_project: projectId, p_tier: tier });
+export const orphanRuntimes = (limit = 20) => rpc<{ project_id: string; owner_id: string }[]>('ps_orphan_runtimes', { p_limit: limit });
+export const forgetRuntime = (projectId: string) => rpc<boolean>('ps_forget_runtime', { p_project: projectId });
 export const unmeasuredSessions = (limit = 50) => rpc<{ project_id: string; owner_id: string; session_id: string }[]>('ps_unmeasured_sessions', { p_limit: limit });
 export const setKillSwitch = (engaged: boolean, reason: string, adminId: string) => rpc<void>('ps_admin_set_kill_switch', { p_engaged: engaged, p_reason: reason, p_admin: adminId });
 export const setOwnerControls = (ownerId: string, suspended: boolean | null, reason: string | null, multiplier: number | null, adminId: string) =>
