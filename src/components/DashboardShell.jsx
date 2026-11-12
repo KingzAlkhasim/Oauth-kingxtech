@@ -117,7 +117,7 @@ export default function DashboardShell({ children, fullWidth = false }) {
         </div>
       </aside>
 
-      <main className={`flex-1 px-4 sm:px-6 py-6 sm:py-10 lg:px-12 lg:py-12 min-w-0 ${fullWidth ? 'max-w-none' : 'max-w-4xl'}`}>{children}</main>
+      <main className={`kx-page-main flex-1 px-4 sm:px-6 py-6 sm:py-10 lg:px-12 lg:py-12 min-w-0 ${fullWidth ? 'max-w-none' : 'max-w-4xl'}`}>{children}</main>
     </div>
   );
 }

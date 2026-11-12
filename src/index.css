@@ -104,3 +104,20 @@ input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #0F172A inset; -webkit
 /* K-XpertAI docked beside the page on wide screens: the page makes room and stays usable. */
 body { transition: padding-right .2s ease; }
 html.kxpert-docked body { padding-right: 24rem; }
+
+/*
+ * Workspace beside the docked K-XpertAI drawer (desktop). The drawer takes 24rem off the right, so without these rules the
+ * file tree (260px) + page padding left the editor ~270px wide at 1280px, and full screen sat on top of the drawer.
+ *  - page padding shrinks so the workspace gets the room
+ *  - the file tree narrows to 200px
+ *  - below 1360px wide there is not enough room for two columns: stack them (short file list above the editor)
+ *  - full screen stops at the drawer instead of covering it
+ */
+html.kxpert-docked .kx-page-main { padding-left: 1rem; padding-right: 1rem; }
+html.kxpert-docked .kx-ws-grid { grid-template-columns: 200px minmax(0, 1fr); }
+html.kxpert-docked .kx-ws-full { right: 24rem; }
+@media (min-width: 768px) and (max-width: 1359px) {
+  html.kxpert-docked .kx-ws-grid:not(.kx-ws-full) { grid-template-columns: minmax(0, 1fr); }
+  html.kxpert-docked .kx-ws-grid:not(.kx-ws-full) .kx-ws-files { height: 30vh; }
+  html.kxpert-docked .kx-ws-grid:not(.kx-ws-full) .kx-ws-editor { height: 72vh; }
+}
