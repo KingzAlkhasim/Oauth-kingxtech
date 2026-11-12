@@ -57,6 +57,13 @@ import {
   Shield,
   Lock,
   Loader2,
+  Smartphone,
+  KeyRound,
+  Database,
+  Server,
+  History,
+  Sparkles,
+  X as CloseIcon,
 } from 'lucide-react';
 import { friendlyError } from '../lib/errors';
 
@@ -379,8 +386,79 @@ function TerminalTab({ projectId, publishedUrl }) {
   );
 }
 
+/** True on phones. Matches the workspace's own `md` breakpoint (768px), so desktop keeps the full cards. */
+function useIsPhone() {
+  const query = '(max-width: 767px)';
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setPhone(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return phone;
+}
+
+/** A popup for one settings section: a bottom sheet on a phone. Closes on the backdrop, the X and Escape. */
+function SettingsSheet({ title, onClose, children }) {
+  const closeRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeRef.current?.focus();
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative w-full max-h-[92dvh] flex flex-col rounded-t-2xl border-t border-white/10 bg-kxsurface shadow-2xl">
+        <div className="flex items-center justify-between gap-3 px-4 h-14 border-b border-white/8 shrink-0">
+          <h2 className="text-[15px] font-semibold truncate">{title}</h2>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label={`Close ${title}`} className="min-w-11 min-h-11 -mr-2 flex items-center justify-center rounded-lg text-kxmist hover:text-white">
+            <CloseIcon size={18} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-6 space-y-3">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One settings section. On desktop it renders the full card inline, as before. On a phone it shows a single compact
+ * row (icon, name, one line of help); tapping it opens the same card in a popup, so the list stays short.
+ */
+function SettingsSection({ icon: Icon, title, summary, children }) {
+  const phone = useIsPhone();
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  if (!phone) return children;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full min-h-14 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-2.5 text-left active:bg-white/[0.06]"
+        aria-haspopup="dialog"
+      >
+        <span className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center shrink-0"><Icon size={16} className="text-kxpurple" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-medium truncate">{title}</span>
+          {summary && <span className="block text-[11.5px] text-kxmist truncate">{summary}</span>}
+        </span>
+        <ChevronRight size={16} className="text-kxmist shrink-0" />
+      </button>
+      {open && <SettingsSheet title={title} onClose={close}>{children}</SettingsSheet>}
+    </>
+  );
+}
+
 function SettingsGroupLabel({ children }) {
-  return <h2 className="pt-2 text-[11px] font-mono uppercase tracking-wider text-kxmist">{children}</h2>;
+  // The group headings are only needed when the full cards are stacked; on a phone each row names itself.
+  return <h2 className="hidden md:block pt-2 text-[11px] font-mono uppercase tracking-wider text-kxmist">{children}</h2>;
 }
 
 function SiteViewsCard({ projectId }) {
@@ -626,11 +704,14 @@ function SiteSettingsTab({ projectId }) {
   };
 
   return (
-    <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
-      <SiteViewsCard projectId={projectId} />
+    <div className="flex-1 min-w-0 overflow-y-auto space-y-2 md:space-y-4">
+      <SettingsSection icon={Eye} title="Visits" summary="Page views of your published site">
+        <SiteViewsCard projectId={projectId} />
+      </SettingsSection>
       <ShareSettingsCard projectId={projectId} />
 
       <SettingsGroupLabel>App &amp; install</SettingsGroupLabel>
+      <SettingsSection icon={Smartphone} title="Install as App" summary="Let visitors add your site to their home screen">
       <Card className="p-4 rounded-xl">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -680,8 +761,10 @@ function SiteSettingsTab({ projectId }) {
           uploadIcon(file);
         }} />
       </Card>
+      </SettingsSection>
 
       <SettingsGroupLabel>Secrets &amp; environment</SettingsGroupLabel>
+      <SettingsSection icon={KeyRound} title="Variables &amp; secrets" summary="Keys and settings your project can read">
       <Card className="p-4 rounded-xl">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
@@ -736,18 +819,28 @@ function SiteSettingsTab({ projectId }) {
           <Button variant="glow" onClick={save} loading={saving} disabled={!key.trim()}><Plus size={14} /> Set</Button>
         </div>
       </Card>
+      </SettingsSection>
 
       <SettingsGroupLabel>AI</SettingsGroupLabel>
-      <SiteAiCard projectId={projectId} />
+      <SettingsSection icon={Sparkles} title="AI for your site" summary="Add an AI assistant to your published site">
+        <SiteAiCard projectId={projectId} />
+      </SettingsSection>
       <SettingsGroupLabel>Data</SettingsGroupLabel>
-      <SiteDataCard projectId={projectId} />
+      <SettingsSection icon={Database} title="Data for your site" summary="Save forms, sign-ups and other records">
+        <SiteDataCard projectId={projectId} />
+      </SettingsSection>
       <SettingsGroupLabel>Server</SettingsGroupLabel>
-      <SiteServerCard projectId={projectId} />
+      <SettingsSection icon={Server} title="Server for your site" summary="Your own Node API (Pro)">
+        <SiteServerCard projectId={projectId} />
+      </SettingsSection>
 
       <SettingsGroupLabel>Versions</SettingsGroupLabel>
-      <RestorePointsCard projectId={projectId} />
+      <SettingsSection icon={History} title="Restore points" summary="Go back to an earlier version">
+        <RestorePointsCard projectId={projectId} />
+      </SettingsSection>
 
       <SettingsGroupLabel>Security</SettingsGroupLabel>
+      <SettingsSection icon={Shield} title="SecureCheck" summary="AI security review of your project (Pro)">
       <Card className="p-4 rounded-xl">
         <div className="flex items-center gap-2 mb-1">
           <Shield size={15} className="text-kxblue" />
@@ -791,6 +884,7 @@ function SiteSettingsTab({ projectId }) {
           </>
         )}
       </Card>
+      </SettingsSection>
     </div>
   );
 }
@@ -1368,11 +1462,11 @@ export default function ProjectWorkspace() {
       />
 
       <div className={isFullscreen
-        ? 'fixed inset-0 z-50 bg-kxsurface p-3 md:p-4 flex flex-col md:grid md:grid-cols-[260px_1fr] md:grid-rows-1 gap-3 md:gap-4 overflow-hidden'
-        : 'flex flex-col md:grid md:grid-cols-[260px_1fr] gap-3 md:gap-4'
+        ? 'kx-ws-grid kx-ws-full fixed inset-0 z-50 bg-kxsurface p-3 md:p-4 flex flex-col md:grid md:grid-cols-[260px_1fr] md:grid-rows-1 gap-3 md:gap-4 overflow-hidden'
+        : 'kx-ws-grid flex flex-col md:grid md:grid-cols-[260px_1fr] gap-3 md:gap-4'
       }>
         {/* File tree — full panel on mobile (toggled via the Files button), always-visible sidebar on desktop */}
-        <Card className={`${mobileView === 'files' ? 'flex' : 'hidden'} md:flex flex-col rounded-[20px] p-3 shadow-lg shadow-black/10 overflow-y-auto ${isFullscreen ? 'flex-1 min-h-0 md:h-full' : 'h-[65vh] md:h-[60vh]'}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleAssetUploads(e.dataTransfer.files); }}>
+        <Card className={`kx-ws-files ${mobileView === 'files' ? 'flex' : 'hidden'} md:flex flex-col rounded-[20px] p-3 shadow-lg shadow-black/10 overflow-y-auto ${isFullscreen ? 'flex-1 min-h-0 md:h-full' : 'h-[65vh] md:h-[60vh]'}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleAssetUploads(e.dataTransfer.files); }}>
           <div className="flex items-center justify-between mb-2 px-1 shrink-0">
             <span className="text-[11px] font-mono uppercase tracking-wider text-kxmist">Files</span>
             <div className="flex items-center gap-2.5">
@@ -1433,7 +1527,7 @@ export default function ProjectWorkspace() {
         </Card>
 
         {/* Editor / Preview / Terminal / Settings — full panel on mobile, main pane on desktop */}
-        <Card className={`${mobileView === 'workspace' ? 'flex' : 'hidden'} md:flex rounded-[20px] p-3 md:p-4 flex-col min-h-0 shadow-lg shadow-black/10 ${isFullscreen ? 'flex-1 md:h-full' : 'h-[65vh] md:h-[60vh]'}`}>
+        <Card className={`kx-ws-editor ${mobileView === 'workspace' ? 'flex' : 'hidden'} md:flex rounded-[20px] p-3 md:p-4 flex-col min-h-0 min-w-0 shadow-lg shadow-black/10 ${isFullscreen ? 'flex-1 md:h-full' : 'h-[65vh] md:h-[60vh]'}`}>
           <div className="flex items-center justify-between mb-3 border-b border-white/8 pb-2 gap-2 shrink-0">
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
               <button
