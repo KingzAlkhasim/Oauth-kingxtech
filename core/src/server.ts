@@ -22,6 +22,7 @@ import { cleanServerPath, cleanQueryString, buildForwardHeaders, planAllowsServe
 import { getRules, listCollections, saveRules, listRows, ownerListRows, addRow, ownerAddRow, ownerDeleteRow, visitorAllowed } from './services/siteData';
 import { consumeCredits, getCreditsRemaining, logUsage, getUsageLog, checkModelRequestCap, getUserPlan, getUserTier, getAiUsageState, recordAiUsage, chargeUserByApiKey, convertWalletToCredits } from './services/credits';
 import { computeCostUsd } from './config/modelPricing';
+import { acquireAiRunSlot, releaseAiRunSlot } from './services/aiRunSlots';
 import { PLAN_LIMITS } from './config/planLimits';
 import { clampPercent } from './config/usageWindows';
 import { modelTierAllowed, shouldEnforcePaidUsage, usageLimitResponse, usageBudgetReached } from './services/usagePolicy';
@@ -782,6 +783,22 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
     return;
   }
 
+  // Concurrency guard: spend is recorded after a run, so parallel runs could each pass the
+  // cap check above. Paid users in enforce mode may have a couple going at once, not ten.
+  let aiRunSlot: string | null = null;
+  if (req.authMethod !== 'api_key' && shouldEnforcePaidUsage(env.AI_USAGE_MODE, usageTier)) {
+    try {
+      aiRunSlot = await acquireAiRunSlot(userId);
+    } catch (error) {
+      await reportError(res, 500, 'Failed to check running requests', error, 'AI run slot error:');
+      return;
+    }
+    if (!aiRunSlot) {
+      res.status(429).json({ success: false, code: 'too_many_runs', error: 'You already have 2 K-XpertAI runs going. Wait for one to finish, then try again.' });
+      return;
+    }
+  }
+
   // From here on, everything streams as SSE.
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -877,6 +894,8 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
         await recordAiUsage({userId,projectId:activeProjectId,source:activeProjectId?'agent':'chat',provider:model.provider,modelCode:model.code,inputTokens:usageTotals.inputTokens,outputTokens:usageTotals.outputTokens,cachedInputTokens:usageTotals.cachedInputTokens,cacheCreationInputTokens:usageTotals.cacheCreationInputTokens,costUsd,tier:usageTier,estimated,sessionHours:limits.sessionHours,weekDays:limits.weekDays});
       }catch(ledgerError){console.error('[ai-usage-ledger] Failed to record usage; request response is preserved:',ledgerError)}
     }
+    // Release only after the spend is recorded, so the next run sees it.
+    if(aiRunSlot)await releaseAiRunSlot(aiRunSlot);
     // Cloud Run can scale an instance down between requests, and Sentry
     // sends events asynchronously in the background — without an explicit
     // flush here, a scaled-down instance can silently drop events that
