@@ -788,7 +788,8 @@ app.post('/api/ai/generate', requireAuth, rateLimit, async (req: AuthedRequest, 
   let aiRunSlot: string | null = null;
   if (req.authMethod !== 'api_key' && shouldEnforcePaidUsage(env.AI_USAGE_MODE, usageTier)) {
     try {
-      aiRunSlot = await acquireAiRunSlot(userId);
+      const planLimits = PLAN_LIMITS[usageTier as 'pro' | 'pro_plus'];
+      aiRunSlot = await acquireAiRunSlot(userId, { reservedUsd: planLimits.maxRunCostUsd, sessionHours: planLimits.sessionHours, weekDays: planLimits.weekDays, tier: usageTier });
     } catch (error) {
       await reportError(res, 500, 'Failed to check running requests', error, 'AI run slot error:');
       return;
