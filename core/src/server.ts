@@ -72,6 +72,7 @@ import { DomainError, getProjectIdByCustomDomain, addCustomDomain, verifyCustomD
 import { getProjectRole, assertProjectRole, ProjectRoleError } from './services/projectCollaboration';
 import { authorizeProjectAi } from './services/projectCollaborationLogic';
 import { requireAuth, type AuthedRequest } from './middleware/auth';
+import { createMcpRouter } from './services/mcpServer';
 import { rateLimit } from './middleware/rateLimit';
 
 const PWA_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#09090B"/><circle cx="256" cy="256" r="218" fill="none" stroke="#8B5CF6" stroke-width="22" opacity=".35"/><path d="M126 326V186l56 56 74-106 74 106 56-56v140" fill="none" stroke="#D946C6" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/><circle cx="126" cy="326" r="22" fill="#D946C6"/><circle cx="256" cy="136" r="22" fill="#8B5CF6"/><circle cx="386" cy="326" r="22" fill="#00A3FF"/></svg>';
@@ -86,6 +87,8 @@ app.use(helmet());
 // ambient browser credentials.
 app.use(cors({ origin: true, credentials: false }));
 app.use(express.json({ limit: '8mb' }));
+// AI-app connector (Claude, ChatGPT). Mounted early so the site catch-all handlers can never answer /.well-known or /mcp.
+app.use(createMcpRouter());
 function applyPublishedSiteSecurity(req: express.Request, res: express.Response) {
   res.removeHeader('X-Frame-Options');
   res.setHeader(

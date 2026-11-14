@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { supabaseAdmin } from '../lib/supabaseAdmin';
 import { getAccountSuspension, isAllowedWhenSuspended } from '../services/accountSuspension';
 import { isAllowedForApiKey, API_KEY_SCOPE_MESSAGE } from '../services/apiKeyScope';
+import { oauthClientId } from '../services/mcpAuth';
 
 export interface AuthedRequest extends Request {
   user?: { id: string; email?: string };
@@ -91,6 +92,12 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
         return;
       }
       await continueUnlessSuspended(req, res, next);
+      return;
+    }
+
+    // A token issued to an AI app (Claude, ChatGPT) works only on the connector (/mcp), never on the rest of the API.
+    if (oauthClientId(token)) {
+      res.status(403).json({ success: false, code: 'oauth_app_scope', error: 'This token belongs to a connected AI app and can only be used with the KingxTech connector.' });
       return;
     }
 

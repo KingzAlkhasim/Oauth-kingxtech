@@ -8,13 +8,15 @@ import { supabase } from '../lib/supabase';
 import { useEnsureAal2 } from '../lib/ensureAal2';
 import { Card, Button, Input, Badge, Skeleton, SkeletonLines, SkeletonRows } from '../components/ui';
 import { logActivity, listActivity } from '../lib/activity';
-import { User, ShieldCheck, Monitor, Laptop, Activity as ActivityIcon } from 'lucide-react';
+import { User, ShieldCheck, Monitor, Laptop, Activity as ActivityIcon, Plug } from 'lucide-react';
+import { connectorUrl, listConnectedApps, revokeConnectedApp, CONNECTOR_CAN, CONNECTOR_CANNOT } from '../lib/connectedApps';
 import { friendlyError } from '../lib/errors';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'security', label: 'Security', icon: ShieldCheck },
   { id: 'sessions', label: 'Sessions', icon: Monitor },
+  { id: 'connections', label: 'Apps', icon: Plug },
   { id: 'activity', label: 'Activity', icon: ActivityIcon },
 ];
 
@@ -29,7 +31,7 @@ export default function Settings() {
       <h1 className="font-display text-2xl font-semibold mb-2">Account</h1>
       <p className="text-kxmist text-sm mb-6">Manage your profile, sign-in security, sessions, and account activity.</p>
       <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-5 sm:gap-8 min-w-0">
-        <nav className="grid grid-cols-4 md:flex md:flex-col gap-1 rounded-[20px] border border-white/8 bg-white/[0.015] p-2 h-fit min-w-0">
+        <nav className="grid grid-cols-5 md:flex md:flex-col gap-1 rounded-[20px] border border-white/8 bg-white/[0.015] p-2 h-fit min-w-0">
           {TABS.map(({ id, label, icon: Icon }) => (
             <Link key={id} to={`/account/${id}`} className={`flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-2.5 min-h-12 px-1 md:px-3.5 py-2 md:py-2.5 rounded-2xl text-[11px] md:text-[13.5px] md:whitespace-nowrap text-center md:text-left transition-colors ${
               tab === id ? 'bg-white/8 text-white' : 'text-kxmist hover:text-white hover:bg-white/[0.03]'
@@ -42,6 +44,7 @@ export default function Settings() {
           {tab === 'profile' && <ProfileTab />}
           {tab === 'security' && <SecurityTab />}
           {tab === 'sessions' && <SessionsTab />}
+          {tab === 'connections' && <ConnectedAppsTab />}
           {tab === 'activity' && <AccountActivityTab />}
         </div>
       </div>
@@ -429,6 +432,73 @@ function SessionsTab() {
       </div>
       <Button variant="subtle" onClick={signOutOthers} loading={busy}>Sign out of all other sessions</Button>
     </Section>
+  );
+}
+
+/* ---------------- Connected AI apps ---------------- */
+
+function ConnectedAppsTab() {
+  const [grants, setGrants] = useState(undefined); // undefined = loading, null = unavailable
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busyId, setBusyId] = useState('');
+  const [copied, setCopied] = useState(false);
+  const url = connectorUrl();
+
+  const load = async () => {
+    const { data, error: e } = await listConnectedApps();
+    if (e) { setGrants(null); return; }
+    setGrants(data || []);
+  };
+  useEffect(() => { load(); }, []);
+
+  const revoke = async (grant) => {
+    if (!window.confirm(`Remove ${grant.client?.name || 'this app'}? It will lose access and must be approved again to reconnect.`)) return;
+    setBusyId(grant.client.id); setError(''); setNotice('');
+    const { error: e } = await revokeConnectedApp(grant.client.id);
+    setBusyId('');
+    if (e) { setError(friendlyError(e)); return; }
+    setNotice('Access removed. An app may keep working for up to an hour until its current token expires.');
+    load();
+  };
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* the address is visible to copy by hand */ }
+  };
+
+  return (
+    <>
+      <Section title="Connect Claude or ChatGPT" desc="Let an AI app read and edit your project files, the way other developer tools connect. You approve it once and can remove it any time.">
+        <p className="text-[13px] text-kxmist mb-2">Paste this address when the app asks for a connector or MCP server URL:</p>
+        <div className="flex items-center gap-2 mb-4">
+          <code className="flex-1 min-w-0 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5 text-[12.5px] break-all">{url}</code>
+          <Button variant="subtle" onClick={copy}>{copied ? 'Copied' : 'Copy'}</Button>
+        </div>
+        <ul className="text-[13px] text-kxmist flex flex-col gap-1.5 mb-4 list-disc pl-5">
+          <li><span className="text-white">Claude:</span> Settings &gt; Connectors &gt; Add custom connector.</li>
+          <li><span className="text-white">ChatGPT:</span> Settings &gt; Apps &amp; Connectors &gt; Advanced settings &gt; turn on Developer mode, then create an app with this address and OAuth sign-in. Availability depends on your ChatGPT plan.</li>
+        </ul>
+        <div className="grid sm:grid-cols-2 gap-4 text-[12.5px]">
+          <div><p className="font-medium mb-1.5">An approved app can</p><ul className="flex flex-col gap-1 text-kxmist">{CONNECTOR_CAN.map((t) => <li key={t}>• {t}</li>)}</ul></div>
+          <div><p className="font-medium mb-1.5">It cannot</p><ul className="flex flex-col gap-1 text-kxmist">{CONNECTOR_CANNOT.map((t) => <li key={t}>• {t}</li>)}</ul></div>
+        </div>
+      </Section>
+      <Section title="Connected apps" desc="Apps you have approved. Removing one ends its access.">
+        <Notice error={error} notice={notice} />
+        {grants === undefined && <SkeletonRows rows={2} label="Loading connected apps" />}
+        {grants === null && <p className="text-[13px] text-kxmist">Connected apps are not available right now. Try again in a moment.</p>}
+        {grants && grants.length === 0 && <p className="text-[13px] text-kxmist">No apps connected yet.</p>}
+        {grants && grants.map((g) => (
+          <div key={g.client.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3.5 mb-2.5">
+            <div className="min-w-0">
+              <p className="text-sm font-medium break-words">{g.client.name || 'Unnamed app'}</p>
+              <p className="text-[12.5px] text-kxmist">Approved {g.granted_at ? new Date(g.granted_at).toLocaleDateString() : ''}</p>
+            </div>
+            <Button variant="subtle" onClick={() => revoke(g)} loading={busyId === g.client.id} disabled={!!busyId}>Remove</Button>
+          </div>
+        ))}
+      </Section>
+    </>
   );
 }
 

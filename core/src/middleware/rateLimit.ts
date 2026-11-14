@@ -15,7 +15,7 @@ const MAX_REQUESTS_PER_WINDOW = 10;
 /** Returns true = allowed, false = limit hit, null = shared counter unavailable. */
 export type TakeFn = (key: string, limit: number, windowSeconds: number) => Promise<boolean | null>;
 
-const dbTake: TakeFn = async (key, limit, windowSeconds) => {
+export const dbTake: TakeFn = async (key, limit, windowSeconds) => {
   try {
     // Imported lazily so this module can be unit-tested without Supabase credentials.
     const { supabaseAdmin } = await import('../lib/supabaseAdmin.js');
