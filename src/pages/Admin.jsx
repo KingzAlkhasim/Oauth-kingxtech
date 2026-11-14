@@ -5,6 +5,7 @@ import DashboardShell from '../components/DashboardShell';
 import { Card, Button, Badge, SkeletonRows } from '../components/ui';
 import { adminListAccounts, adminSetSuspension } from '../lib/account';
 import { adminListFlags, adminResolveFlag, warnFlagByEmail } from '../lib/abuse';
+import { adminGetServerOwner, adminSetServerAllowance } from '../lib/serverUsage';
 import useSeo from '../lib/useSeo';
 import useRequireAuth from '../lib/useRequireAuth';
 import useIsAdmin, {
@@ -113,6 +114,48 @@ function SupportInbox() {
   );
 }
 
+// Raise or lower one account's project-server allowance (a multiplier on the plan limits, 0 to 5).
+function ServerAllowance({ userId }) {
+  const [info, setInfo] = useState(undefined); // undefined = loading, null = unavailable
+  const [value, setValue] = useState('1');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const load = useCallback(async () => {
+    try {
+      const d = await adminGetServerOwner(userId);
+      setInfo(d); setValue(String(d.controls.multiplier));
+    } catch { setInfo(null); }
+  }, [userId]);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 5) { setMessage('Use a number from 0 to 5.'); return; }
+    setBusy(true); setMessage('');
+    try { await adminSetServerAllowance(userId, n); setMessage('Saved.'); await load(); } catch (e) { setMessage(friendlyError(e)); }
+    setBusy(false);
+  };
+
+  if (info === undefined) return <p className="text-kxmist">Loading server allowance…</p>;
+  if (info === null) return <p className="text-kxmist">Server allowance is not available.</p>;
+  const hrs = info.overview ? Math.round((info.overview.meters.hours.used / 3600000) * 10) / 10 : 0;
+  const cap = info.overview && info.overview.meters.hours.limit ? Math.round((info.overview.meters.hours.limit / 3600000) * 10) / 10 : null;
+  return (
+    <div className="rounded-lg border border-white/10 p-3 flex flex-col gap-2">
+      <p className="font-medium">Server allowance</p>
+      {info.overview
+        ? <p className="text-kxmist">This month: {hrs} h{cap ? ` of ${cap} h` : ''} used. The multiplier scales every server limit on their plan (1 = normal).</p>
+        : <p className="text-kxmist">This account is not on a plan with project servers.</p>}
+      <div className="flex items-center gap-2">
+        <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" aria-label="Allowance multiplier" className="w-24 rounded-lg border border-white/12 bg-white/[0.02] px-3 py-2 text-sm outline-none focus:border-kxblue" />
+        <Button variant="subtle" onClick={save} loading={busy} disabled={busy}>Save</Button>
+        {[1, 2, 3].map((n) => <button key={n} type="button" onClick={() => setValue(String(n))} className="min-h-11 px-3 rounded-full text-[12px] border border-white/10 text-kxmist">{n}x</button>)}
+      </div>
+      {message && <p className={message === 'Saved.' ? 'text-kxmist' : 'text-red-400'}>{message}</p>}
+    </div>
+  );
+}
+
 function AccountRow({ account, onChanged }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -141,6 +184,7 @@ function AccountRow({ account, onChanged }) {
       {open && (
         <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-3 text-[12.5px]">
           <p className="text-kxmist">Joined {new Date(account.created_at).toLocaleDateString()} · Last sign-in {account.last_sign_in_at ? new Date(account.last_sign_in_at).toLocaleString() : 'never'}</p>
+          <ServerAllowance userId={account.user_id} />
           {account.suspended ? (
             <>
               <p className="break-words">Suspended {account.suspended_at ? new Date(account.suspended_at).toLocaleString() : ''}. Reason: {account.suspended_reason}</p>

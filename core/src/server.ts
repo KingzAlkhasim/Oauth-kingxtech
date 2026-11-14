@@ -17,6 +17,7 @@ import { resolveRoutedModel, normalizePreference, usageFraction } from './servic
 import { getSiteAiSettings, saveSiteAiSettings, getProjectOwnerAndHosts, takeDailyRequest, visitorWithinRate, SiteAiError } from './services/siteAi';
 import { cleanVisitorMessages, originAllowed, buildSiteAiPrompt } from './services/siteAiPolicy';
 import { cleanCollectionName, cleanRow, cleanLimit } from './services/siteDataPolicy';
+import { recordHit } from './services/projectServerHits';
 import { getServerSettings, saveServerSettings, ensureServerRunning, proxyToServer, publicServerBlocker, ProjectServerError } from './services/projectServer';
 import { cleanServerPath, cleanQueryString, buildForwardHeaders, planAllowsServer, ALLOWED_METHODS, REQUEST_BODY_MAX } from './services/projectServerPolicy';
 import { getRules, listCollections, saveRules, listRows, ownerListRows, addRow, ownerAddRow, ownerDeleteRow, visitorAllowed } from './services/siteData';
@@ -594,6 +595,12 @@ app.post('/api/projects/:projectId/server/start', requireAuth, rateLimit, async 
   } catch (e) { await serverErr(res, e); }
 });
 
+/** Friendly page for browsers when a project's server is out of its monthly allowance. Shows only the resume date. */
+function pausedPage(until: Date): string {
+  const date = until.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Server paused</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b10;color:#f2f2f7;font-family:system-ui,sans-serif;padding:24px}main{max-width:420px;text-align:center}h1{font-size:22px;margin:0 0 10px}p{color:#9a9aa8;line-height:1.55;margin:0}</style></head><body><main><h1>This server is paused</h1><p>It has used its allowance for this month and will be back on <strong style="color:#f2f2f7">${date}</strong>.</p></main></body></html>`;
+}
+
 app.all(
   /^\/api\/public\/server\/([0-9a-f-]{36})(\/.*)?$/i,
   express.raw({ type: (r) => !/json/i.test(String(r.headers['content-type'] || '')), limit: REQUEST_BODY_MAX }),
@@ -624,10 +631,19 @@ app.all(
         method, path, query: cleanQueryString(req.originalUrl), headers: buildForwardHeaders(req.headers, ip),
         body: method === 'GET' || method === 'HEAD' ? undefined : body,
       });
+      recordHit(projectId, path, req.headers['user-agent'], out.status);
       res.status(out.status);
       for (const [k, v] of Object.entries(out.headers)) res.setHeader(k, v);
       res.send(method === 'HEAD' ? undefined : out.body);
     } catch (error) {
+      if (error instanceof ProjectServerError && error.code === 'allowance_reached') {
+        // Out of allowance: visitors get a clear "paused until" page, not a raw error. Only the date is shown.
+        const now = new Date();
+        const until = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+        res.setHeader('Retry-After', String(Math.max(60, Math.floor((until.getTime() - now.getTime()) / 1000))));
+        if (/text\/html/i.test(String(req.headers.accept || ''))) { res.status(429).type('html').send(pausedPage(until)); return; }
+        res.status(429).json({ success: false, code: 'allowance_reached', error: error.message, pausedUntil: until.toISOString() }); return;
+      }
       if (error instanceof ProjectServerError) {
         // Visitors never see logs; the owner finds them with the Start button in Site Settings.
         if (error.status >= 500) res.setHeader('Retry-After', '5');

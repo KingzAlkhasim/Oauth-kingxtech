@@ -8,7 +8,8 @@ import { assertProjectRole } from './projectCollaboration';
 import { isAdminUser } from './abuseWarning';
 import { getUserTier } from './credits';
 import { planAllowsServer } from './projectServerPolicy';
-import { buildUsageView, quotaRaw, usageRaw, parseMonth, setKillSwitch, setOwnerControls, claimStops, type StopClaim } from './projectServerLifecycle';
+import { hitsSummary } from './projectServerHits';
+import { buildUsageView, buildServerOverview, quotaRaw, usageRaw, parseMonth, setKillSwitch, setOwnerControls, claimStops, type StopClaim } from './projectServerLifecycle';
 import { reapServers, stopServer, stopClaimed } from './projectServer';
 
 /** Everything the routes touch, so tests can run the real handlers against stubs. Production uses `realDeps`. */
@@ -26,6 +27,7 @@ export interface RouteDeps {
   reapServers: typeof reapServers;
   stopServer: typeof stopServer;
   stopClaimed: (c: StopClaim) => Promise<boolean>;
+  hitsSummary: typeof hitsSummary;
   db: typeof supabaseAdmin;
   cronSecret: () => string | undefined;
 }
@@ -33,7 +35,7 @@ export interface RouteDeps {
 export const realDeps: RouteDeps = {
   requireAuth: requireAuth as unknown as RequestHandler, rateLimit: rateLimit as unknown as RequestHandler, isAdminUser,
   getUserTier: getUserTier as RouteDeps['getUserTier'], assertProjectRole: assertProjectRole as RouteDeps['assertProjectRole'],
-  quotaRaw, usageRaw, claimStops, setKillSwitch, setOwnerControls, reapServers, stopServer, stopClaimed, db: supabaseAdmin, cronSecret: () => env.CRON_SECRET,
+  quotaRaw, usageRaw, claimStops, setKillSwitch, setOwnerControls, reapServers, stopServer, stopClaimed, hitsSummary, db: supabaseAdmin, cronSecret: () => env.CRON_SECRET,
 };
 
 const NIL = '00000000-0000-0000-0000-000000000000';
@@ -84,6 +86,32 @@ export function createProjectServerRouter(d: RouteDeps = realDeps): Router {
       const quota = await d.quotaRaw(req.user!.id, NIL, tier);
       res.json({ success: true, usage: buildUsageView(quota, await allocatedFor(req.user!.id, null)) });
     } catch (e) { oops(res, 'usage', e); }
+  });
+
+  // The Usage page's Server card: account meters, one row per project with a server, and what each one was asked for.
+  router.get('/api/project-servers/overview', d.requireAuth, async (req: AuthedRequest, res: Response) => {
+    try {
+      const ownerId = req.user!.id;
+      const tier = await d.getUserTier(ownerId);
+      if (!planAllowsServer(tier)) { fail(res, 402, 'Project servers are part of the Pro plan.'); return; }
+      const { data: enabled } = await d.db.from('project_server_settings').select('project_id').eq('enabled', true).limit(50);
+      const ids = (enabled ?? []).map((r: { project_id: string }) => r.project_id);
+      let owned: { id: string; name: string }[] = [];
+      if (ids.length) {
+        const { data } = await d.db.from('projects').select('id, name').eq('user_id', ownerId).in('id', ids).limit(10);
+        owned = (data ?? []) as { id: string; name: string }[];
+      }
+      const projects = await Promise.all(owned.map(async (p) => {
+        const [quota, rt, hits] = await Promise.all([
+          d.quotaRaw(ownerId, p.id, tier),
+          d.db.from('project_server_runtime').select('state').eq('project_id', p.id).maybeSingle(),
+          d.hitsSummary(ownerId, p.id).catch(() => null),
+        ]);
+        return { projectId: p.id, name: p.name, state: (rt as { data?: { state?: string } | null }).data?.state ?? 'STOPPED', quota, hits };
+      }));
+      const ownerQuota = projects[0]?.quota ?? await d.quotaRaw(ownerId, NIL, tier);
+      res.json({ success: true, overview: buildServerOverview(tier, ownerQuota, projects) });
+    } catch (e) { oops(res, 'overview', e); }
   });
 
   router.get('/api/projects/:projectId/server/usage', d.requireAuth, async (req: AuthedRequest, res: Response) => {
@@ -140,6 +168,21 @@ export function createProjectServerRouter(d: RouteDeps = realDeps): Router {
       const reaped = engaged ? await d.reapServers({ maxMs: 200_000 }) : null;
       res.json({ success: true, engaged, reaped });
     } catch (e) { oops(res, 'kill switch', e); }
+  });
+
+  // One owner's allowance multiplier, suspension and this month's usage, so an admin can see what they are changing.
+  router.get('/api/admin/project-servers/owners/:ownerId', async (req: Request, res: Response) => {
+    try {
+      if (!UUID.test(req.params.ownerId)) { fail(res, 400, 'Invalid owner.'); return; }
+      const tier = await d.getUserTier(req.params.ownerId);
+      const { data: controls } = await d.db.from('project_server_owner_controls').select('suspended, reason, allowance_multiplier').eq('owner_id', req.params.ownerId).maybeSingle();
+      const quota = planAllowsServer(tier) ? await d.quotaRaw(req.params.ownerId, NIL, tier) : null;
+      res.json({
+        success: true, tier,
+        controls: { suspended: controls?.suspended ?? false, reason: controls?.reason ?? null, multiplier: Number(controls?.allowance_multiplier ?? 1) },
+        overview: quota ? buildServerOverview(tier, quota, []) : null,
+      });
+    } catch (e) { oops(res, 'admin owner', e); }
   });
 
   // Suspend (or restore) one owner's servers and/or change their allowance multiplier (0 to 5). Suspension stops them at once.

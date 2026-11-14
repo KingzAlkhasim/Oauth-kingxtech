@@ -50,13 +50,13 @@ export const setOwnerControls = (ownerId: string, suspended: boolean | null, rea
   rpc<void>('ps_admin_set_owner', { p_owner: ownerId, p_suspended: suspended, p_reason: reason, p_multiplier: multiplier, p_admin: adminId });
 
 /** What a visitor or owner is told for each denial reason. Wording never reveals plan internals beyond what the owner needs. */
-export function denialResponse(reason: string, retryAfter?: number): { status: number; message: string; retryAfter?: number } {
+export function denialResponse(reason: string, retryAfter?: number): { status: number; message: string; retryAfter?: number; code?: string } {
   switch (reason) {
     case 'no_plan': return { status: 402, message: 'Project servers are part of the Pro plan.' };
     case 'disabled': return { status: 404, message: 'Not found.' };
     case 'not_owner': return { status: 403, message: 'Not allowed.' };
     case 'quota_owner_hours': case 'quota_project_hours': case 'quota_cpu': case 'quota_egress':
-      return { status: 429, message: 'This server has reached its usage allowance for this month.' };
+      return { status: 429, message: 'This server has reached its usage allowance for this month.', code: 'allowance_reached' };
     case 'enabled_cap': return { status: 429, message: 'You have reached the number of projects that can have a server on your plan.' };
     case 'owner_concurrency': return { status: 429, message: 'You have reached the number of servers that can run at once. Stop another one first.' };
     case 'backoff': return { status: 503, message: 'The server failed to start recently. Try again shortly.', retryAfter };
@@ -122,5 +122,41 @@ export function buildUsageView(quota: Record<string, any>, allocated?: { vcpus: 
       maxRunningServers: lim.max_running ?? null,
     },
     cost: 'Not shown: the platform bills the account as a whole and does not report a cost per project.',
+  };
+}
+
+
+export interface OverviewMeter { used: number; limit: number | null; percent: number }
+const overviewMeter = (used: unknown, limit: unknown): OverviewMeter => {
+  const u = Number(used) || 0; const l = typeof limit === 'number' && limit > 0 ? limit : null;
+  return { used: u, limit: l, percent: l ? Math.min(100, Math.floor((u / l) * 1000) / 10) : 0 };
+};
+export interface OverviewProject {
+  projectId: string; name: string; state: string; quota: Record<string, any>;
+  hits: { total: number; browser: number; bot: number; other: number; top: { path: string; hits: number; errors: number; bot: number }[] } | null;
+}
+
+/** The Usage page's Server card: account meters, per-project meters, warnings at 80% and 100%, and when it resets. */
+export function buildServerOverview(tier: string, ownerQuota: Record<string, any>, projects: OverviewProject[]) {
+  const uo = ownerQuota.usage_owner ?? {}; const lim = ownerQuota.limits ?? {};
+  const meters = {
+    hours: overviewMeter(uo.wall_ms_total, lim.owner_wall_ms),
+    cpu: overviewMeter(uo.active_cpu_ms_measured, lim.active_cpu_ms),
+    egress: overviewMeter(uo.egress_bytes_measured, lim.egress_bytes),
+  };
+  const ownerPaused = Math.max(meters.hours.percent, meters.cpu.percent, meters.egress.percent) >= 100;
+  const rows = projects.map((p) => {
+    const hours = overviewMeter(p.quota.usage_project?.wall_ms_total, p.quota.limits?.project_wall_ms);
+    return { projectId: p.projectId, name: p.name, state: p.state, hours, paused: ownerPaused || hours.percent >= 100, hits: p.hits };
+  });
+  const worstPercent = Math.max(meters.hours.percent, meters.cpu.percent, meters.egress.percent, ...rows.map((r) => r.hours.percent), 0);
+  const allPaused = ownerPaused || (rows.length > 0 && rows.every((r) => r.paused));
+  const status: 'ok' | 'warning' | 'paused' = allPaused ? 'paused' : (worstPercent >= 80 || rows.some((r) => r.paused)) ? 'warning' : 'ok';
+  return {
+    tier, status, worstPercent,
+    period: { startsAt: uo.period_start ?? null, resetsAt: uo.period_end ?? null },
+    multiplier: typeof lim.multiplier === 'number' ? lim.multiplier : 1,
+    maxRunningServers: lim.max_running ?? null,
+    meters, projects: rows,
   };
 }
