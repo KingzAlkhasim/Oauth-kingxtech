@@ -24,7 +24,7 @@ import {
 const SNAPSHOT_KEEP = { count: 1, expiration: 7 * 24 * 60 * 60 * 1000 };
 
 export class ProjectServerError extends Error {
-  constructor(message: string, public status = 400, public logs = '') { super(message); }
+  constructor(message: string, public status = 400, public logs = '', public code = '') { super(message); }
 }
 
 type SandboxModule = typeof import('@vercel/sandbox', { with: { "resolution-mode": "import" } });
@@ -49,7 +49,7 @@ export async function saveServerSettings(userId: string, projectId: string, inpu
   if (enabled && !planAllowsServer(await getUserTier(userId))) throw new ProjectServerError('Project servers are part of the Pro plan. Upgrade in Billing to turn this on.', 402);
   const { data, error } = await supabaseAdmin.rpc('ps_set_enabled', { p_project: projectId, p_owner: userId, p_tier: await getUserTier(userId), p_enabled: enabled });
   if (error) throw new Error(`Server settings save failed: ${error.message}`);
-  if (!(data as { ok?: boolean })?.ok) { const r = denialResponse(String((data as { reason?: string })?.reason ?? 'disabled')); throw new ProjectServerError(r.message, r.status); }
+  if (!(data as { ok?: boolean })?.ok) { const r = denialResponse(String((data as { reason?: string })?.reason ?? 'disabled')); throw new ProjectServerError(r.message, r.status, '', r.code ?? ''); }
   if (!enabled) await stopServer(projectId);
   return { enabled };
 }
@@ -256,7 +256,7 @@ async function ensureOnce(ownerId: string, projectId: string): Promise<Sandbox> 
   const deadline = Date.now() + START_TIMEOUT_MS + 15_000;
   for (let round = 0; round < 12 && Date.now() < deadline; round += 1) {
     const d = await beginStart(projectId, ownerId, tier);
-    if (d.action === 'denied') { const r = denialResponse(d.reason, d.retry_after); throw new ProjectServerError(r.message, r.status); }
+    if (d.action === 'denied') { const r = denialResponse(d.reason, d.retry_after); throw new ProjectServerError(r.message, r.status, '', r.code ?? ''); }
 
     if (d.action === 'ready') {
       const up = await sandboxIfUp(projectId);

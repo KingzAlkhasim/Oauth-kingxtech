@@ -43,6 +43,7 @@ before(async () => {
     reapServers: (async (...a: unknown[]) => { log('reapServers')(...a); return { claimed: 0, stopped: 0, reasons: {}, usageRecorded: 0 }; }) as any,
     stopServer: (async (...a: unknown[]) => { log('stopServer')(...a); return 1; }) as any,
     stopClaimed: async () => true,
+    hitsSummary: (async () => ({ total: 0, browser: 0, bot: 0, other: 0, top: [] })) as any,
     db: { from: () => { const q: any = { select: () => q, eq: () => q, neq: () => q, order: () => q, limit: () => q, maybeSingle: async () => ({ data: null }), then: (r: any) => r({ data: [] }) }; return q; } } as any,
     cronSecret: () => 'cron-secret-value',
   });
