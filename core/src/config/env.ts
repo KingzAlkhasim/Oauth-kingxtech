@@ -49,6 +49,10 @@ const envSchema = z.object({
   // --- Subdomain-per-project hosting (optional) ---
   PUBLIC_SITE_BASE_DOMAIN: z.string().min(1).optional(),
 
+  // --- AI app connector (MCP) ---
+  // Public https origin of this API as AI apps see it (no trailing slash). Falls back to the request's own host.
+  MCP_PUBLIC_ORIGIN: z.string().url().optional(),
+
   // --- Observability ---
   SENTRY_DSN: z.string().min(1).optional(),
 

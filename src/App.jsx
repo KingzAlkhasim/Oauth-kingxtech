@@ -8,6 +8,7 @@ import VerifyEmail from './pages/VerifyEmail';
 import TwoFactor from './pages/TwoFactor';
 import Welcome from './pages/Welcome';
 import Settings from './pages/Settings';
+import OAuthConsent from './pages/OAuthConsent';
 import Projects from './pages/Projects';
 import ProjectCollaborationOverlay from './components/ProjectCollaborationOverlay';
 import Console from './pages/Console';
@@ -55,6 +56,8 @@ export default function App() {
         <Route path="/account/security" element={<Settings />} />
         <Route path="/account/sessions" element={<Settings />} />
         <Route path="/account/activity" element={<Settings />} />
+        <Route path="/account/connections" element={<Settings />} />
+        <Route path="/oauth/consent" element={<OAuthConsent />} />
         <Route path="/sessions" element={<Navigate to="/account/sessions" replace />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:id/workspace" element={<ProjectCollaborationOverlay />} />
