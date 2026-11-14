@@ -88,6 +88,14 @@ test('tools: there is no way to delete, publish or reach secrets', () => {
   assert.ok(MCP_TOOLS.filter((t) => t.name !== 'write_file').every((t) => t.annotations.readOnlyHint === true));
 });
 
+test('every tool states readOnlyHint, destructiveHint and openWorldHint (directories require it)', () => {
+  for (const t of MCP_TOOLS) {
+    const a = t.annotations as Record<string, unknown>;
+    for (const key of ['readOnlyHint', 'destructiveHint', 'openWorldHint']) assert.equal(typeof a[key], 'boolean', `${t.name}.${key}`);
+    assert.ok(t.title && t.description, t.name);
+  }
+});
+
 test('rate limit and unexpected errors do not leak internals', async () => {
   const limited = await handleRpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_projects', arguments: {} } }, principal, deps, async () => false) as any;
   assert.equal(limited.result.isError, true);

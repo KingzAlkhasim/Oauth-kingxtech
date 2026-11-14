@@ -31,25 +31,25 @@ export const MCP_TOOLS = [
     name: 'list_projects', title: 'List projects',
     description: 'List the KingxTech projects the signed-in user owns or collaborates on, with their role.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'get_project_status', title: 'Get project status',
     description: 'Show whether a project is published and its live address, plus the state of its server if it has one.',
     inputSchema: { type: 'object', properties: { projectId }, required: ['projectId'], additionalProperties: false },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'list_files', title: 'List files',
     description: 'List every file and folder in a project.',
     inputSchema: { type: 'object', properties: { projectId }, required: ['projectId'], additionalProperties: false },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'read_file', title: 'Read file',
     description: `Read one text file from a project (up to ${MAX_READ_CHARS.toLocaleString('en-US')} characters). Secrets files (.env) and binary files are not readable.`,
     inputSchema: { type: 'object', properties: { projectId, path: filePath }, required: ['projectId', 'path'], additionalProperties: false },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'write_file', title: 'Create or replace file',
@@ -61,7 +61,7 @@ export const MCP_TOOLS = [
     name: 'get_account_usage', title: 'Get plan and storage',
     description: "Show the user's plan and how much project storage they have used.",
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 ] as const;
 
