@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import { isExpectedAccessError } from './expectedErrors';
 
 /**
  * Initializes Sentry for backend error + performance tracing, including
@@ -25,6 +26,11 @@ export function initSentry(): void {
     dsn,
     tracesSampleRate: 1.0,
     sendDefaultPii: false,
+    // Permission refusals ("You need viewer access…") are expected answers, not bugs. Catches every path,
+    // including ones that call captureException directly or are picked up by auto-instrumentation.
+    beforeSend(event, hint) {
+      return isExpectedAccessError(hint?.originalException) ? null : event;
+    },
   });
   console.log('[sentry] initialized');
 }
