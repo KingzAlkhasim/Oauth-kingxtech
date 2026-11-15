@@ -21,5 +21,5 @@ export const CONNECTOR_CANNOT = [
 export const getAuthorizationDetails = (id) => supabase.auth.oauth.getAuthorizationDetails(id);
 export const approveAuthorization = (id) => supabase.auth.oauth.approveAuthorization(id);
 export const denyAuthorization = (id) => supabase.auth.oauth.denyAuthorization(id);
-export const listConnectedApps = () => supabase.auth.oauth.getUserGrants();
+export const listConnectedApps = () => supabase.auth.oauth.listGrants();
 export const revokeConnectedApp = (clientId) => supabase.auth.oauth.revokeGrant(clientId);

@@ -446,9 +446,13 @@ function ConnectedAppsTab() {
   const url = connectorUrl();
 
   const load = async () => {
-    const { data, error: e } = await listConnectedApps();
-    if (e) { setGrants(null); return; }
-    setGrants(data || []);
+    try {
+      const { data, error: e } = await listConnectedApps();
+      if (e) { setGrants(null); return; }
+      setGrants(data || []);
+    } catch {
+      setGrants(null);
+    }
   };
   useEffect(() => { load(); }, []);
 
