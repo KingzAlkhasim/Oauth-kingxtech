@@ -150,3 +150,14 @@ test('053: the database blocks connected-app tokens on REST, RPC and Storage', (
   assert.match(sql, /on storage\.objects as restrictive/);
   assert.match(sql, /reset pgrst\.db_pre_request/);
 });
+
+test('http: the connector host serves the KingxTech icon as a PNG without sign-in', async () => {
+  for (const path of ['/favicon.ico', '/favicon.png', '/apple-touch-icon.png']) {
+    const r = await fetch(`${base}${path}`);
+    assert.equal(r.status, 200, path);
+    assert.match(r.headers.get('content-type') || '', /image\/png/);
+    const bytes = Buffer.from(await r.arrayBuffer());
+    assert.equal(bytes.subarray(1, 4).toString(), 'PNG');
+    assert.ok(bytes.length > 1000);
+  }
+});

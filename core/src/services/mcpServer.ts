@@ -7,6 +7,7 @@ import { verifyMcpToken, type McpPrincipal } from './mcpAuth';
 import { MCP_TOOLS, WRITE_TOOLS, McpToolError, runMcpTool, type McpDeps, type McpProject } from './mcpTools';
 import { getProjectRole, ProjectRoleError } from './projectCollaboration';
 import { listProjectFiles, readProjectFile, writeProjectFile, ProjectAccessError } from './projectFs';
+import { MCP_ICON_PNG } from './mcpIcon';
 import { getUserStorage, StorageFullError } from './storageUsage';
 
 // Remote MCP server (Streamable HTTP, JSON responses only) for Claude, ChatGPT and other AI apps.
@@ -154,6 +155,12 @@ export function createMcpRouter(deps: McpDeps = realDeps(), verify: typeof verif
     } catch {
       res.status(502).json({ error: 'authorization_server_unavailable' });
     }
+  });
+
+  // AI apps show the icon found at the root of the connector's host.
+  router.get(['/favicon.ico', '/favicon.png', '/apple-touch-icon.png', '/mcp-icon.png'], (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.type('image/png').send(MCP_ICON_PNG);
   });
 
   router.get('/mcp', (_req, res) => { cors(res); res.setHeader('Allow', 'POST, OPTIONS'); res.status(405).json({ error: 'Use POST.' }); });

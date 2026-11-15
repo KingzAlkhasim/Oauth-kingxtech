@@ -1,8 +1,8 @@
 import { supabase } from './supabase';
-import { apiUrl } from './apiBase';
+import { apiUrl, siteUrl } from './apiBase';
 
 // Address people paste into Claude or ChatGPT.
-export const connectorUrl = () => new URL(apiUrl('/mcp'), window.location.origin).href;
+export const connectorUrl = () => siteUrl('/mcp');
 
 // What a connected AI app can and cannot do. Shown on the approval page and in Account > Connected apps.
 export const CONNECTOR_CAN = [
