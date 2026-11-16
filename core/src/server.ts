@@ -132,6 +132,11 @@ async function handleFsError(res: express.Response, error: unknown) {
     res.status(403).json({ success: false, error: error.message });
     return;
   }
+  if (error instanceof ProjectRoleError) {
+    // Expected permission refusal ("You need viewer access…"), not a bug — no Sentry report.
+    res.status(403).json({ success: false, error: error.message });
+    return;
+  }
   if (error instanceof SiteAiError) {
     res.status(error.status).json({ success: false, error: error.message });
     return;
