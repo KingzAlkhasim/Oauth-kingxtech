@@ -78,6 +78,9 @@ export default function OAuthConsent() {
               <Button variant="glow" className="flex-1" onClick={() => decide(true)} loading={busy === 'approve'} disabled={!!busy}>Approve</Button>
               <Button variant="subtle" className="flex-1" onClick={() => decide(false)} loading={busy === 'deny'} disabled={!!busy}>Cancel</Button>
             </div>
+            <p className="text-[11.5px] text-kxmist leading-relaxed text-center">
+              By approving you agree to the <a className="text-kxblue underline" href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> and have read the <a className="text-kxblue underline" href="https://kingxtech.name.ng/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>. Need help? <a className="text-kxblue underline" href="mailto:hello@kingxtech.name.ng">hello@kingxtech.name.ng</a>
+            </p>
           </div>
         )}
       </Card>
