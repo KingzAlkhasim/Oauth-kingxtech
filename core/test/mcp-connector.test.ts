@@ -55,6 +55,12 @@ const deps = {
   writeFile: async (u: string, p: string, path: string, content: string) => { calls.push(`write:${u}:${p}:${path}:${content.length}`); },
   projectStatus: async () => ({ id: PID }),
   accountUsage: async () => ({ plan: 'free' }),
+  siteSettings: async () => ({ installAsApp: false }),
+  setInstallable: async (u: string, p: string, on: boolean) => { calls.push(`pwa:${u}:${p}:${on}`); },
+  setAppIcon: async (u: string, p: string, svg: string) => { calls.push(`icon:${u}:${p}:${svg.length}`); return { publicUrl: 'https://x/icon.png' }; },
+  listCollections: async () => [{ name: 'contacts', rows: 2, publicCreate: true, publicRead: false }],
+  readRows: async () => [{ id: 'r1', data: { name: 'A' }, created_at: 't' }],
+  setRules: async (_u: string, _p: string, collection: string, rules: { publicCreate: boolean; publicRead: boolean }) => { calls.push(`rules:${collection}:${rules.publicCreate}:${rules.publicRead}`); return rules; },
 };
 const principal = { userId: 'user-1', clientId: 'claude-app' };
 const open = async () => true;
@@ -65,7 +71,12 @@ test('tools: list, read, write and the guard rails', async () => {
   assert.equal(text(await call('list_projects', {})).projects[0].id, PID);
   assert.deepEqual(text(await call('list_files', { projectId: PID })).files.map((f: any) => f.path), ['a.js']);
   assert.equal(text(await call('read_file', { projectId: PID, path: 'a.js' })).content, 'hello');
-  assert.equal(text(await call('read_file', { projectId: PID, path: 'big.txt' })).truncated, true);
+  const chunk1 = text(await call('read_file', { projectId: PID, path: 'big.txt' }));
+  assert.equal(chunk1.done, false); assert.equal(chunk1.totalChars, 250_000); assert.equal(chunk1.content.length, 30_000); assert.equal(chunk1.nextOffset, 30_000);
+  let got = ''; let off = 0; let n = 0;
+  for (;;) { const c = text(await call('read_file', { projectId: PID, path: 'big.txt', offset: off, limit: 40_000 })); got += c.content; n++; if (c.done) break; off = c.nextOffset; }
+  assert.equal(got.length, 250_000); assert.equal(n, 7);
+  assert.equal(text(await call('read_file', { projectId: PID, path: 'a.js', offset: 99 })).done, true);
   assert.equal(text(await call('read_file', { projectId: PID, path: 'logo.png' })).binary, true);
   const folder = await call('read_file', { projectId: PID, path: 'dir' });
   assert.equal(folder.result.isError, true);
@@ -83,9 +94,9 @@ test('tools: list, read, write and the guard rails', async () => {
 
 test('tools: there is no way to delete, publish or reach secrets', () => {
   const names = MCP_TOOLS.map((t) => t.name).sort();
-  assert.deepEqual(names, ['get_account_usage', 'get_project_status', 'list_files', 'list_projects', 'read_file', 'write_file']);
-  assert.equal(MCP_TOOLS.find((t) => t.name === 'write_file')!.annotations.readOnlyHint, false);
-  assert.ok(MCP_TOOLS.filter((t) => t.name !== 'write_file').every((t) => t.annotations.readOnlyHint === true));
+  assert.deepEqual(names, ['edit_file', 'get_account_usage', 'get_platform_guide', 'get_project_status', 'get_site_settings', 'list_data_collections', 'list_files', 'list_projects', 'read_data_rows', 'read_file', 'set_app_icon', 'set_data_rules', 'update_site_settings', 'write_file']);
+  const writers = ['write_file', 'edit_file', 'update_site_settings', 'set_app_icon', 'set_data_rules'];
+  for (const t of MCP_TOOLS) assert.equal(t.annotations.readOnlyHint, !writers.includes(t.name), t.name);
 });
 
 test('every tool states readOnlyHint, destructiveHint and openWorldHint (directories require it)', () => {
@@ -132,7 +143,7 @@ test('http: initialize, list tools, notification, batch, and unsupported methods
   const old = await (await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '1999-01-01' } }, APP_TOKEN)).json() as any;
   assert.equal(old.result.protocolVersion, '2025-06-18');
   const list = await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, APP_TOKEN)).json() as any;
-  assert.equal(list.result.tools.length, 6);
+  assert.equal(list.result.tools.length, 14);
   const note = await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, APP_TOKEN);
   assert.equal(note.status, 202);
   const batch = await (await post([{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 2, method: 'nope' }], APP_TOKEN)).json() as any[];
@@ -160,4 +171,53 @@ test('http: the connector host serves the KingxTech icon as a PNG without sign-i
     assert.equal(bytes.subarray(1, 4).toString(), 'PNG');
     assert.ok(bytes.length > 1000);
   }
+});
+
+test('edit_file replaces exactly one match and refuses the rest', async () => {
+  calls.length = 0;
+  assert.equal(text(await call('edit_file', { projectId: PID, path: 'a.js', oldText: 'ell', newText: 'ELL' })).ok, true);
+  assert.deepEqual(calls, [`write:user-1:${PID}:a.js:5`]);
+  calls.length = 0;
+  for (const bad of [{ oldText: 'zzz', newText: 'x' }, { oldText: 'l', newText: 'x' }, { oldText: '', newText: 'x' }, { oldText: 'h' }]) {
+    assert.equal((await call('edit_file', { projectId: PID, path: 'a.js', ...bad })).result.isError, true);
+  }
+  assert.equal((await call('edit_file', { projectId: PID, path: '.env', oldText: 'a', newText: 'b' })).result.isError, true);
+  assert.equal((await call('edit_file', { projectId: PID, path: 'logo.png', oldText: 'A', newText: 'b' })).result.isError, true);
+  assert.deepEqual(calls, []);
+});
+
+test('platform guide, site settings and site data tools', async () => {
+  const g = (await call('get_platform_guide', {})).result.content[0].text as string;
+  assert.match(g, /Publish changes/); assert.match(g, /install_app/); assert.match(g, /_hp/);
+  assert.match((await call('get_platform_guide', { topic: 'plans' })).result.content[0].text, /25 MB/);
+  calls.length = 0;
+  assert.equal(text(await call('update_site_settings', { projectId: PID, installAsApp: true })).installAsApp, true);
+  assert.equal((await call('update_site_settings', { projectId: PID, installAsApp: 'yes' })).result.isError, true);
+  assert.equal(text(await call('set_app_icon', { projectId: PID, svg: '<svg viewBox="0 0 512 512"/>' })).ok, true);
+  assert.equal(text(await call('list_data_collections', { projectId: PID })).collections[0].name, 'contacts');
+  assert.equal(text(await call('read_data_rows', { projectId: PID, collection: 'contacts' })).count, 1);
+  const open = text(await call('set_data_rules', { projectId: PID, collection: 'contacts', publicCreate: true, publicRead: true }));
+  assert.match(open.warning, /Anyone on the internet/);
+  assert.equal((await call('set_data_rules', { projectId: PID, collection: 'contacts', publicCreate: true })).result.isError, true);
+  assert.deepEqual(calls, [`pwa:user-1:${PID}:true`, `icon:user-1:${PID}:28`, 'rules:contacts:true:true']);
+});
+
+test('generated icons: unsafe SVG is refused, a plain one becomes a 512 PNG', async () => {
+  const { renderIconPng, checkIconSvg } = require('../src/services/mcpSvgIcon') as typeof import('../src/services/mcpSvgIcon');
+  const bad = [
+    '<svg viewBox="0 0 1 1"><script>alert(1)</script></svg>',
+    '<svg viewBox="0 0 1 1" onload="x()"></svg>',
+    '<svg viewBox="0 0 1 1"><image href="http://evil/x.png"/></svg>',
+    '<svg viewBox="0 0 1 1"><rect fill="url(http://evil/x)"/></svg>',
+    '<!DOCTYPE svg [<!ENTITY a "b">]><svg viewBox="0 0 1 1"/>',
+    '<svg viewBox="0 0 1 1"><foreignObject/></svg>',
+    '<svg viewBox="0 0 1 1"><use href="#a"/></svg>',
+    'not svg',
+  ];
+  for (const svg of bad) assert.throws(() => checkIconSvg(svg), undefined, svg);
+  const png = await renderIconPng('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g"><stop offset="0" stop-color="#0a0"/><stop offset="1" stop-color="#06c"/></linearGradient></defs><rect width="512" height="512" fill="url(#g)"/><text x="256" y="330" font-size="260" text-anchor="middle" fill="#fff">K</text></svg>');
+  assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  const sharp = require('sharp');
+  const meta = await sharp(png).metadata();
+  assert.equal(meta.width, 512); assert.equal(meta.height, 512);
 });

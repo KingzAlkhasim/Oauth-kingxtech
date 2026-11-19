@@ -8,11 +8,13 @@ export const connectorUrl = () => siteUrl('/mcp');
 export const CONNECTOR_CAN = [
   'See your project list and each project’s publish and server status',
   'Read the text files in your projects (secrets files like .env are hidden)',
-  'Create or replace text files in projects you can edit',
+  'Create, edit or replace text files in projects you can edit',
+  'Turn Install as App on or off and set a generated app icon (projects you own; the icon needs Pro)',
+  'See your site data collections and records, and choose who can add or read them (projects you own)',
   'See your plan and how much storage you have used',
 ];
 export const CONNECTOR_CANNOT = [
-  'Delete files or projects',
+  'Delete files, records or projects',
   'Publish sites or start servers',
   'See or change environment variables and secrets',
   'Touch billing, domains or account settings',
