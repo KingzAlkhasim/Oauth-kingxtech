@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { HardDrive, FolderKanban, Globe, Sparkles, Server } from 'lucide-react';
 import DashboardShell from '../components/DashboardShell';
 import { Card, Badge, SkeletonLines, SkeletonRows } from '../components/ui';
@@ -120,9 +120,18 @@ function ServerUsageCard({ data }) {
   );
 }
 
+const TABS = [
+  { id: 'storage', label: 'Storage' },
+  { id: 'servers', label: 'Servers' },
+  { id: 'ai', label: 'AI' },
+  { id: 'projects', label: 'Projects' },
+];
+
 export default function Usage() {
   useSeo({ title: 'Usage & storage — KingxTech', noindex: true });
   useRequireAuth();
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'storage';
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   const [ai, setAi] = useState(undefined); // undefined = loading, null = unavailable
@@ -165,6 +174,17 @@ export default function Usage() {
       )}
       {error && error !== 'SETUP' && <p className="text-[12.5px] text-red-400 mb-4">{error}</p>}
 
+      <div role="tablist" aria-label="Usage sections" className="flex gap-1 overflow-x-auto mb-5 border-b border-white/10">
+        {TABS.map((t) => (
+          <button
+            key={t.id} type="button" role="tab" aria-selected={tab === t.id}
+            onClick={() => setParams(t.id === 'storage' ? {} : { tab: t.id }, { replace: true })}
+            className={`min-h-11 px-4 text-[14px] whitespace-nowrap border-b-2 -mb-px ${tab === t.id ? 'border-kxpurple text-white' : 'border-transparent text-kxmist hover:text-white'}`}
+          >{t.label}</button>
+        ))}
+      </div>
+
+      {tab === 'storage' && (<>
       <div className="grid grid-cols-2 gap-3 mb-6">
         <Stat icon={HardDrive} label="Source files" value={rows === null ? '…' : formatBytes(totals.source)} />
         <Stat icon={FolderKanban} label="Projects" value={rows === null ? '…' : totals.projects} />
@@ -195,7 +215,9 @@ export default function Usage() {
           );
         })()}
       </Card>
+      </>)}
 
+      {tab === 'ai' && (
       <Card className="p-4 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1 flex items-center gap-2"><Sparkles size={15} /> AI usage</h2>
         {ai === undefined && <SkeletonLines lines={3} className="mt-3" label="Loading AI usage" />}
@@ -214,9 +236,11 @@ export default function Usage() {
           </div>
         )}
       </Card>
+      )}
 
-      <ServerUsageCard data={server} />
+      {tab === 'servers' && <ServerUsageCard data={server} />}
 
+      {tab === 'projects' && (
       <Card className="p-4 sm:p-6 rounded-[20px] mb-5">
         <h2 className="font-display text-[16px] font-medium mb-1">Storage by project</h2>
         <p className="text-[13px] text-kxmist mb-4 leading-relaxed">
@@ -245,6 +269,7 @@ export default function Usage() {
           })}
         </div>
       </Card>
+      )}
     </DashboardShell>
   );
 }

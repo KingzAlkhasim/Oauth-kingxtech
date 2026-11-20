@@ -1060,13 +1060,32 @@ export default function ProjectWorkspace() {
     return () => window.removeEventListener('kxpert:file-written', onWritten);
   }, [projectId, refreshFiles, typeIntoEditor]);
 
+  // Backup of unsaved edits on this device, so a reload (phone power change, memory kill, sign-in prompt) cannot lose them.
+  const draftKey = (path) => `kx_draft:${projectId}:${path}`;
+  const clearDraft = (path) => { try { localStorage.removeItem(draftKey(path)); } catch { /* ignore */ } };
+  const [draftRestored, setDraftRestored] = useState(false);
+  useEffect(() => {
+    if (!dirty || !selectedPath || aiTyping) return undefined;
+    const timer = setTimeout(() => {
+      try { localStorage.setItem(draftKey(selectedPath), JSON.stringify({ content, savedAt: Date.now() })); } catch { /* storage full or blocked */ }
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, dirty, selectedPath, aiTyping, projectId]);
+
   const openFile = async (path) => {
     try {
       const file = await readFile(projectId, path);
       selectedPathRef.current = path;
       setSelectedPath(path);
-      setContent(file.content ?? '');
-      setDirty(false);
+      const saved = file.content ?? '';
+      let draft = null;
+      try { draft = JSON.parse(localStorage.getItem(draftKey(path)) || 'null'); } catch { /* ignore */ }
+      const restore = draft && typeof draft.content === 'string' && draft.content !== saved && Date.now() - draft.savedAt < 14 * 86400000;
+      if (draft && !restore) clearDraft(path);
+      setContent(restore ? draft.content : saved);
+      setDirty(!!restore);
+      setDraftRestored(!!restore);
       setMobileView('workspace');
     } catch (err) {
       setError(friendlyError(err));
@@ -1078,6 +1097,8 @@ export default function ProjectWorkspace() {
     setIsSaving(true);
     try {
       await writeFile(projectId, selectedPath, content);
+      clearDraft(selectedPath);
+      setDraftRestored(false);
       setDirty(false);
       await refreshFiles();
     } catch (err) {
@@ -1612,6 +1633,9 @@ export default function ProjectWorkspace() {
                   </div>
                 )}
               </div>
+              {draftRestored && dirty && (
+                <p className="text-[12.5px] text-amber-300 mb-2">Restored your unsaved edits from this device. Press Save to keep them.</p>
+              )}
               {selectedIsImage ? (
                 <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-white/10 bg-black/10 p-4 flex flex-col items-center justify-center gap-3">
                   <img src={selectedImageSrc} alt={selectedPath.split('/').pop()} className="max-w-full max-h-full object-contain" />
